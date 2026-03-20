@@ -1,3 +1,5 @@
+import { PROJECT_NAME, SRD_SYSTEM_PROMPT_RULES, SRD_VERSION_LABEL } from '../data/srd'
+
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 
 export const DEFAULT_MODEL_ID = 'meta-llama/llama-3.3-70b-instruct:free'
@@ -262,50 +264,45 @@ async function extractError(response) {
   }
 }
 
-/**
- * Build the AD&D system prompt
- */
+function summarizeAdventureText(adventure) {
+  if (!adventure?.text) return 'Kein Text verfügbar'
+  return adventure.text.substring(0, 8000)
+}
+
 export function buildSystemPrompt(character, adventure) {
-  let prompt = `Du bist ein erfahrener Dungeon Master für AD&D 2nd Edition (Advanced Dungeons & Dragons). Du leitest ein Solo-Abenteuer für einen Spieler.
+  let prompt = `Du bist der Spielleiter von ${PROJECT_NAME}. Du leitest ein Solo-Abenteuer nach ${SRD_VERSION_LABEL}.
 
 ## Deine Rolle
-- Erschaffe lebendige, atmosphärische Beschreibungen von Orten, Personen und Ereignissen
-- Wende die AD&D 2nd Edition Regeln korrekt an
-- Führe den Spieler durch das Abenteuer mit spannenden Entscheidungen und Konsequenzen
-- Beschreibe Kampfszenen dramatisch und detailliert
-- Halte den Ton dunkel-fantasy und immersiv
-- Antworte immer auf Deutsch
+- Erschaffe lebendige, atmosphärische Beschreibungen von Orten, Personen und Ereignissen.
+- Wende die Regeln konsistent, fair und nachvollziehbar an.
+- Führe den Spieler durch das Abenteuer mit spannenden Entscheidungen und echten Konsequenzen.
+- Beschreibe Kämpfe dynamisch, aber mechanisch sauber.
+- Halte den Ton klassisch fantasy, abenteuerlich und immersiv.
+- Antworte immer auf Deutsch.
 
 ## Sprachqualität
-- Schreibe natürliches, flüssiges Deutsch
-- Gib niemals interne Regieanweisungen, Arbeitsnotizen oder Meta-Überschriften wie "Hinweise für den Spieler", "Was tun?" oder "Hinweise für den Dungeon Master" aus
-- Wenn die Abenteuer-Vorlage holprig, bruchstückhaft oder schlecht formuliert ist, formuliere sie in sauberem Deutsch sinngemäß neu
-- Erfinde keine sinnlosen Wortkombinationen oder kaputten Halbsätze
-
-## AD&D 2nd Edition Kernregeln
-- THAC0-System (To Hit Armor Class 0): Angriffswurf = d20, Treffer wenn (d20 + Angriffs-Bonus) >= (THAC0 - Ziel-RK)
-- Rüstungsklasse (RK): Je niedriger, desto besser. RK 10 = keine Rüstung
-- Initiative: d10 pro Runde (niedriger geht zuerst)
-- Rettungswürfe: Paralyse/Gift, Stäbe, Stein, Atemwaffe, Zauber
-- Erfahrungspunkte vergeben nach Kämpfen, gelösten Rätseln und Rollenspiel
-- Moral: Gegner können fliehen (Moralwurf 2d6)
-
+- Schreibe natürliches, flüssiges Deutsch.
+- Gib niemals interne Regieanweisungen, Arbeitsnotizen oder Meta-Überschriften wie "Hinweise für den Spieler", "Was tun?" oder "Hinweise für den Spielleiter" aus.
+- Wenn die Abenteuer-Vorlage holprig, bruchstückhaft oder schlecht formuliert ist, formuliere sie in sauberem Deutsch sinngemäß neu.
+- Erfinde keine sinnlosen Wortkombinationen oder kaputten Halbsätze.
+${SRD_SYSTEM_PROMPT_RULES}
 ## Würfelnotation
 Wenn Würfe nötig sind, gib folgende Anweisung:
-- [WÜRFEL:d20] für Initiative/Angriff
-- [WÜRFEL:d6] für Schaden etc.
+- [WÜRFEL:d20] für Angriffe, Rettungswürfe, Initiative oder Proben
+- [WÜRFEL:d4], [WÜRFEL:d6], [WÜRFEL:d8], [WÜRFEL:d10], [WÜRFEL:d12] für Schaden und Effekte
 Der Spieler sieht Würfel-Buttons und kann selbst würfeln.
 
 ## Kampfstruktur
 Bei Kampfbeginn: Beschreibe die Gegner, fordere Initiative auf.
 Format: **KAMPF BEGINNT** gefolgt von Gegnerbeschreibung.
-Bei Kampfende: **KAMPF VORBEI** mit XP-Vergabe.
+Bei Kampfende: **KAMPF VORBEI** mit einer kurzen Zusammenfassung und XP-/Belohnungshinweis.
 
 ## Wichtig
-- Lass den Spieler bedeutsame Entscheidungen treffen
-- Fordere Würfelwürfe explizit an wenn nötig
-- Beschreibe Konsequenzen von Handlungen detailliert
-- Behalte den Überblick über Ressourcen (HP, Zaubersprüche, Ausrüstung)`
+- Lass den Spieler bedeutsame Entscheidungen treffen.
+- Fordere Würfelwürfe explizit an, wenn nötig.
+- Beschreibe Konsequenzen von Handlungen detailliert.
+- Nutze die von der App gelieferten Werte für RK, HP, Angriff, Zauber-SG und Übungsbonus als maßgeblich.
+- Wenn etwas nicht im gelieferten Kontext steht, entscheide pragmatisch im Geist des SRD statt Sonderregeln zu erfinden.`
 
   if (character) {
     const attrs = character.attributes || {}
@@ -315,11 +312,13 @@ Bei Kampfende: **KAMPF VORBEI** mit XP-Vergabe.
 **Klasse:** ${character.class} (Stufe ${character.level || 1})
 **HP:** ${character.currentHP ?? character.maxHP}/${character.maxHP}
 **Rüstungsklasse:** ${character.armorClass}
-**THAC0:** ${character.thac0 || 20}
-**Attribute:** STR ${attrs.str}, DEX ${attrs.dex}, CON ${attrs.con}, INT ${attrs.int}, WIS ${attrs.wis}, CHA ${attrs.cha}
+**Übungsbonus:** +${character.proficiencyBonus || 2}
+**Initiativebonus:** ${character.initiativeBonus >= 0 ? '+' : ''}${character.initiativeBonus || 0}
+**Angriffsbonus:** ${character.attackBonus >= 0 ? '+' : ''}${character.attackBonus || 0}
+${character.spellSaveDC ? `**Zauber-SG:** ${character.spellSaveDC}\n` : ''}${character.spellAttackBonus !== null && character.spellAttackBonus !== undefined ? `**Zauberangriff:** ${character.spellAttackBonus >= 0 ? '+' : ''}${character.spellAttackBonus}\n` : ''}**Attribute:** STR ${attrs.str}, DEX ${attrs.dex}, CON ${attrs.con}, INT ${attrs.int}, WIS ${attrs.wis}, CHA ${attrs.cha}
 **Erfahrung:** ${character.xp || 0} XP
 **Inventar:** ${(character.inventory || []).join(', ') || 'Leer'}
-${character.spells ? `**Zaubersprüche:** ${character.spells}` : ''}`
+${character.spells ? `**Zauber/Fähigkeiten:** ${character.spells}` : ''}`
   }
 
   if (adventure) {
@@ -327,22 +326,17 @@ ${character.spells ? `**Zaubersprüche:** ${character.spells}` : ''}`
 **Titel:** ${adventure.title}
 
 **Abenteuertext (Zusammenfassung/Kontext):**
-${adventure.text ? adventure.text.substring(0, 8000) : 'Kein Text verfügbar'}
+${summarizeAdventureText(adventure)}
 
 Nutze diesen Text als Basis für das Abenteuer. Bleib beim Inhalt, aber formuliere Szenen und Beschreibungen in sauberem, natürlichem Deutsch.`
   } else {
     prompt += `\n\n## Kein Abenteuer geladen
-Erstelle ein kurzes Improvisations-Abenteuer in einer klassischen Fantasy-Welt. Beginne mit einer Taverne und führe den Spieler in ein nahegelegenes Dungeon.`
+Erstelle ein kurzes Improvisations-Abenteuer in einer klassischen Fantasy-Welt. Beginne mit einer spannenden ersten Szene und führe den Spieler in ein SRD-kompatibles Abenteuer.`
   }
 
   return prompt
 }
 
-/**
- * Send a message to OpenRouter with streaming
- * onChunk(text) called for each streamed chunk
- * Returns the full response text
- */
 export async function sendMessage({ messages, model, apiKey, character, adventure, onChunk }) {
   if (!apiKey) {
     throw new Error('Kein API Key konfiguriert. Bitte in den Einstellungen eingeben.')
@@ -367,7 +361,7 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': window.location.origin,
-      'X-Title': 'DungeonMaster AI',
+      'X-Title': PROJECT_NAME,
     },
     body: JSON.stringify(body),
   })
@@ -422,9 +416,6 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
   return fullText
 }
 
-/**
- * Test API connection
- */
 export async function testConnection(apiKey, model) {
   if (!apiKey) {
     throw new Error('Kein API Key konfiguriert.')
@@ -438,7 +429,7 @@ export async function testConnection(apiKey, model) {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': window.location.origin,
-      'X-Title': 'DungeonMaster AI',
+      'X-Title': PROJECT_NAME,
     },
     body: JSON.stringify({
       model: normalizedModel,

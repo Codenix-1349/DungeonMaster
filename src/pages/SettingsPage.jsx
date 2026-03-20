@@ -8,6 +8,7 @@ import {
   isPaidModel,
   testConnection,
 } from '../services/openrouter'
+import { PROJECT_NAME } from '../data/srd'
 
 function pricingText(pricing) {
   if (!pricing) return 'Preise werden geladen oder konnten nicht ermittelt werden.'
@@ -118,7 +119,7 @@ export default function SettingsPage() {
       <div className="mb-8">
         <h1 className="section-title text-3xl mb-2">Einstellungen</h1>
         <p className="font-body text-stone-500 italic">
-          Konfiguriere deinen API-Zugang und das Modell für deinen Dungeon Master.
+          Konfiguriere deinen API-Zugang und das Modell für {PROJECT_NAME}.
         </p>
       </div>
 

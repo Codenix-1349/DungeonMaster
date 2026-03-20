@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react'
 import { DEFAULT_MODEL_ID, normalizeModelId } from '../services/openrouter'
+import { getAbilityModifier, normalizeCharacter } from '../data/srd'
 
 const GameContext = createContext(null)
 
@@ -32,25 +33,43 @@ function getInitialModel() {
   return normalized
 }
 
+function getInitialCharacter() {
+  return normalizeCharacter(loadFromStorage('dm_character', DEFAULT_CHARACTER))
+}
+
+function normalizeAdventureEntry(entry) {
+  if (!entry) return null
+  return {
+    ...entry,
+    pages: entry.pages || (entry.filename?.toLowerCase().endsWith('.pdf') ? 'PDF' : 'TXT'),
+    charCount: entry.charCount || entry.text?.length || 0,
+  }
+}
+
 export function GameProvider({ children }) {
-  const [character, setCharacterState] = useState(() => loadFromStorage('dm_character', DEFAULT_CHARACTER))
-  const [adventure, setAdventureState] = useState(() => loadFromStorage('dm_adventure', DEFAULT_ADVENTURE))
+  const [character, setCharacterState] = useState(getInitialCharacter)
+  const [adventure, setAdventureState] = useState(() => normalizeAdventureEntry(loadFromStorage('dm_adventure', DEFAULT_ADVENTURE)))
   const [gameLog, setGameLogState] = useState(() => loadFromStorage('dm_gameLog', DEFAULT_GAME_LOG))
   const [combat, setCombatState] = useState(() => loadFromStorage('dm_combat', DEFAULT_COMBAT))
   const [apiKey, setApiKeyState] = useState(() => localStorage.getItem('dm_apiKey') || '')
   const [selectedModel, setSelectedModelState] = useState(getInitialModel)
-  const [adventures, setAdventuresState] = useState(() => loadFromStorage('dm_adventures', []))
+  const [adventures, setAdventuresState] = useState(() => {
+    const stored = loadFromStorage('dm_adventures', [])
+    return Array.isArray(stored) ? stored.map(normalizeAdventureEntry) : []
+  })
 
   const setCharacter = useCallback((val) => {
-    const v = typeof val === 'function' ? val(character) : val
-    setCharacterState(v)
-    saveToStorage('dm_character', v)
+    const nextValue = typeof val === 'function' ? val(character) : val
+    const normalized = normalizeCharacter(nextValue)
+    setCharacterState(normalized)
+    saveToStorage('dm_character', normalized)
   }, [character])
 
   const setAdventure = useCallback((val) => {
-    const v = typeof val === 'function' ? val(adventure) : val
-    setAdventureState(v)
-    saveToStorage('dm_adventure', v)
+    const nextValue = typeof val === 'function' ? val(adventure) : val
+    const normalized = normalizeAdventureEntry(nextValue)
+    setAdventureState(normalized)
+    saveToStorage('dm_adventure', normalized)
   }, [adventure])
 
   const setGameLog = useCallback((val) => {
@@ -77,9 +96,10 @@ export function GameProvider({ children }) {
   }, [])
 
   const setAdventures = useCallback((val) => {
-    const v = typeof val === 'function' ? val(adventures) : val
-    setAdventuresState(v)
-    saveToStorage('dm_adventures', v)
+    const nextValue = typeof val === 'function' ? val(adventures) : val
+    const normalized = Array.isArray(nextValue) ? nextValue.map(normalizeAdventureEntry) : []
+    setAdventuresState(normalized)
+    saveToStorage('dm_adventures', normalized)
   }, [adventures])
 
   const addMessage = useCallback((role, content, type = 'narrative') => {
@@ -121,15 +141,7 @@ export function GameProvider({ children }) {
     setCombat(null)
   }, [setCombat])
 
-  const getModifier = (score) => {
-    if (score <= 3) return -3
-    if (score <= 5) return -2
-    if (score <= 8) return -1
-    if (score <= 12) return 0
-    if (score <= 15) return 1
-    if (score <= 17) return 2
-    return 3
-  }
+  const getModifier = (score) => getAbilityModifier(score)
 
   return (
     <GameContext.Provider value={{
