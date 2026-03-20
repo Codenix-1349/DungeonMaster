@@ -1,7 +1,7 @@
 export const PROJECT_NAME = 'Dungeons & Daggers'
 export const SRD_VERSION_LABEL = 'D&D SRD 5.2.1'
 const ADVENTURE_STRUCTURE_VERSION = 2
-const SCENE_STATE_VERSION = 1
+const SCENE_STATE_VERSION = 2
 
 const GERMAN_STOPWORDS = new Set([
   'aber','alle','allen','aller','alles','auch','auf','aus','bei','bin','bis','bist','da','dadurch','daher','darum','das','dass','dein','deine','dem','den','der','des','dessen','deshalb','die','dies','diese','diesem','diesen','dieser','dieses','doch','dort','du','durch','ein','eine','einem','einen','einer','eines','er','es','euer','eure','für','hat','hattest','hatte','hatten','hier','hinter','ich','ihr','ihre','im','in','ist','ja','jede','jedem','jeden','jeder','jedes','jetzt','kann','kannst','kein','keine','keinem','keinen','keiner','keines','mit','muss','nach','nicht','noch','nun','oder','seid','sein','seine','sich','sie','sind','so','solche','solchem','solchen','solcher','solches','soll','sollen','sollte','sondern','sonst','über','um','und','uns','unser','unsere','unter','vom','von','vor','war','waren','warst','was','weg','weil','weiter','welche','welchem','welchen','welcher','welches','wenn','werde','werden','wie','wieder','will','wir','wird','wirst','wo','wollen','wollte','würde','würden','zu','zum','zur','zurück'
@@ -492,6 +492,80 @@ function selectRelevantChunks(structure, section, tokens = [], maxChunks = 3) {
   return picked.sort((a, b) => a.index - b.index)
 }
 
+function normalizeShortList(items = [], limit = 4) {
+  const seen = new Set()
+  const out = []
+
+  for (const item of items) {
+    const normalized = truncateText(String(item || '').replace(/^[-•]\s*/, '').trim(), 120)
+    if (!normalized) continue
+    const key = normalized.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(normalized)
+    if (out.length >= limit) break
+  }
+
+  return out
+}
+
+function splitSentences(text = '') {
+  return (String(text || '').match(/[^.!?\n]+[.!?]?/g) || [String(text || '')])
+    .map(sentence => sentence.trim())
+    .filter(Boolean)
+}
+
+function extractCluesFromMessages(messages = [], section = null) {
+  const clueHints = ['hinweis', 'spur', 'schlüssel', 'karte', 'brief', 'zeichen', 'symbol', 'notiz', 'gerücht', 'amulett', 'ritual', 'name', 'blut', 'abdruck', 'siegel']
+  const text = messages.map(message => message.content).join(' ')
+  const clues = []
+
+  for (const sentence of splitSentences(text)) {
+    const lower = sentence.toLowerCase()
+    if (clueHints.some(hint => lower.includes(hint))) clues.push(sentence)
+  }
+
+  if (section?.summary) clues.push(section.summary)
+  return normalizeShortList(clues, 4)
+}
+
+function extractOpenThreads(messages = [], previousObjective = '', section = null) {
+  const threadHints = ['muss', 'soll', 'will', 'ziel', 'suche', 'finden', 'öffnen', 'retten', 'bergen', 'untersuchen', 'folgen', 'verfolgen', 'erreichen', 'sprechen']
+  const userMessages = messages.filter(message => message.role === 'user').slice(-4)
+  const threads = []
+
+  for (const message of userMessages) {
+    const content = String(message.content || '').trim()
+    const lower = content.toLowerCase()
+    if (threadHints.some(hint => lower.includes(hint)) || content.length > 40) {
+      threads.push(content)
+    }
+  }
+
+  if (previousObjective) threads.unshift(previousObjective)
+  if (section?.title) threads.unshift(`Aktuell relevant: ${section.title}`)
+
+  return normalizeShortList(threads, 4)
+}
+
+function detectTransitionReason(previousSection, currentSection, latestUser = '', latestAssistant = '') {
+  if (!previousSection || !currentSection) return ''
+  if (previousSection.id === currentSection.id) return 'Abschnitt bleibt stabil.'
+
+  const user = latestUser.toLowerCase()
+  const assistant = latestAssistant.toLowerCase()
+
+  if (user.includes('gehe') || user.includes('betrete') || user.includes('öffne') || user.includes('folge') || user.includes('verlasse')) {
+    return 'Szenenwechsel durch bewusste Orts- oder Richtungsaktion des Spielers.'
+  }
+
+  if (assistant.includes(currentSection.title.toLowerCase())) {
+    return 'Spielleitertext verweist klar auf einen neuen Abenteuerabschnitt.'
+  }
+
+  return 'Szenenwechsel durch stärkere Kontexttreffer im aktuellen Abenteuerabschnitt.'
+}
+
 export function createInitialSceneState(adventure) {
   const normalizedAdventure = normalizeAdventureEntry(adventure)
   const firstSection = normalizedAdventure?.structure?.sections?.[0] || null
@@ -504,13 +578,20 @@ export function createInitialSceneState(adventure) {
     turnCount: 0,
     currentSectionId: firstSection?.id || null,
     currentSectionTitle: firstSection?.title || normalizedAdventure?.title || 'Abenteuerstart',
+    currentLocation: firstSection?.title || normalizedAdventure?.title || 'Unbekannter Ort',
     relevantChunkIndexes: firstChunks,
     visitedSectionIds: firstSection ? [firstSection.id] : [],
     currentObjective: 'Die erste Szene betreten und Informationen sammeln.',
+    activeQuest: firstSection?.summary || 'Das Abenteuer beginnen und die Lage erfassen.',
     lastPlayerAction: '',
     lastOutcome: '',
     summary: firstSection?.summary || 'Das Abenteuer beginnt und die erste Szene wird aufgebaut.',
+    discoveredClues: firstSection?.keywords?.slice(0, 3) || [],
+    openThreads: firstSection?.title ? [`Den Abschnitt „${firstSection.title}“ erkunden.`] : [],
     notableElements: firstSection?.keywords?.slice(0, 6) || [],
+    recentSceneChanges: [],
+    stableSectionTurns: 1,
+    lastTransitionReason: 'Start des Abenteuers.',
     lastUpdatedAt: new Date().toISOString(),
   }
 }
@@ -530,7 +611,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
   const latestUser = [...recentMessages].reverse().find(message => message.role === 'user')?.content || fallbackUserText || ''
   const latestAssistant = [...recentMessages].reverse().find(message => message.role === 'assistant')?.content || ''
   const combinedRecentText = recentMessages.map(message => message.content).join(' ')
-  const searchTokens = tokenizeText(`${combinedRecentText} ${previous.currentSectionTitle || ''} ${previous.currentObjective || ''}`, 4)
+  const searchTokens = tokenizeText(`${combinedRecentText} ${previous.currentSectionTitle || ''} ${previous.currentObjective || ''} ${previous.activeQuest || ''}`, 4)
   const previousSection = findSectionById(structure, previous.currentSectionId) || structure.sections[0]
 
   const scoredSections = structure.sections.map(section => {
@@ -539,10 +620,19 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     if (combat?.active && /(kampf|gegner|initiative|angriff|schaden|boss)/i.test(section.searchText)) score += 3
     if (latestAssistant && section.title && latestAssistant.toLowerCase().includes(section.title.toLowerCase())) score += 6
     if (!latestUser && section.index === 0) score += 4
+    if (section.id === previousSection?.id) score += 4
     return { section, score }
   }).sort((a, b) => b.score - a.score || a.section.index - b.section.index)
 
-  const currentSection = scoredSections[0]?.section || previousSection || structure.sections[0]
+  const bestEntry = scoredSections[0]
+  const bestSection = bestEntry?.section || previousSection || structure.sections[0]
+  const bestScore = bestEntry?.score ?? 0
+  const previousScore = (scoredSections.find(entry => entry.section.id === previousSection?.id)?.score) ?? 0
+  const explicitMove = /\b(gehe|betrete|betritt|verlasse|folge|öffne|steige|klettere|reise|laufe|renne|krieche)\b/i.test(latestUser)
+  const assistantAnchorsNewSection = Boolean(bestSection?.title && latestAssistant.toLowerCase().includes(bestSection.title.toLowerCase()) && bestSection.id !== previousSection?.id)
+  const shouldTransition = bestSection.id !== previousSection?.id && (explicitMove || assistantAnchorsNewSection || bestScore >= previousScore + 4)
+
+  const currentSection = shouldTransition ? bestSection : (previousSection || bestSection)
   const relevantChunks = selectRelevantChunks(structure, currentSection, searchTokens, combat?.active ? 3 : 2)
   const visited = new Set(previous.visitedSectionIds || [])
   visited.add(currentSection.id)
@@ -553,18 +643,39 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     ? `${summaryBase} Letzte Entwicklung: ${latestOutcome}`
     : summaryBase
 
+  const objective = deriveObjectiveFromUserText(latestUser, previous.currentObjective)
+  const transitionReason = shouldTransition
+    ? detectTransitionReason(previousSection, currentSection, latestUser, latestAssistant)
+    : (previous.lastTransitionReason || 'Abschnitt bleibt stabil.')
+
+  const recentSceneChanges = normalizeShortList([
+    shouldTransition ? `Neuer Abschnitt: ${currentSection.title}` : '',
+    latestOutcome,
+    transitionReason,
+  ], 3)
+
   return {
     version: SCENE_STATE_VERSION,
     turnCount: Number(previous.turnCount || 0) + (recentMessages.length ? 1 : 0),
     currentSectionId: currentSection.id,
     currentSectionTitle: currentSection.title,
+    currentLocation: currentSection.title,
     relevantChunkIndexes: relevantChunks.map(chunk => chunk.index),
     visitedSectionIds: [...visited],
-    currentObjective: deriveObjectiveFromUserText(latestUser, previous.currentObjective),
+    currentObjective: objective,
+    activeQuest: truncateText(previous.activeQuest || objective || summaryBase, 160),
     lastPlayerAction: truncateText(latestUser || previous.lastPlayerAction || '', 160),
     lastOutcome: latestOutcome,
     summary,
+    discoveredClues: normalizeShortList([
+      ...(previous.discoveredClues || []),
+      ...extractCluesFromMessages(recentMessages, currentSection),
+    ], 4),
+    openThreads: extractOpenThreads(recentMessages, objective, currentSection),
     notableElements: mergeNotableElements(currentSection, `${latestUser} ${latestAssistant}`),
+    recentSceneChanges,
+    stableSectionTurns: shouldTransition ? 1 : Number(previous.stableSectionTurns || 0) + 1,
+    lastTransitionReason: transitionReason,
     lastUpdatedAt: new Date().toISOString(),
   }
 }
