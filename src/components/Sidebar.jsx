@@ -1,6 +1,7 @@
 import React from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
+import { PROJECT_NAME, SRD_VERSION_LABEL } from '../data/srd'
 
 const SwordIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
@@ -56,16 +57,14 @@ export default function Sidebar() {
     <aside className="w-64 min-h-screen flex flex-col border-r border-gold-700/20"
       style={{ background: 'linear-gradient(180deg, #0d0d0d 0%, #0a0a0a 100%)' }}>
 
-      {/* Logo */}
       <div className="px-6 py-8 border-b border-gold-700/20">
         <h1 className="font-display text-xl text-gold-500 leading-tight"
           style={{ textShadow: '0 0 20px rgba(212,160,23,0.5)' }}>
-          Dungeon<br />Master AI
+          Dungeons<br />& Daggers
         </h1>
-        <p className="font-body text-xs text-stone-600 mt-1 italic">AD&D Solo-Abenteuer</p>
+        <p className="font-body text-xs text-stone-600 mt-1 italic">{SRD_VERSION_LABEL} Solo-Abenteuer</p>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
         {navItems.map(({ to, label, icon: Icon, end }) => (
           <NavLink
@@ -83,7 +82,6 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Status Panel */}
       <div className="px-4 pb-6 flex flex-col gap-3">
         <div className="divider-gold" />
 
@@ -92,7 +90,6 @@ export default function Sidebar() {
             <p className="section-subtitle mb-1">Aktiver Charakter</p>
             <p className="font-heading text-sm text-parchment">{character.name}</p>
             <p className="font-body text-xs text-stone-500">{character.race} {character.class} · Stufe {character.level || 1}</p>
-            {/* HP Bar */}
             <div className="mt-2">
               <div className="flex justify-between text-xs text-stone-500 mb-1">
                 <span>HP</span>
@@ -118,6 +115,12 @@ export default function Sidebar() {
             <p className="font-body text-xs text-stone-400 truncate">{adventure.title}</p>
           </div>
         )}
+
+        <div className="panel px-3 py-2">
+          <p className="section-subtitle mb-0.5">System</p>
+          <p className="font-body text-xs text-stone-400">{PROJECT_NAME}</p>
+          <p className="font-body text-[11px] text-stone-500">{SRD_VERSION_LABEL}</p>
+        </div>
       </div>
     </aside>
   )

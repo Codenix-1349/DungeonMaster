@@ -15,30 +15,32 @@ export default function CombatTracker({ onCombatAction }) {
   }, [])
 
   const rollInitiative = useCallback(() => {
-    const roll = rollDie(10)
-    const dexMod = character ? Math.floor((character.attributes?.dex - 10) / 2) : 0
-    const total = Math.max(1, roll - dexMod)
+    const roll = rollDie(20)
+    const dexMod = character ? getModifier(character.attributes?.dex || 10) : 0
+    const total = roll + dexMod
     setPlayerInitiative(total)
     setCombat(prev => ({ ...prev, playerInitiative: total, phase: 'action' }))
-    addLog(`Initiative gewürfelt: ${roll} (${dexMod >= 0 ? '-' : '+'}${Math.abs(dexMod)}) = ${total}`)
-    if (onCombatAction) onCombatAction(`Initiative-Wurf: ${total}`)
-  }, [character, setCombat, addLog, onCombatAction])
+    addLog(`Initiative gewürfelt: ${roll} ${dexMod >= 0 ? '+' : '-'} ${Math.abs(dexMod)} = ${total}`)
+    if (onCombatAction) onCombatAction(`Initiative-Wurf: ${total} (d20 ${dexMod >= 0 ? '+' : '-'} ${Math.abs(dexMod)})`)
+  }, [character, getModifier, setCombat, addLog, onCombatAction])
 
   const rollAttack = useCallback(() => {
     if (!character) return
     const roll = rollDie(20)
-    const thac0 = character.thac0 || 20
-    const strMod = getModifier(character.attributes?.str || 10)
+    const abilityMod = getModifier(character.attributes?.str || 10)
+    const proficiencyBonus = character.proficiencyBonus || 2
+    const attackBonus = Number(character.attackBonus ?? abilityMod + proficiencyBonus)
+    const total = roll + attackBonus
     const isCrit = roll === 20
     const isFumble = roll === 1
 
-    addLog(`Angriffswurf: ${roll}${isCrit ? ' ⚡KRITISCH!' : isFumble ? ' 💀PATZER!' : ''}`)
+    addLog(`Angriffswurf: ${roll}${isCrit ? ' ⚡KRITISCH!' : isFumble ? ' 💀PATZER!' : ` + ${attackBonus} = ${total}`}`)
 
     const message = isCrit
-      ? `Kritischer Treffer! Angriffswurf: 20 (THAC0: ${thac0})`
+      ? `Kritischer Treffer! Natürliche 20 beim Angriff.`
       : isFumble
-      ? `Patzer! Angriffswurf: 1 - Angriff misslingt kläglich!`
-      : `Angriffswurf: ${roll} (THAC0: ${thac0}, STR-Mod: ${strMod >= 0 ? '+' : ''}${strMod})`
+      ? 'Patzer! Natürliche 1 beim Angriff.'
+      : `Angriffswurf: ${total} (d20: ${roll}, Angriffsbonus: ${attackBonus >= 0 ? '+' : ''}${attackBonus})`
 
     if (onCombatAction) onCombatAction(message)
   }, [character, getModifier, addLog, onCombatAction])
@@ -63,7 +65,7 @@ export default function CombatTracker({ onCombatAction }) {
     setCombat(prev => ({ ...prev, round: (prev.round || 1) + 1, phase: 'action' }))
     setPlayerInitiative(null)
     addLog(`--- Runde ${(combat?.round || 1) + 1} beginnt ---`)
-    if (onCombatAction) onCombatAction(`Neue Kampfrunde beginnt.`)
+    if (onCombatAction) onCombatAction('Neue Kampfrunde beginnt.')
   }, [setCombat, combat, addLog, onCombatAction])
 
   const handleEndCombat = useCallback(() => {
@@ -74,7 +76,7 @@ export default function CombatTracker({ onCombatAction }) {
 
   const takeDamage = useCallback((amount) => {
     if (!character) return
-    const newHP = (character.currentHP ?? character.maxHP) - amount
+    const newHP = Math.max(0, (character.currentHP ?? character.maxHP) - amount)
     updateCharacterHP(newHP)
     addLog(`${character.name} erleidet ${amount} Schaden (HP: ${newHP}/${character.maxHP})`)
     if (onCombatAction) onCombatAction(`${character.name} erleidet ${amount} Schaden und hat noch ${newHP} HP.`)
@@ -87,7 +89,6 @@ export default function CombatTracker({ onCombatAction }) {
 
   return (
     <div className="panel-gold p-4 animate-slide-in">
-      {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="text-red-500 animate-pulse text-lg">⚔️</span>
@@ -99,7 +100,6 @@ export default function CombatTracker({ onCombatAction }) {
 
       <div className="divider-gold" />
 
-      {/* HP Tracker */}
       {character && (
         <div className="mb-3">
           <div className="flex justify-between text-xs mb-1">
@@ -127,11 +127,10 @@ export default function CombatTracker({ onCombatAction }) {
 
       <div className="divider-gold" />
 
-      {/* Actions */}
       <div className="grid grid-cols-2 gap-2 mb-3">
         {combat.phase === 'initiative' && (
           <button onClick={rollInitiative} className="btn-primary col-span-2">
-            🎲 Initiative würfeln (d10)
+            🎲 Initiative würfeln (d20)
           </button>
         )}
         <button onClick={rollAttack} className="btn-primary">⚔️ Angriff (d20)</button>
@@ -140,18 +139,22 @@ export default function CombatTracker({ onCombatAction }) {
         <button onClick={nextRound} className="btn-ghost">Nächste Runde</button>
       </div>
 
-      {/* Saving Throws */}
       <div className="mb-3">
         <p className="section-subtitle mb-2">Rettungswürfe</p>
         <div className="flex flex-wrap gap-1.5">
-          {['Paralyse', 'Gift', 'Stab', 'Stein', 'Atem', 'Zauber'].map(s => (
+          {['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].map(s => (
             <button key={s} onClick={() => rollSave(s)}
               className="btn-ghost text-xs px-2 py-1">{s}</button>
           ))}
         </div>
       </div>
 
-      {/* Mini Log */}
+      {playerInitiative !== null && (
+        <div className="mb-3 font-body text-xs text-stone-500">
+          Deine aktuelle Initiative: <span className="text-gold-400">{playerInitiative}</span>
+        </div>
+      )}
+
       {actionLog.length > 0 && (
         <div className="bg-dungeon-300/50 rounded border border-stone-800 p-2 max-h-28 overflow-y-auto">
           {actionLog.slice().reverse().map(entry => (

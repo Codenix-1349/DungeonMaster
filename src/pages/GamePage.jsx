@@ -35,7 +35,7 @@ function MessageBubble({ msg }) {
           {isUser ? '🧑‍🎲 DU' : '🗡️ DUNGEONS & DAGGERS'}
         </span>
       </div>
-      <div className={isUser ? 'chat-user ml-auto' : 'chat-dm'}>
+      <div className={isUser ? 'chat-player ml-auto' : 'chat-dm'}>
         <p className="font-body text-base leading-relaxed whitespace-pre-wrap">{msg.content}</p>
       </div>
     </div>
