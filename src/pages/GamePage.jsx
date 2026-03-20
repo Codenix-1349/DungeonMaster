@@ -293,6 +293,9 @@ export default function GamePage() {
             <div className="panel p-3">
               <p className="section-subtitle mb-2">Szenenstatus</p>
               <p className="font-heading text-sm text-gold-400">{sceneState.currentSectionTitle}</p>
+              {sceneState.currentLocation && (
+                <p className="font-body text-xs text-stone-600 mt-1">Ort: {sceneState.currentLocation}</p>
+              )}
               <p className="font-body text-xs text-stone-500 italic mt-1">{sceneState.summary}</p>
               {sceneState.currentObjective && (
                 <div className="mt-3">
@@ -300,10 +303,36 @@ export default function GamePage() {
                   <p className="font-body text-xs text-stone-400">{sceneState.currentObjective}</p>
                 </div>
               )}
+              {sceneState.activeQuest && (
+                <div className="mt-3">
+                  <p className="section-subtitle mb-1">Aktiver Faden</p>
+                  <p className="font-body text-xs text-stone-400">{sceneState.activeQuest}</p>
+                </div>
+              )}
               {sceneState.lastPlayerAction && (
                 <div className="mt-3">
                   <p className="section-subtitle mb-1">Letzte Aktion</p>
                   <p className="font-body text-xs text-stone-400">{sceneState.lastPlayerAction}</p>
+                </div>
+              )}
+              {sceneState.discoveredClues?.length > 0 && (
+                <div className="mt-3">
+                  <p className="section-subtitle mb-1">Hinweise</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {sceneState.discoveredClues.map(item => (
+                      <span key={item} className="badge-gold text-[11px]">{item}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {sceneState.openThreads?.length > 0 && (
+                <div className="mt-3">
+                  <p className="section-subtitle mb-1">Offene Fäden</p>
+                  <ul className="space-y-1">
+                    {sceneState.openThreads.map(item => (
+                      <li key={item} className="font-body text-xs text-stone-400">• {item}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
               {sceneState.notableElements?.length > 0 && (

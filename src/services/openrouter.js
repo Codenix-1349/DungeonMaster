@@ -252,12 +252,25 @@ function buildSceneContextText(sceneState) {
     ? sceneState.notableElements.join(', ')
     : '—'
 
+  const clues = Array.isArray(sceneState.discoveredClues) && sceneState.discoveredClues.length > 0
+    ? sceneState.discoveredClues.join(' | ')
+    : '—'
+
+  const threads = Array.isArray(sceneState.openThreads) && sceneState.openThreads.length > 0
+    ? sceneState.openThreads.join(' | ')
+    : '—'
+
   return `## Lokaler Szenenstatus
 - Aktueller Abschnitt: ${sceneState.currentSectionTitle || 'Unbekannt'}
+- Aktueller Ort: ${sceneState.currentLocation || sceneState.currentSectionTitle || 'Unbekannt'}
 - Szenenzusammenfassung: ${sceneState.summary || 'Noch keine Zusammenfassung vorhanden.'}
 - Aktuelles Ziel: ${sceneState.currentObjective || 'Noch kein konkretes Ziel.'}
+- Aktiver Handlungsfaden: ${sceneState.activeQuest || 'Noch kein Handlungsfaden.'}
 - Letzte Spieleraktion: ${sceneState.lastPlayerAction || 'Noch keine Aktion.'}
 - Letzte Entwicklung: ${sceneState.lastOutcome || 'Noch keine Entwicklung.'}
+- Letzter Szenenwechsel: ${sceneState.lastTransitionReason || 'Noch kein Wechsel.'}
+- Offene Fäden: ${threads}
+- Wichtige Hinweise: ${clues}
 - Relevante Elemente: ${notable}`
 }
 
