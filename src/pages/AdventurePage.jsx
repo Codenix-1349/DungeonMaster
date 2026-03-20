@@ -1,11 +1,10 @@
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useCallback, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
 
 async function extractTextFromPDF(file) {
-  // Dynamic import of pdfjs-dist
   const pdfjsLib = await import('pdfjs-dist')
 
-  // Set worker source - use CDN to avoid bundling issues
   if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
   }
@@ -34,7 +33,8 @@ async function extractTextFromTXT(file) {
 }
 
 export default function AdventurePage() {
-  const { adventures, setAdventures, adventure, setAdventure } = useGame()
+  const navigate = useNavigate()
+  const { adventures, setAdventures, adventure, setAdventure, characters } = useGame()
   const [dragOver, setDragOver] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [processMsg, setProcessMsg] = useState('')
@@ -66,10 +66,10 @@ export default function AdventurePage() {
         id: Date.now().toString(),
         title,
         filename: file.name,
-        text: text.substring(0, 50000), // limit to 50k chars
+        text: text.substring(0, 50000),
         addedAt: new Date().toISOString(),
         pages: name.endsWith('.pdf') ? 'PDF' : 'TXT',
-        charCount: text.length
+        charCount: text.length,
       }
 
       setAdventures(prev => {
@@ -106,13 +106,19 @@ export default function AdventurePage() {
   }, [setAdventures, adventure, setAdventure])
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <div className="mb-8">
-        <h1 className="section-title text-3xl mb-2">Abenteuer-Module</h1>
-        <p className="font-body text-stone-500 italic">Lade Abenteuermodule als PDF oder TXT hoch</p>
+    <div className="max-w-4xl mx-auto">
+      <div className="mb-8 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 className="section-title text-3xl mb-2">Abenteuer-Module</h1>
+          <p className="font-body text-stone-500 italic">Lade Abenteuermodule als PDF oder TXT hoch und wähle gezielt, welches Modul die nächste Session starten soll.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="badge-gold">{adventures.length === 1 ? '1 Modul' : `${adventures.length} Module`}</span>
+          <span className="badge-gold">{characters.length === 1 ? '1 Held verfügbar' : `${characters.length} Helden verfügbar`}</span>
+          <button onClick={() => navigate('/game')} className="btn-primary">Zur Session-Auswahl</button>
+        </div>
       </div>
 
-      {/* Upload Zone */}
       <div
         className={`border-2 border-dashed rounded-lg p-12 text-center mb-8 transition-all duration-300 cursor-pointer ${
           dragOver
@@ -155,19 +161,22 @@ export default function AdventurePage() {
         </div>
       )}
 
-      {/* Active Adventure */}
       {adventure && (
-        <div className="panel-gold p-4 mb-6 flex items-center gap-3">
-          <span className="text-2xl">⚔️</span>
-          <div className="flex-1">
-            <p className="section-subtitle">Aktives Abenteuer</p>
-            <p className="font-heading text-parchment">{adventure.title}</p>
+        <div className="panel-gold p-4 mb-6 flex flex-col md:flex-row md:items-center gap-3">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <span className="text-2xl">⚔️</span>
+            <div className="min-w-0">
+              <p className="section-subtitle">Aktives Abenteuer</p>
+              <p className="font-heading text-parchment truncate">{adventure.title}</p>
+            </div>
           </div>
-          <button onClick={() => setAdventure(null)} className="btn-ghost text-xs">Abwählen</button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => navigate('/game')} className="btn-primary text-xs">Mit Held starten</button>
+            <button onClick={() => setAdventure(null)} className="btn-ghost text-xs">Abwählen</button>
+          </div>
         </div>
       )}
 
-      {/* Library */}
       <div>
         <h2 className="font-heading text-lg text-gold-600 tracking-wide mb-4">
           Bibliothek {adventures.length > 0 && <span className="text-stone-600">({adventures.length})</span>}
@@ -177,22 +186,24 @@ export default function AdventurePage() {
           <div className="panel p-8 text-center">
             <p className="font-body text-stone-500 italic">Noch keine Abenteuer geladen.</p>
             <p className="font-body text-xs text-stone-600 mt-1">
-              Lade ein PDF- oder TXT-Abenteuermodul hoch um zu beginnen.
+              Lade ein PDF- oder TXT-Abenteuermodul hoch, um es später gezielt mit einem Helden zu starten.
             </p>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
             {adventures.map(adv => (
-              <div key={adv.id}
-                className={`panel p-4 flex items-center gap-4 transition-all duration-200 ${
+              <div
+                key={adv.id}
+                className={`panel p-4 flex flex-col md:flex-row md:items-center gap-4 transition-all duration-200 ${
                   adventure?.id === adv.id ? 'border-gold-600/50' : ''
-                }`}>
+                }`}
+              >
                 <div className="text-2xl">
                   {adv.pages === 'PDF' ? '📕' : '📄'}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-heading text-parchment text-sm leading-tight mb-0.5">{adv.title}</p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="badge-gold">{adv.pages}</span>
                     <span className="font-body text-xs text-stone-600">
                       {(adv.charCount || 0).toLocaleString()} Zeichen
@@ -202,7 +213,7 @@ export default function AdventurePage() {
                     </span>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {adventure?.id !== adv.id ? (
                     <button onClick={() => selectAdventure(adv)} className="btn-primary text-xs px-3 py-1.5">
                       Auswählen
@@ -210,6 +221,9 @@ export default function AdventurePage() {
                   ) : (
                     <span className="badge-green">● Aktiv</span>
                   )}
+                  <button onClick={() => navigate('/game')} className="btn-ghost text-xs px-3 py-1.5">
+                    Zur Session
+                  </button>
                   <button
                     onClick={() => deleteAdventure(adv.id)}
                     className="btn-danger text-xs px-3 py-1.5"
