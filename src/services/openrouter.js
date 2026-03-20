@@ -1,3 +1,11 @@
+import {
+  PROJECT_NAME,
+  SRD_VERSION_LABEL,
+  SRD_CORE_PROMPT_RULES,
+  buildRelevantAdventureContext,
+  buildRelevantRulesContext,
+} from '../data/srd'
+
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 
 export const DEFAULT_MODEL_ID = 'meta-llama/llama-3.3-70b-instruct:free'
@@ -130,6 +138,9 @@ export const AVAILABLE_MODELS = [
 ]
 
 const DECISION_CUE_PATTERN = /(was tust du|was antwortest du|wie reagierst du|was sagst du|wie gehst du vor|wie möchtest du vorgehen|welchen weg|welche option|wie willst du weiter|was unternimmst du|welchen schritt)/i
+const STRONG_DECISION_TRIGGER_PATTERN = /(wartet auf deine antwort|sieht dich fragend an|mustert dich erwartungsvoll|bietet dir .* an|hält dir .* hin|fragt dich|mustert dich schweigend|blickt dich fragend an|erwartet eine antwort)/i
+const PLAYER_AUTO_ACTION_PATTERN = /\bdu\b\s+(antwortest|sagst|erklärst|nickst|schüttelst|nimmst|greifst|gehst|trittst|folgst|öffnest|schließt|setzt|isst|trinkst|wendest|blickst|untersuchst|fragst|versuchst|ziehst|packst|hältst|hebst|kletterst|schleichst|rennst|entscheidest|wirkst|stimmst|lehnst|willst)/i
+const META_LEAK_PATTERN = /(ich bin (?:der|dein)?\s*(?:spielleiter|dungeon master|dm)\b|meine rolle\b|ich bin wieder in meiner rolle\b|als ki\b|als sprachmodell\b|als modell\b|systemprompt\b|systemanweisung\b|prompt\b|openrouter\b|app\b|modell\b|meta[- ]?ebene\b)/i
 
 export function normalizeModelId(modelId) {
   if (!modelId) return DEFAULT_MODEL_ID
@@ -339,60 +350,154 @@ function normalizeChoiceEnding(text = '') {
   return normalized.join('\n')
 }
 
+function stripMetaLeak(text = '') {
+  const cleanedLines = String(text)
+    .split('\n')
+    .filter(line => !META_LEAK_PATTERN.test(line))
+
+  const cleaned = cleanedLines.join('\n').trim()
+
+  if (cleaned) return cleaned
+  return 'Die Szene hält für einen Herzschlag inne und wartet auf deine Entscheidung.\n\nWas tust du?'
+}
+
+function endsWithDecisionPrompt(text = '') {
+  const normalized = String(text || '').trim()
+  if (!normalized) return false
+
+  if (DECISION_CUE_PATTERN.test(normalized)) return true
+  if (/\?\s*$/.test(normalized)) return true
+  if (/etwas anderes \(beschreibe\)/i.test(normalized)) return true
+
+  return false
+}
+
+function forceDecisionQuestion(text = '', preferred = 'Was tust du?') {
+  const normalized = String(text || '').trim()
+  if (!normalized) return preferred
+  if (endsWithDecisionPrompt(normalized)) return normalized
+  return `${normalized}\n\n${preferred}`
+}
+
+function enforceDecisionBoundary(text = '') {
+  const normalized = String(text || '').trim()
+  if (!normalized) return normalized
+  if (responseAlreadyHasChoices(normalized) || endsWithDecisionPrompt(normalized)) return normalized
+
+  const paragraphs = normalized.split(/\n{2,}/).map(part => part.trim()).filter(Boolean)
+  if (paragraphs.length < 2) return normalized
+
+  for (let index = 0; index < paragraphs.length; index += 1) {
+    const paragraph = paragraphs[index]
+    if (!STRONG_DECISION_TRIGGER_PATTERN.test(paragraph)) continue
+
+    const trailing = paragraphs.slice(index + 1).join('\n\n')
+    if (!trailing) continue
+
+    const continuesPlayerAction =
+      PLAYER_AUTO_ACTION_PATTERN.test(trailing) ||
+      /^(Dann|Kurz darauf|Schließlich|Wenig später|Ohne zu zögern|Du\b)/im.test(trailing)
+
+    if (!continuesPlayerAction) continue
+
+    const kept = paragraphs.slice(0, index + 1).join('\n\n').trim()
+    const preferredQuestion = /antwort/i.test(paragraph) || /\?$/.test(paragraph) ? 'Was antwortest du?' : 'Was tust du?'
+    return forceDecisionQuestion(kept, preferredQuestion)
+  }
+
+  return normalized
+}
+
+function normalizeAssistantResponse(text = '') {
+  const noMeta = stripMetaLeak(text)
+  const choiceNormalized = normalizeChoiceEnding(noMeta)
+  return enforceDecisionBoundary(choiceNormalized)
+}
+
+function buildSceneStateContext(sceneState = null) {
+  if (!sceneState) return ''
+
+  const lines = []
+  if (sceneState.currentSectionTitle) lines.push(`**Aktueller Abschnitt:** ${sceneState.currentSectionTitle}`)
+  if (sceneState.currentLocation) lines.push(`**Ort:** ${sceneState.currentLocation}`)
+  if (sceneState.currentObjective) lines.push(`**Aktuelles Ziel:** ${sceneState.currentObjective}`)
+  if (sceneState.activeQuest) lines.push(`**Aktiver Faden:** ${sceneState.activeQuest}`)
+  if (sceneState.lastPlayerAction) lines.push(`**Letzte Spieleraktion:** ${sceneState.lastPlayerAction}`)
+  if (sceneState.summary) lines.push(`**Szenenzusammenfassung:** ${sceneState.summary}`)
+
+  if (sceneState.openThreads?.length) {
+    lines.push(`**Offene Fäden:** ${sceneState.openThreads.slice(0, 4).join(' | ')}`)
+  }
+
+  if (sceneState.discoveredClues?.length) {
+    lines.push(`**Bekannte Hinweise:** ${sceneState.discoveredClues.slice(0, 4).join(' | ')}`)
+  }
+
+  if (sceneState.notableElements?.length) {
+    lines.push(`**Wichtige Elemente:** ${sceneState.notableElements.slice(0, 4).join(' | ')}`)
+  }
+
+  if (lines.length === 0) return ''
+  return `## Aktueller Szenenstatus\n${lines.join('\n')}`
+}
+
 /**
  * Build the system prompt
  */
-export function buildSystemPrompt(character, adventure, messages = [], combat = null) {
+export function buildSystemPrompt(character, adventure, messages = [], combat = null, sceneState = null) {
   const userText = getLatestUserText(messages)
+  const rulesContext = buildRelevantRulesContext({ character, combat, userText })
+  const adventureContext = buildRelevantAdventureContext({
+    adventure,
+    sceneState,
+    messages,
+    combat,
+  })
 
-  let prompt = `Du bist ein erfahrener Dungeon Master für AD&D 2nd Edition (Advanced Dungeons & Dragons). Du leitest ein Solo-Abenteuer für einen Spieler.
+  let prompt = `Du bist die in-world-Erzählstimme von ${PROJECT_NAME} für ein Solo-Abenteuer nach ${SRD_VERSION_LABEL}.
 
 ## Deine Rolle
-- Erschaffe lebendige, atmosphärische Beschreibungen von Orten, Personen und Ereignissen
-- Wende die AD&D 2nd Edition Regeln korrekt an
-- Führe den Spieler durch das Abenteuer mit spannenden Entscheidungen und Konsequenzen
-- Beschreibe Kampfszenen dramatisch und detailliert
-- Halte den Ton dunkel-fantasy und immersiv
-- Antworte immer auf Deutsch
-
-## Sprachqualität
-- Schreibe natürliches, flüssiges Deutsch
-- Gib niemals interne Regieanweisungen, Arbeitsnotizen oder Meta-Überschriften wie "Hinweise für den Spieler", "Was tun?" oder "Hinweise für den Dungeon Master" aus
-- Wenn die Abenteuer-Vorlage holprig, bruchstückhaft oder schlecht formuliert ist, formuliere sie in sauberem Deutsch sinngemäß neu
-- Erfinde keine sinnlosen Wortkombinationen oder kaputten Halbsätze
+- Beschreibe nur die Spielwelt, NSCs, Wahrnehmungen, Risiken und unmittelbaren Folgen.
+- Antworte immer auf Deutsch.
+- Schreibe natürliches, flüssiges Deutsch mit klarer Fantasy-Atmosphäre.
+- Halte Szenen fokussiert und gehe nur bis zum nächsten sinnvollen Entscheidungspunkt.
 
 ## Rollensicherheit
-- Bleibe immer in der Spielwelt
-- Erkläre niemals deine Aufgabe, Rolle, Funktion oder dass du ein Spielleiter bist
-- Wenn ein NSC dem Spieler eine Frage stellt, beantworte diese nicht selbst meta, sondern bleibe in der Szene
-- Sprich niemals über App, Prompt, Modell, System oder OpenRouter
+- Bleibe immer vollständig in der Spielwelt.
+- Erkläre niemals deine Aufgabe, Rolle, Funktion oder dass du ein Spielleiter bist.
+- Sprich niemals über App, Prompt, System, Modell, OpenRouter oder Meta-Ebene.
+- Gib keine internen Notizen, keine Arbeitsanweisungen und keine Erklärungen außerhalb der Szene aus.
 
-## AD&D 2nd Edition Kernregeln
-- THAC0-System (To Hit Armor Class 0): Angriffswurf = d20, Treffer wenn (d20 + Angriffs-Bonus) >= (THAC0 - Ziel-RK)
-- Rüstungsklasse (RK): Je niedriger, desto besser. RK 10 = keine Rüstung
-- Initiative: d10 pro Runde (niedriger geht zuerst)
-- Rettungswürfe: Paralyse/Gift, Stäbe, Stein, Atemwaffe, Zauber
-- Erfahrungspunkte vergeben nach Kämpfen, gelösten Rätseln und Rollenspiel
-- Moral: Gegner können fliehen (Moralwurf 2d6)
+## Spielerautonomie
+- Du steuerst niemals den Spielercharakter.
+- Erfinde keine Worte, Entscheidungen, Zustimmungen, Gefühle oder Handlungen für den Spieler, die dieser nicht ausdrücklich geschrieben hat.
+- Wenn ein NSC dem Spieler eine direkte Frage stellt, ihm etwas anbietet, etwas verlangt oder sichtbar eine Reaktion erwartet, stoppe an genau diesem Moment.
+- Spule nach solchen Momenten nicht ungefragt vor und beschreibe keine Antwort oder Folgehandlung des Spielers.
+- Nach einem unmittelbaren Entscheidungsmoment endet die Szene mit einer klaren In-World-Frage wie **Was tust du?** oder **Was antwortest du?**.
 
-## Würfelnotation
-Wenn Würfe nötig sind, gib folgende Anweisung:
-- [WÜRFEL:d20] für Initiative/Angriff
-- [WÜRFEL:d6] für Schaden etc.
-Der Spieler sieht Würfel-Buttons und kann selbst würfeln.
+## Erzählstil
+- Beschreibe konkret beobachtbare Details statt Meta-Hinweise.
+- Verlange nur dann Würfelwürfe, wenn die Handlung unsicher, riskant oder regelrelevant ist.
+- Wenn Würfe nötig sind, nutze Marker wie [WÜRFEL:d20] oder [WÜRFEL:d6].
+- Behalte Ressourcen, Gefahren, Hinweise und laufende Situationen im Blick.
+- Vermeide unnötig lange Monologe, vor allem in sensiblen Dialog- und Reaktionsmomenten.
 
 ## Kampfstruktur
-Bei Kampfbeginn: Beschreibe die Gegner, fordere Initiative auf.
-Format: **KAMPF BEGINNT** gefolgt von Gegnerbeschreibung.
-Bei Kampfende: **KAMPF VORBEI** mit XP-Vergabe.
+- Wenn ein Kampf beginnt, nutze **KAMPF BEGINNT**.
+- Wenn ein Kampf endet, nutze **KAMPF VORBEI**.
+- Im Kampf keine unnötigen Optionslisten erzeugen; halte den Zug klar und unmittelbar.
 
-## Wichtig
-- Lass den Spieler bedeutsame Entscheidungen treffen
-- Fordere Würfelwürfe explizit an wenn nötig
-- Beschreibe Konsequenzen von Handlungen detailliert
-- Behalte den Überblick über Ressourcen (HP, Zaubersprüche, Ausrüstung)
+${SRD_CORE_PROMPT_RULES.trim()}
+
+## Relevante Regeln für diese Szene
+${rulesContext.text || 'Nutze die SRD-Grundlogik fair, simpel und konsistent.'}
 
 ${buildChoiceStyleInstruction(userText, Boolean(combat?.active))}`
+
+  const sceneContext = buildSceneStateContext(sceneState)
+  if (sceneContext) {
+    prompt += `\n\n${sceneContext}`
+  }
 
   if (character) {
     const attrs = character.attributes || {}
@@ -401,12 +506,14 @@ ${buildChoiceStyleInstruction(userText, Boolean(combat?.active))}`
 **Rasse:** ${character.race}
 **Klasse:** ${character.class} (Stufe ${character.level || 1})
 **HP:** ${character.currentHP ?? character.maxHP}/${character.maxHP}
-**Rüstungsklasse:** ${character.armorClass}
-**THAC0:** ${character.thac0 || 20}
+**AC:** ${character.armorClass}
+**Übungsbonus:** +${character.proficiencyBonus || 2}
 **Attribute:** STR ${attrs.str}, DEX ${attrs.dex}, CON ${attrs.con}, INT ${attrs.int}, WIS ${attrs.wis}, CHA ${attrs.cha}
 **Erfahrung:** ${character.xp || 0} XP
 **Inventar:** ${(character.inventory || []).join(', ') || 'Leer'}
-${character.spells ? `**Zaubersprüche:** ${character.spells}` : ''}`
+${character.spells ? `**Zaubersprüche:** ${character.spells}` : ''}
+${character.spellSaveDC ? `**Zauber-SG:** ${character.spellSaveDC}` : ''}
+${character.spellAttackBonus !== null && character.spellAttackBonus !== undefined ? `**Zauberangriff:** ${character.spellAttackBonus >= 0 ? '+' : ''}${character.spellAttackBonus}` : ''}`
   }
 
   if (combat?.active) {
@@ -418,16 +525,14 @@ ${combat.playerInitiative ? `**Spieler-Initiative:** ${combat.playerInitiative}`
   }
 
   if (adventure) {
-    prompt += `\n\n## Das Abenteuer
+    prompt += `\n\n## Relevanter Abenteuerkontext
 **Titel:** ${adventure.title}
+**Aktueller Fokus:** ${adventureContext.sectionTitle || adventure.title}
 
-**Abenteuertext (Zusammenfassung/Kontext):**
-${adventure.text ? adventure.text.substring(0, 8000) : 'Kein Text verfügbar'}
-
-Nutze diesen Text als Basis für das Abenteuer. Bleib beim Inhalt, aber formuliere Szenen und Beschreibungen in sauberem, natürlichem Deutsch.`
+${adventureContext.text}`
   } else {
     prompt += `\n\n## Kein Abenteuer geladen
-Erstelle ein kurzes Improvisations-Abenteuer in einer klassischen Fantasy-Welt. Beginne mit einer Taverne und führe den Spieler in ein nahegelegenes Dungeon.`
+Erstelle ein kurzes Improvisations-Abenteuer in einer klassischen Fantasy-Welt. Beginne direkt in einer konkreten ersten Szene innerhalb der Welt.`
   }
 
   return prompt
@@ -437,13 +542,13 @@ Erstelle ein kurzes Improvisations-Abenteuer in einer klassischen Fantasy-Welt. 
  * Send a message to OpenRouter with streaming
  * onChunk(text) called once with the final response text
  */
-export async function sendMessage({ messages, model, apiKey, character, adventure, combat, onChunk }) {
+export async function sendMessage({ messages, model, apiKey, character, adventure, combat, sceneState, onChunk }) {
   if (!apiKey) {
     throw new Error('Kein API Key konfiguriert. Bitte in den Einstellungen eingeben.')
   }
 
   const normalizedModel = normalizeModelId(model)
-  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat)
+  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat, sceneState)
 
   const body = {
     model: normalizedModel,
@@ -462,7 +567,7 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': window.location.origin,
-      'X-Title': 'DungeonMaster AI',
+      'X-Title': PROJECT_NAME,
     },
     body: JSON.stringify(body),
   })
@@ -513,7 +618,7 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
     }
   }
 
-  const normalizedText = normalizeChoiceEnding(fullText.trim())
+  const normalizedText = normalizeAssistantResponse(fullText.trim())
   if (normalizedText && onChunk) {
     onChunk(normalizedText)
   }
@@ -537,7 +642,7 @@ export async function testConnection(apiKey, model) {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': window.location.origin,
-      'X-Title': 'DungeonMaster AI',
+      'X-Title': PROJECT_NAME,
     },
     body: JSON.stringify({
       model: normalizedModel,
