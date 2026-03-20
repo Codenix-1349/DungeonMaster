@@ -32,7 +32,7 @@ function MessageBubble({ msg }) {
       <div className="flex items-center gap-2 mb-1">
         <span className="font-heading text-xs tracking-wider">
           {isDM
-            ? <span className="text-gold-600">⚔ DUNGEON MASTER</span>
+            ? <span className="text-gold-600">⚔ DUNGEON & Daggers</span>
             : <span className="text-stone-500">▶ Spieler</span>}
         </span>
         <span className="font-body text-xs text-stone-700">

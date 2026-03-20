@@ -109,7 +109,7 @@ export default function AdventurePage() {
     <div className="max-w-3xl mx-auto">
       <div className="mb-8">
         <h1 className="section-title text-3xl mb-2">Abenteuer-Module</h1>
-        <p className="font-body text-stone-500 italic">Lade AD&D Abenteuermodule als PDF oder TXT hoch</p>
+        <p className="font-body text-stone-500 italic">Lade Abenteuermodule als PDF oder TXT hoch</p>
       </div>
 
       {/* Upload Zone */}

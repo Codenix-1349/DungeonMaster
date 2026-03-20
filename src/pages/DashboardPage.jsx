@@ -22,10 +22,10 @@ export default function DashboardPage() {
             style={{ background: 'radial-gradient(ellipse, rgba(212,160,23,0.6) 0%, transparent 70%)' }} />
           <h1 className="font-display text-5xl lg:text-6xl text-gold-400 relative leading-tight mb-2"
             style={{ textShadow: '0 0 30px rgba(212,160,23,0.5), 0 2px 4px rgba(0,0,0,0.8)' }}>
-            DungeonMaster
+            Dungeon & Daggers
           </h1>
           <p className="font-heading text-lg text-gold-700 tracking-widest uppercase relative">
-            AI · AD&D 2nd Edition
+            AI · 
           </p>
         </div>
 
