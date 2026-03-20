@@ -2,6 +2,7 @@ import {
   PROJECT_NAME,
   SRD_CORE_PROMPT_RULES,
   SRD_VERSION_LABEL,
+  buildRelevantAdventureContext,
   buildRelevantRulesContext,
 } from '../data/srd'
 
@@ -152,15 +153,10 @@ export function isPaidModel(modelId) {
 
 export async function fetchModelCatalog(apiKey = '') {
   const headers = {}
-  if (apiKey) {
-    headers.Authorization = `Bearer ${apiKey}`
-  }
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`
 
   const response = await fetch(`${OPENROUTER_BASE}/models`, { headers })
-
-  if (!response.ok) {
-    throw new Error(`Modellkatalog konnte nicht geladen werden (${response.status}).`)
-  }
+  if (!response.ok) throw new Error(`Modellkatalog konnte nicht geladen werden (${response.status}).`)
 
   const data = await response.json()
   return Array.isArray(data?.data) ? data.data : []
@@ -173,7 +169,6 @@ export function getCatalogModel(catalog, modelId) {
 
 function formatPricePerMillion(rawValue) {
   const pricePerToken = Number(rawValue)
-
   if (!Number.isFinite(pricePerToken)) return null
   const pricePerMillion = pricePerToken * 1_000_000
 
@@ -221,45 +216,22 @@ export function getModelPricingDisplay(catalog, modelId) {
 }
 
 function buildFriendlyErrorMessage(status, apiMessage = '') {
-  if (status === 401) {
-    return 'Ungültiger API Key. Bitte prüfe den OpenRouter-Key in den Einstellungen.'
-  }
-
-  if (status === 402) {
-    return 'OpenRouter meldet unzureichende Credits oder keine ausreichende Free-Allowance mehr.'
-  }
-
-  if (status === 429) {
-    return 'OpenRouter Rate-Limit erreicht (HTTP 429). Bitte kurz warten und erneut versuchen.'
-  }
-
-  if (status === 503) {
-    return 'Kein verfügbarer Provider für dieses Modell. Bitte später erneut versuchen oder ein anderes Modell wählen.'
-  }
-
-  if (status === 404) {
-    return 'Dieses Modell wurde von OpenRouter nicht gefunden. Bitte ein anderes Modell auswählen.'
-  }
-
+  if (status === 401) return 'Ungültiger API Key. Bitte prüfe den OpenRouter-Key in den Einstellungen.'
+  if (status === 402) return 'OpenRouter meldet unzureichende Credits oder keine ausreichende Free-Allowance mehr.'
+  if (status === 429) return 'OpenRouter Rate-Limit erreicht (HTTP 429). Bitte kurz warten und erneut versuchen.'
+  if (status === 503) return 'Kein verfügbarer Provider für dieses Modell. Bitte später erneut versuchen oder ein anderes Modell wählen.'
+  if (status === 404) return 'Dieses Modell wurde von OpenRouter nicht gefunden. Bitte ein anderes Modell auswählen.'
   return apiMessage || `API Fehler: ${status}`
 }
 
 async function extractError(response) {
   try {
     const text = await response.text()
-
-    if (!text) {
-      return buildFriendlyErrorMessage(response.status)
-    }
+    if (!text) return buildFriendlyErrorMessage(response.status)
 
     try {
       const json = JSON.parse(text)
-      const apiMessage =
-        json?.error?.message ||
-        json?.message ||
-        json?.detail ||
-        ''
-
+      const apiMessage = json?.error?.message || json?.message || json?.detail || ''
       return buildFriendlyErrorMessage(response.status, apiMessage)
     } catch {
       return buildFriendlyErrorMessage(response.status, text)
@@ -270,176 +242,29 @@ async function extractError(response) {
 }
 
 function getLatestUserText(messages = []) {
-  const reversed = [...messages].reverse()
-  const latestUserMessage = reversed.find(message => message.role === 'user' && typeof message.content === 'string')
-  return latestUserMessage?.content || ''
+  return [...messages].reverse().find(message => message.role === 'user' && typeof message.content === 'string')?.content || ''
 }
 
-function buildSearchTokenSet(text = '') {
-  const normalized = String(text || '')
-    .toLowerCase()
-    .replace(/[^a-zäöüß0-9\s-]/gi, ' ')
-    .split(/\s+/)
-    .map(token => token.trim())
-    .filter(token => token.length >= 3)
+function buildSceneContextText(sceneState) {
+  if (!sceneState) return ''
 
-  return [...new Set(normalized)]
+  const notable = Array.isArray(sceneState.notableElements) && sceneState.notableElements.length > 0
+    ? sceneState.notableElements.join(', ')
+    : '—'
+
+  return `## Lokaler Szenenstatus
+- Aktueller Abschnitt: ${sceneState.currentSectionTitle || 'Unbekannt'}
+- Szenenzusammenfassung: ${sceneState.summary || 'Noch keine Zusammenfassung vorhanden.'}
+- Aktuelles Ziel: ${sceneState.currentObjective || 'Noch kein konkretes Ziel.'}
+- Letzte Spieleraktion: ${sceneState.lastPlayerAction || 'Noch keine Aktion.'}
+- Letzte Entwicklung: ${sceneState.lastOutcome || 'Noch keine Entwicklung.'}
+- Relevante Elemente: ${notable}`
 }
 
-function splitAdventureIntoChunks(text = '') {
-  const normalized = String(text || '')
-    .replace(/\r/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-
-  if (!normalized) return []
-
-  const paragraphs = normalized
-    .split(/\n\n+/)
-    .map(paragraph => paragraph.trim())
-    .filter(Boolean)
-
-  const chunks = []
-  let current = ''
-
-  const flush = () => {
-    if (!current.trim()) return
-    chunks.push(current.trim())
-    current = ''
-  }
-
-  for (const paragraph of paragraphs) {
-    if ((current + '\n\n' + paragraph).trim().length <= 900) {
-      current = current ? `${current}\n\n${paragraph}` : paragraph
-      continue
-    }
-
-    flush()
-
-    if (paragraph.length <= 900) {
-      current = paragraph
-      continue
-    }
-
-    const sentences = paragraph.match(/[^.!?]+[.!?]?/g) || [paragraph]
-    for (const sentence of sentences) {
-      if ((current + ' ' + sentence).trim().length <= 900) {
-        current = current ? `${current} ${sentence.trim()}` : sentence.trim()
-      } else {
-        flush()
-        current = sentence.trim()
-      }
-    }
-  }
-
-  flush()
-
-  return chunks.map((chunk, index) => ({
-    index,
-    text: chunk,
-    lower: chunk.toLowerCase(),
-  }))
-}
-
-function getAdventureSearchContext(messages = [], combat = null) {
-  const recent = messages.slice(-6)
-  const joined = recent.map(message => message.content).join(' ')
-  const combatHint = combat?.active ? ' kampf gegner initiative schaden angriffe ' : ''
-  return `${joined} ${combatHint}`.trim()
-}
-
-function scoreAdventureChunk(chunk, tokens, isOpeningPhase) {
-  let score = 0
-
-  if (isOpeningPhase && chunk.index === 0) score += 8
-  if (isOpeningPhase && chunk.index === 1) score += 4
-
-  for (const token of tokens) {
-    if (!chunk.lower.includes(token)) continue
-    score += token.length >= 8 ? 4 : 2
-  }
-
-  const headings = ['übersicht', 'aufhänger', 'start', 'startszene', 'gasthaus', 'einleitung', 'hintergrund', 'wichtige orte']
-  for (const heading of headings) {
-    if (chunk.lower.includes(heading)) score += 1
-  }
-
-  score += Math.max(0, 2 - chunk.index * 0.15)
-  return score
-}
-
-function buildRelevantAdventureContext(adventure, messages = [], combat = null) {
-  if (!adventure?.text) {
-    return {
-      text: 'Kein Text verfügbar',
-      selectedIndexes: [],
-    }
-  }
-
-  const chunks = splitAdventureIntoChunks(adventure.text)
-  if (chunks.length === 0) {
-    return {
-      text: adventure.text.substring(0, 1600),
-      selectedIndexes: [0],
-    }
-  }
-
-  const searchContext = getAdventureSearchContext(messages, combat)
-  const tokens = buildSearchTokenSet(searchContext)
-  const isOpeningPhase = messages.length <= 2
-
-  const scored = chunks.map(chunk => ({
-    ...chunk,
-    score: scoreAdventureChunk(chunk, tokens, isOpeningPhase),
-  }))
-
-  const selected = []
-  const selectedIndexes = new Set()
-
-  const addChunk = (chunk) => {
-    if (!chunk || selectedIndexes.has(chunk.index)) return
-    selected.push(chunk)
-    selectedIndexes.add(chunk.index)
-  }
-
-  if (isOpeningPhase) {
-    addChunk(scored.find(chunk => chunk.index === 0))
-    addChunk(scored.find(chunk => chunk.index === 1))
-  } else {
-    addChunk(scored.find(chunk => chunk.index === 0))
-  }
-
-  scored
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 4)
-    .forEach(addChunk)
-
-  const ordered = selected.sort((a, b) => a.index - b.index)
-
-  let totalLength = 0
-  const limited = []
-  for (const chunk of ordered) {
-    const nextLength = totalLength + chunk.text.length
-    if (limited.length >= 4 || nextLength > 3200) continue
-    limited.push(chunk)
-    totalLength = nextLength
-  }
-
-  const text = limited
-    .map(chunk => `### Abenteuerauszug ${chunk.index + 1}\n${chunk.text}`)
-    .join('\n\n')
-    .trim()
-
-  return {
-    text,
-    selectedIndexes: limited.map(chunk => chunk.index),
-  }
-}
-
-export function buildSystemPrompt(character, adventure, messages = [], combat = null) {
+export function buildSystemPrompt(character, adventure, messages = [], combat = null, sceneState = null) {
   const userText = getLatestUserText(messages)
   const relevantRules = buildRelevantRulesContext({ character, combat, userText })
-  const relevantAdventure = buildRelevantAdventureContext(adventure, messages, combat)
+  const relevantAdventure = buildRelevantAdventureContext({ adventure, sceneState, messages, combat })
 
   let prompt = `Du bist der Spielleiter von ${PROJECT_NAME}. Du leitest ein Solo-Abenteuer nach ${SRD_VERSION_LABEL}.
 
@@ -498,12 +323,16 @@ ${combat.playerInitiative ? `**Spieler-Initiative:** ${combat.playerInitiative}\
 - Wenn der Kampf endet, nutze **KAMPF VORBEI** und fasse das Ergebnis kurz zusammen.`
   }
 
+  if (sceneState) {
+    prompt += `\n\n${buildSceneContextText(sceneState)}`
+  }
+
   if (adventure) {
     prompt += `\n\n## Abenteuerkontext
 **Titel:** ${adventure.title}
 ${relevantAdventure.text}
 
-Nutze nur diese relevanten Auszüge als aktuelle Abenteuergrundlage. Wenn Informationen fehlen, improvisiere vorsichtig im Geist des Moduls, statt weit vom Material abzuweichen.`
+Nutze diese relevanten Auszüge zusammen mit dem lokalen Szenenstatus als aktuelle Abenteuergrundlage. Bleib nahe am Modul und improvisiere nur dort, wo Lücken bestehen.`
   } else {
     prompt += `\n\n## Kein Abenteuer geladen
 Erstelle ein kurzes Improvisations-Abenteuer in einer klassischen Fantasy-Welt. Beginne mit einer spannenden ersten Szene und führe den Spieler in ein SRD-kompatibles Abenteuer.`
@@ -517,13 +346,13 @@ ${userText}`
   return prompt
 }
 
-export async function sendMessage({ messages, model, apiKey, character, adventure, combat, onChunk }) {
+export async function sendMessage({ messages, model, apiKey, character, adventure, combat, sceneState, onChunk }) {
   if (!apiKey) {
     throw new Error('Kein API Key konfiguriert. Bitte in den Einstellungen eingeben.')
   }
 
   const normalizedModel = normalizeModelId(model)
-  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat)
+  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat, sceneState)
 
   const body = {
     model: normalizedModel,
@@ -546,13 +375,8 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
     body: JSON.stringify(body),
   })
 
-  if (!response.ok) {
-    throw new Error(await extractError(response))
-  }
-
-  if (!response.body) {
-    throw new Error('Keine Streaming-Antwort vom Server erhalten.')
-  }
+  if (!response.ok) throw new Error(await extractError(response))
+  if (!response.body) throw new Error('Keine Streaming-Antwort vom Server erhalten.')
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
@@ -575,10 +399,7 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
 
       try {
         const json = JSON.parse(data)
-
-        if (json?.error?.message) {
-          throw new Error(json.error.message)
-        }
+        if (json?.error?.message) throw new Error(json.error.message)
 
         const delta = json?.choices?.[0]?.delta?.content
         if (delta) {
@@ -586,9 +407,7 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
           onChunk?.(delta)
         }
       } catch (error) {
-        if (error instanceof Error && error.message) {
-          throw error
-        }
+        if (error instanceof Error && error.message) throw error
       }
     }
   }
@@ -597,9 +416,7 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
 }
 
 export async function testConnection(apiKey, model) {
-  if (!apiKey) {
-    throw new Error('Kein API Key konfiguriert.')
-  }
+  if (!apiKey) throw new Error('Kein API Key konfiguriert.')
 
   const normalizedModel = normalizeModelId(model)
 
@@ -618,9 +435,7 @@ export async function testConnection(apiKey, model) {
     }),
   })
 
-  if (!response.ok) {
-    throw new Error(await extractError(response))
-  }
+  if (!response.ok) throw new Error(await extractError(response))
 
   const data = await response.json()
   return data?.choices?.[0]?.message?.content || 'OK'

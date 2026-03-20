@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useState, useCallback } from 'react'
 import { DEFAULT_MODEL_ID, normalizeModelId } from '../services/openrouter'
-import { getAbilityModifier, normalizeCharacter } from '../data/srd'
+import {
+  createInitialSceneState,
+  deriveSceneState,
+  getAbilityModifier,
+  normalizeAdventureEntry,
+  normalizeCharacter,
+} from '../data/srd'
 
 const GameContext = createContext(null)
 
@@ -8,6 +14,7 @@ const DEFAULT_CHARACTER = null
 const DEFAULT_ADVENTURE = null
 const DEFAULT_GAME_LOG = []
 const DEFAULT_COMBAT = null
+const DEFAULT_SCENE_STATE = null
 
 function loadFromStorage(key, fallback) {
   try {
@@ -37,20 +44,22 @@ function getInitialCharacter() {
   return normalizeCharacter(loadFromStorage('dm_character', DEFAULT_CHARACTER))
 }
 
-function normalizeAdventureEntry(entry) {
-  if (!entry) return null
-  return {
-    ...entry,
-    pages: entry.pages || (entry.filename?.toLowerCase().endsWith('.pdf') ? 'PDF' : 'TXT'),
-    charCount: entry.charCount || entry.text?.length || 0,
-  }
+function getInitialAdventure() {
+  return normalizeAdventureEntry(loadFromStorage('dm_adventure', DEFAULT_ADVENTURE))
+}
+
+function getInitialSceneState(adventure) {
+  const stored = loadFromStorage('dm_sceneState', DEFAULT_SCENE_STATE)
+  if (stored && adventure) return stored
+  return adventure ? createInitialSceneState(adventure) : null
 }
 
 export function GameProvider({ children }) {
   const [character, setCharacterState] = useState(getInitialCharacter)
-  const [adventure, setAdventureState] = useState(() => normalizeAdventureEntry(loadFromStorage('dm_adventure', DEFAULT_ADVENTURE)))
+  const [adventure, setAdventureState] = useState(getInitialAdventure)
   const [gameLog, setGameLogState] = useState(() => loadFromStorage('dm_gameLog', DEFAULT_GAME_LOG))
   const [combat, setCombatState] = useState(() => loadFromStorage('dm_combat', DEFAULT_COMBAT))
+  const [sceneState, setSceneStateState] = useState(() => getInitialSceneState(getInitialAdventure()))
   const [apiKey, setApiKeyState] = useState(() => localStorage.getItem('dm_apiKey') || '')
   const [selectedModel, setSelectedModelState] = useState(getInitialModel)
   const [adventures, setAdventuresState] = useState(() => {
@@ -70,6 +79,10 @@ export function GameProvider({ children }) {
     const normalized = normalizeAdventureEntry(nextValue)
     setAdventureState(normalized)
     saveToStorage('dm_adventure', normalized)
+
+    const nextSceneState = normalized ? createInitialSceneState(normalized) : null
+    setSceneStateState(nextSceneState)
+    saveToStorage('dm_sceneState', nextSceneState)
   }, [adventure])
 
   const setGameLog = useCallback((val) => {
@@ -83,6 +96,38 @@ export function GameProvider({ children }) {
     setCombatState(v)
     saveToStorage('dm_combat', v)
   }, [combat])
+
+  const setSceneState = useCallback((val) => {
+    const v = typeof val === 'function' ? val(sceneState) : val
+    setSceneStateState(v)
+    saveToStorage('dm_sceneState', v)
+  }, [sceneState])
+
+  const syncSceneState = useCallback(({ messages, adventureOverride = null, combatOverride = null, fallbackUserText = '' }) => {
+    const activeAdventure = normalizeAdventureEntry(adventureOverride || adventure)
+    if (!activeAdventure) {
+      setSceneState(null)
+      return null
+    }
+
+    const nextSceneState = deriveSceneState({
+      adventure: activeAdventure,
+      previousSceneState: sceneState,
+      messages,
+      combat: combatOverride ?? combat,
+      fallbackUserText,
+    })
+
+    setSceneState(nextSceneState)
+    return nextSceneState
+  }, [adventure, combat, sceneState, setSceneState])
+
+  const resetSceneState = useCallback((adventureOverride = null) => {
+    const activeAdventure = normalizeAdventureEntry(adventureOverride || adventure)
+    const initialState = activeAdventure ? createInitialSceneState(activeAdventure) : null
+    setSceneState(initialState)
+    return initialState
+  }, [adventure, setSceneState])
 
   const setApiKey = useCallback((key) => {
     setApiKeyState(key)
@@ -117,7 +162,8 @@ export function GameProvider({ children }) {
   const clearGameLog = useCallback(() => {
     setGameLog([])
     setCombat(null)
-  }, [setGameLog, setCombat])
+    resetSceneState()
+  }, [setGameLog, setCombat, resetSceneState])
 
   const updateCharacterHP = useCallback((newHP) => {
     setCharacter(prev => (
@@ -149,6 +195,7 @@ export function GameProvider({ children }) {
       adventure, setAdventure,
       gameLog, setGameLog, addMessage, clearGameLog,
       combat, setCombat, startCombat, endCombat,
+      sceneState, setSceneState, syncSceneState, resetSceneState,
       apiKey, setApiKey,
       selectedModel, setSelectedModel,
       adventures, setAdventures,

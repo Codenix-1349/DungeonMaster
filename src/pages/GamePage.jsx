@@ -53,6 +53,8 @@ export default function GamePage() {
     startCombat,
     apiKey,
     selectedModel,
+    sceneState,
+    syncSceneState,
   } = useGame()
 
   const navigate = useNavigate()
@@ -87,7 +89,7 @@ export default function GamePage() {
 
     setInput('')
     setError('')
-    addMessage('user', text)
+    const userMsg = addMessage('user', text)
 
     const history = buildHistory()
     history.push({ role: 'user', content: text })
@@ -104,12 +106,28 @@ export default function GamePage() {
         character,
         adventure,
         combat,
+        sceneState,
         onChunk: chunk => {
           full += chunk
           setStreamingText(prev => prev + chunk)
         },
       })
-      addMessage('assistant', full)
+
+      const assistantMsg = addMessage('assistant', full)
+
+      const fullTranscript = [
+        ...gameLog.slice(-14),
+        userMsg,
+        assistantMsg,
+      ]
+
+      syncSceneState({
+        messages: fullTranscript,
+        adventureOverride: adventure,
+        combatOverride: combat,
+        fallbackUserText: text,
+      })
+
       if (full.includes('KAMPF BEGINNT') && !combat?.active) startCombat([])
     } catch (e) {
       setError(`Fehler: ${e.message}`)
@@ -118,7 +136,21 @@ export default function GamePage() {
       setStreamingText('')
       inputRef.current?.focus()
     }
-  }, [input, streaming, apiKey, addMessage, buildHistory, selectedModel, character, adventure, combat, startCombat])
+  }, [
+    input,
+    streaming,
+    apiKey,
+    addMessage,
+    buildHistory,
+    selectedModel,
+    character,
+    adventure,
+    combat,
+    sceneState,
+    syncSceneState,
+    startCombat,
+    gameLog,
+  ])
 
   const handleCombatAction = useCallback(text => handleSend(`[Kampfaktion] ${text}`), [handleSend])
 
@@ -240,7 +272,7 @@ export default function GamePage() {
           </div>
         </div>
 
-        <div className="w-72 border-l border-gold-700/10 overflow-y-auto flex flex-col gap-4 p-4 bg-dungeon-200/30 flex-shrink-0">
+        <div className="w-80 border-l border-gold-700/10 overflow-y-auto flex flex-col gap-4 p-4 bg-dungeon-200/30 flex-shrink-0">
           {combat?.active && <CombatTracker onCombatAction={handleCombatAction} />}
 
           {showDice && (
@@ -254,6 +286,33 @@ export default function GamePage() {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {sceneState && (
+            <div className="panel p-3">
+              <p className="section-subtitle mb-2">Szenenstatus</p>
+              <p className="font-heading text-sm text-gold-400">{sceneState.currentSectionTitle}</p>
+              <p className="font-body text-xs text-stone-500 italic mt-1">{sceneState.summary}</p>
+              {sceneState.currentObjective && (
+                <div className="mt-3">
+                  <p className="section-subtitle mb-1">Aktuelles Ziel</p>
+                  <p className="font-body text-xs text-stone-400">{sceneState.currentObjective}</p>
+                </div>
+              )}
+              {sceneState.lastPlayerAction && (
+                <div className="mt-3">
+                  <p className="section-subtitle mb-1">Letzte Aktion</p>
+                  <p className="font-body text-xs text-stone-400">{sceneState.lastPlayerAction}</p>
+                </div>
+              )}
+              {sceneState.notableElements?.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {sceneState.notableElements.map(item => (
+                    <span key={item} className="badge-gold text-[11px]">{item}</span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
