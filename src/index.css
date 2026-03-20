@@ -1,0 +1,258 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply bg-dungeon-300 text-parchment font-body;
+    background-color: #0a0a0a;
+    background-image:
+      radial-gradient(ellipse at 20% 20%, rgba(139, 0, 0, 0.05) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, rgba(212, 160, 23, 0.04) 0%, transparent 50%);
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #111111;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #8b6914;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #d4a017;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-heading;
+  }
+}
+
+@layer components {
+  /* === Panel / Card === */
+  .panel {
+    @apply rounded-lg border border-gold-700/30 bg-dungeon-100/80 backdrop-blur-sm;
+    background: linear-gradient(135deg, rgba(21, 21, 21, 0.95), rgba(13, 13, 13, 0.98));
+    box-shadow:
+      0 4px 24px rgba(0, 0, 0, 0.8),
+      inset 0 1px 0 rgba(212, 160, 23, 0.1),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+  }
+
+  .panel-gold {
+    @apply panel border-gold-600/50;
+    box-shadow:
+      0 4px 24px rgba(0, 0, 0, 0.8),
+      0 0 30px rgba(212, 160, 23, 0.08),
+      inset 0 1px 0 rgba(212, 160, 23, 0.2);
+  }
+
+  /* === Buttons === */
+  .btn-primary {
+    @apply font-heading text-sm tracking-widest uppercase px-6 py-2.5 rounded
+           border border-gold-600 text-gold-400
+           transition-all duration-300 cursor-pointer
+           hover:bg-gold-600/20 hover:text-gold-300 hover:border-gold-400
+           active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed;
+    background: linear-gradient(135deg, rgba(212, 160, 23, 0.08), rgba(212, 160, 23, 0.03));
+    text-shadow: 0 0 10px rgba(212, 160, 23, 0.4);
+  }
+
+  .btn-primary:hover {
+    box-shadow: 0 0 15px rgba(212, 160, 23, 0.3), inset 0 0 15px rgba(212, 160, 23, 0.05);
+  }
+
+  .btn-danger {
+    @apply font-heading text-sm tracking-widest uppercase px-6 py-2.5 rounded
+           border border-blood-500 text-red-400
+           transition-all duration-300 cursor-pointer
+           hover:bg-blood-500/20 hover:text-red-300
+           active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed;
+    background: linear-gradient(135deg, rgba(139, 0, 0, 0.08), rgba(139, 0, 0, 0.03));
+  }
+
+  .btn-ghost {
+    @apply font-heading text-xs tracking-widest uppercase px-4 py-2 rounded
+           text-stone-400 border border-stone-700
+           transition-all duration-200 cursor-pointer
+           hover:text-parchment hover:border-stone-500
+           active:scale-95;
+  }
+
+  /* === Input === */
+  .input-dark {
+    @apply w-full bg-dungeon-200 border border-stone-700 rounded px-4 py-2.5
+           text-parchment font-body text-base
+           focus:outline-none focus:border-gold-600 focus:ring-1 focus:ring-gold-600/30
+           placeholder-stone-600 transition-colors duration-200;
+  }
+
+  .select-dark {
+    @apply input-dark cursor-pointer;
+  }
+
+  /* === Divider === */
+  .divider-gold {
+    @apply border-none h-px my-4;
+    background: linear-gradient(90deg, transparent, rgba(212, 160, 23, 0.4), transparent);
+  }
+
+  /* === Section Title === */
+  .section-title {
+    @apply font-display text-gold-500 tracking-wider;
+    text-shadow: 0 0 20px rgba(212, 160, 23, 0.4);
+  }
+
+  .section-subtitle {
+    @apply font-heading text-gold-600/70 text-xs tracking-widest uppercase;
+  }
+
+  /* === Badge === */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-heading tracking-wider;
+  }
+
+  .badge-gold {
+    @apply badge bg-gold-600/20 text-gold-400 border border-gold-700/50;
+  }
+
+  .badge-red {
+    @apply badge bg-blood-500/20 text-red-400 border border-blood-500/50;
+  }
+
+  .badge-green {
+    @apply badge bg-emerald-900/30 text-emerald-400 border border-emerald-800/50;
+  }
+
+  /* === Stat Box === */
+  .stat-box {
+    @apply panel flex flex-col items-center justify-center p-3 gap-1 cursor-default;
+    min-width: 70px;
+  }
+
+  .stat-label {
+    @apply font-heading text-xs text-stone-500 tracking-widest uppercase;
+  }
+
+  .stat-value {
+    @apply font-display text-2xl text-gold-400;
+    text-shadow: 0 0 10px rgba(212, 160, 23, 0.4);
+  }
+
+  .stat-mod {
+    @apply font-body text-sm text-stone-400;
+  }
+
+  /* === Chat Bubble === */
+  .chat-dm {
+    @apply panel-gold p-4 rounded-lg text-base leading-relaxed;
+    border-left: 3px solid rgba(212, 160, 23, 0.6);
+  }
+
+  .chat-player {
+    @apply panel p-3 rounded-lg text-base leading-relaxed;
+    border-left: 3px solid rgba(139, 0, 0, 0.6);
+    background: rgba(139, 0, 0, 0.05);
+  }
+
+  /* === HP Bar === */
+  .hp-bar-bg {
+    @apply w-full h-2 rounded-full bg-stone-800;
+  }
+
+  .hp-bar-fill {
+    @apply h-full rounded-full transition-all duration-500;
+    background: linear-gradient(90deg, #8b0000, #dc2626);
+  }
+
+  /* === Dice Button === */
+  .dice-btn {
+    @apply flex flex-col items-center justify-center
+           w-14 h-14 rounded
+           border border-stone-700 text-stone-400
+           font-heading text-xs tracking-wide
+           transition-all duration-200 cursor-pointer select-none
+           hover:border-gold-600 hover:text-gold-400 hover:scale-105
+           active:scale-95;
+    background: linear-gradient(135deg, rgba(21,21,21,0.9), rgba(10,10,10,0.95));
+  }
+
+  .dice-btn:hover {
+    box-shadow: 0 0 12px rgba(212, 160, 23, 0.25);
+  }
+
+  .dice-btn.rolling {
+    @apply animate-spin border-gold-400 text-gold-300;
+    animation: diceRoll 0.4s ease-out;
+  }
+
+  /* === Sidebar Item === */
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded
+           font-heading text-sm tracking-wider
+           text-stone-400 border border-transparent
+           transition-all duration-200 cursor-pointer;
+  }
+
+  .nav-item:hover {
+    @apply text-gold-400 border-gold-700/40;
+    background: rgba(212, 160, 23, 0.06);
+  }
+
+  .nav-item.active {
+    @apply text-gold-300 border-gold-600/50;
+    background: linear-gradient(135deg, rgba(212, 160, 23, 0.12), rgba(212, 160, 23, 0.04));
+    box-shadow: 0 0 15px rgba(212, 160, 23, 0.1);
+  }
+
+  /* === Loading Spinner === */
+  .spinner {
+    @apply w-5 h-5 border-2 border-stone-700 border-t-gold-500 rounded-full animate-spin;
+  }
+
+  /* === Ornament Lines === */
+  .ornament {
+    @apply flex items-center gap-3 text-gold-700/60;
+  }
+
+  .ornament::before,
+  .ornament::after {
+    content: '';
+    @apply flex-1 h-px;
+    background: linear-gradient(90deg, transparent, rgba(212, 160, 23, 0.4));
+  }
+
+  .ornament::after {
+    background: linear-gradient(90deg, rgba(212, 160, 23, 0.4), transparent);
+  }
+}
+
+@keyframes diceRoll {
+  0% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(-15deg) scale(1.1); }
+  75% { transform: rotate(15deg) scale(1.1); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+@keyframes typingDot {
+  0%, 80%, 100% { transform: scale(0.8); opacity: 0.4; }
+  40% { transform: scale(1.1); opacity: 1; }
+}
+
+.typing-dot {
+  animation: typingDot 1.4s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }

@@ -1,0 +1,228 @@
+import React, { useState, useRef, useCallback } from 'react'
+import { useGame } from '../context/GameContext'
+
+async function extractTextFromPDF(file) {
+  // Dynamic import of pdfjs-dist
+  const pdfjsLib = await import('pdfjs-dist')
+
+  // Set worker source - use CDN to avoid bundling issues
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+  }
+
+  const arrayBuffer = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  let text = ''
+
+  for (let i = 1; i <= Math.min(pdf.numPages, 200); i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+    const pageText = content.items.map(item => item.str).join(' ')
+    text += pageText + '\n\n'
+  }
+
+  return text.trim()
+}
+
+async function extractTextFromTXT(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = e => resolve(e.target.result)
+    reader.onerror = reject
+    reader.readAsText(file, 'UTF-8')
+  })
+}
+
+export default function AdventurePage() {
+  const { adventures, setAdventures, adventure, setAdventure } = useGame()
+  const [dragOver, setDragOver] = useState(false)
+  const [processing, setProcessing] = useState(false)
+  const [processMsg, setProcessMsg] = useState('')
+  const [error, setError] = useState('')
+  const fileInputRef = useRef(null)
+
+  const processFile = useCallback(async (file) => {
+    const name = file.name.toLowerCase()
+    if (!name.endsWith('.pdf') && !name.endsWith('.txt')) {
+      setError('Nur PDF und TXT Dateien werden unterstützt.')
+      return
+    }
+
+    setProcessing(true)
+    setError('')
+    setProcessMsg(`Verarbeite "${file.name}"…`)
+
+    try {
+      let text = ''
+      if (name.endsWith('.pdf')) {
+        setProcessMsg('Extrahiere Text aus PDF…')
+        text = await extractTextFromPDF(file)
+      } else {
+        text = await extractTextFromTXT(file)
+      }
+
+      const title = file.name.replace(/\.(pdf|txt)$/i, '')
+      const newAdventure = {
+        id: Date.now().toString(),
+        title,
+        filename: file.name,
+        text: text.substring(0, 50000), // limit to 50k chars
+        addedAt: new Date().toISOString(),
+        pages: name.endsWith('.pdf') ? 'PDF' : 'TXT',
+        charCount: text.length
+      }
+
+      setAdventures(prev => {
+        const filtered = prev.filter(a => a.title !== title)
+        return [newAdventure, ...filtered]
+      })
+      setProcessMsg(`✓ "${title}" erfolgreich geladen!`)
+      setTimeout(() => setProcessMsg(''), 3000)
+    } catch (e) {
+      setError(`Fehler beim Verarbeiten: ${e.message}`)
+    } finally {
+      setProcessing(false)
+    }
+  }, [setAdventures])
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault()
+    setDragOver(false)
+    const files = [...e.dataTransfer.files]
+    if (files[0]) processFile(files[0])
+  }, [processFile])
+
+  const handleFileInput = useCallback((e) => {
+    if (e.target.files[0]) processFile(e.target.files[0])
+  }, [processFile])
+
+  const selectAdventure = useCallback((adv) => {
+    setAdventure(adv)
+  }, [setAdventure])
+
+  const deleteAdventure = useCallback((id) => {
+    setAdventures(prev => prev.filter(a => a.id !== id))
+    if (adventure?.id === id) setAdventure(null)
+  }, [setAdventures, adventure, setAdventure])
+
+  return (
+    <div className="max-w-3xl mx-auto">
+      <div className="mb-8">
+        <h1 className="section-title text-3xl mb-2">Abenteuer-Module</h1>
+        <p className="font-body text-stone-500 italic">Lade AD&D Abenteuermodule als PDF oder TXT hoch</p>
+      </div>
+
+      {/* Upload Zone */}
+      <div
+        className={`border-2 border-dashed rounded-lg p-12 text-center mb-8 transition-all duration-300 cursor-pointer ${
+          dragOver
+            ? 'border-gold-500 bg-gold-600/10'
+            : 'border-stone-700 hover:border-stone-500'
+        }`}
+        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.txt"
+          onChange={handleFileInput}
+          className="hidden"
+        />
+
+        {processing ? (
+          <div className="flex flex-col items-center gap-4">
+            <div className="spinner w-10 h-10" />
+            <p className="font-body text-stone-400 italic">{processMsg}</p>
+          </div>
+        ) : (
+          <>
+            <div className="text-5xl mb-4">📜</div>
+            <p className="font-heading text-lg text-gold-500 mb-2">Abenteuer hier ablegen</p>
+            <p className="font-body text-stone-500 italic text-sm">PDF oder TXT · Klicken zum Auswählen</p>
+            {processMsg && (
+              <p className="font-body text-emerald-400 text-sm mt-3">{processMsg}</p>
+            )}
+          </>
+        )}
+      </div>
+
+      {error && (
+        <div className="bg-blood-500/10 border border-blood-500/50 rounded p-3 mb-6 text-red-400 font-body text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Active Adventure */}
+      {adventure && (
+        <div className="panel-gold p-4 mb-6 flex items-center gap-3">
+          <span className="text-2xl">⚔️</span>
+          <div className="flex-1">
+            <p className="section-subtitle">Aktives Abenteuer</p>
+            <p className="font-heading text-parchment">{adventure.title}</p>
+          </div>
+          <button onClick={() => setAdventure(null)} className="btn-ghost text-xs">Abwählen</button>
+        </div>
+      )}
+
+      {/* Library */}
+      <div>
+        <h2 className="font-heading text-lg text-gold-600 tracking-wide mb-4">
+          Bibliothek {adventures.length > 0 && <span className="text-stone-600">({adventures.length})</span>}
+        </h2>
+
+        {adventures.length === 0 ? (
+          <div className="panel p-8 text-center">
+            <p className="font-body text-stone-500 italic">Noch keine Abenteuer geladen.</p>
+            <p className="font-body text-xs text-stone-600 mt-1">
+              Lade ein PDF- oder TXT-Abenteuermodul hoch um zu beginnen.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {adventures.map(adv => (
+              <div key={adv.id}
+                className={`panel p-4 flex items-center gap-4 transition-all duration-200 ${
+                  adventure?.id === adv.id ? 'border-gold-600/50' : ''
+                }`}>
+                <div className="text-2xl">
+                  {adv.pages === 'PDF' ? '📕' : '📄'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-heading text-parchment text-sm leading-tight mb-0.5">{adv.title}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="badge-gold">{adv.pages}</span>
+                    <span className="font-body text-xs text-stone-600">
+                      {(adv.charCount || 0).toLocaleString()} Zeichen
+                    </span>
+                    <span className="font-body text-xs text-stone-700">
+                      {new Date(adv.addedAt).toLocaleDateString('de-DE')}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {adventure?.id !== adv.id ? (
+                    <button onClick={() => selectAdventure(adv)} className="btn-primary text-xs px-3 py-1.5">
+                      Auswählen
+                    </button>
+                  ) : (
+                    <span className="badge-green">● Aktiv</span>
+                  )}
+                  <button
+                    onClick={() => deleteAdventure(adv.id)}
+                    className="btn-danger text-xs px-3 py-1.5"
+                    title="Abenteuer löschen"
+                  >
+                    🗑
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
