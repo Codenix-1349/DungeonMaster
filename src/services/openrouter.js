@@ -2,7 +2,6 @@ import {
   PROJECT_NAME,
   SRD_CORE_PROMPT_RULES,
   SRD_VERSION_LABEL,
-  buildRelevantAdventureContext,
   buildRelevantRulesContext,
 } from '../data/srd'
 
@@ -16,6 +15,25 @@ const LEGACY_MODEL_ID_MAP = {
   'anthropic/claude-sonnet-4-5': 'anthropic/claude-sonnet-4.5',
   'anthropic/claude-opus-4-5': 'anthropic/claude-opus-4.5',
 }
+
+const META_LEAK_PATTERNS = [
+  /\bals\s+spielleiter\b/i,
+  /\bich\s+bin\s+der\s+spielleiter\b/i,
+  /\bich\s+bin\s+wieder\s+in\s+meiner\s+rolle\b/i,
+  /\bmeine\s+rolle\s+als\s+spielleiter\b/i,
+  /\bbei\s+meiner\s+aufgabe\s+als\s+spielleiter\b/i,
+  /\bich\s+leite\s+ein\s+solo-abenteuer\b/i,
+  /\bich\s+bin\s+hier,?\s+um\s+dir\s+zu\s+helfen\b/i,
+  /\bmein\s+ziel\s+ist\s+es\b/i,
+  /\bdu\s+hast\s+recht,?\s+ich\s+bin\s+nicht\s+mehr\b/i,
+  /\bau[ßs]erhalb\s+der\s+spielwelt\b/i,
+  /\bdie\s+app\b/i,
+  /\bdas\s+modell\b/i,
+  /\bopenrouter\b/i,
+  /\bprompt\b/i,
+]
+
+const MAX_REPAIR_SOURCE_CHARS = 1400
 
 export const AVAILABLE_MODELS = [
   {
@@ -153,10 +171,15 @@ export function isPaidModel(modelId) {
 
 export async function fetchModelCatalog(apiKey = '') {
   const headers = {}
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`
+  }
 
   const response = await fetch(`${OPENROUTER_BASE}/models`, { headers })
-  if (!response.ok) throw new Error(`Modellkatalog konnte nicht geladen werden (${response.status}).`)
+
+  if (!response.ok) {
+    throw new Error(`Modellkatalog konnte nicht geladen werden (${response.status}).`)
+  }
 
   const data = await response.json()
   return Array.isArray(data?.data) ? data.data : []
@@ -169,6 +192,7 @@ export function getCatalogModel(catalog, modelId) {
 
 function formatPricePerMillion(rawValue) {
   const pricePerToken = Number(rawValue)
+
   if (!Number.isFinite(pricePerToken)) return null
   const pricePerMillion = pricePerToken * 1_000_000
 
@@ -216,22 +240,45 @@ export function getModelPricingDisplay(catalog, modelId) {
 }
 
 function buildFriendlyErrorMessage(status, apiMessage = '') {
-  if (status === 401) return 'Ungültiger API Key. Bitte prüfe den OpenRouter-Key in den Einstellungen.'
-  if (status === 402) return 'OpenRouter meldet unzureichende Credits oder keine ausreichende Free-Allowance mehr.'
-  if (status === 429) return 'OpenRouter Rate-Limit erreicht (HTTP 429). Bitte kurz warten und erneut versuchen.'
-  if (status === 503) return 'Kein verfügbarer Provider für dieses Modell. Bitte später erneut versuchen oder ein anderes Modell wählen.'
-  if (status === 404) return 'Dieses Modell wurde von OpenRouter nicht gefunden. Bitte ein anderes Modell auswählen.'
+  if (status === 401) {
+    return 'Ungültiger API Key. Bitte prüfe den OpenRouter-Key in den Einstellungen.'
+  }
+
+  if (status === 402) {
+    return 'OpenRouter meldet unzureichende Credits oder keine ausreichende Free-Allowance mehr.'
+  }
+
+  if (status === 429) {
+    return 'OpenRouter Rate-Limit erreicht (HTTP 429). Bitte kurz warten und erneut versuchen.'
+  }
+
+  if (status === 503) {
+    return 'Kein verfügbarer Provider für dieses Modell. Bitte später erneut versuchen oder ein anderes Modell wählen.'
+  }
+
+  if (status === 404) {
+    return 'Dieses Modell wurde von OpenRouter nicht gefunden. Bitte ein anderes Modell auswählen.'
+  }
+
   return apiMessage || `API Fehler: ${status}`
 }
 
 async function extractError(response) {
   try {
     const text = await response.text()
-    if (!text) return buildFriendlyErrorMessage(response.status)
+
+    if (!text) {
+      return buildFriendlyErrorMessage(response.status)
+    }
 
     try {
       const json = JSON.parse(text)
-      const apiMessage = json?.error?.message || json?.message || json?.detail || ''
+      const apiMessage =
+        json?.error?.message ||
+        json?.message ||
+        json?.detail ||
+        ''
+
       return buildFriendlyErrorMessage(response.status, apiMessage)
     } catch {
       return buildFriendlyErrorMessage(response.status, text)
@@ -242,42 +289,317 @@ async function extractError(response) {
 }
 
 function getLatestUserText(messages = []) {
-  return [...messages].reverse().find(message => message.role === 'user' && typeof message.content === 'string')?.content || ''
+  const reversed = [...messages].reverse()
+  const latestUserMessage = reversed.find(message => message.role === 'user' && typeof message.content === 'string')
+  return latestUserMessage?.content || ''
 }
 
-function buildSceneContextText(sceneState) {
-  if (!sceneState) return ''
+function buildSearchTokenSet(text = '') {
+  const normalized = String(text || '')
+    .toLowerCase()
+    .replace(/[^a-zäöüß0-9\s-]/gi, ' ')
+    .split(/\s+/)
+    .map(token => token.trim())
+    .filter(token => token.length >= 3)
 
-  const notable = Array.isArray(sceneState.notableElements) && sceneState.notableElements.length > 0
-    ? sceneState.notableElements.join(', ')
-    : '—'
-
-  const clues = Array.isArray(sceneState.discoveredClues) && sceneState.discoveredClues.length > 0
-    ? sceneState.discoveredClues.join(' | ')
-    : '—'
-
-  const threads = Array.isArray(sceneState.openThreads) && sceneState.openThreads.length > 0
-    ? sceneState.openThreads.join(' | ')
-    : '—'
-
-  return `## Lokaler Szenenstatus
-- Aktueller Abschnitt: ${sceneState.currentSectionTitle || 'Unbekannt'}
-- Aktueller Ort: ${sceneState.currentLocation || sceneState.currentSectionTitle || 'Unbekannt'}
-- Szenenzusammenfassung: ${sceneState.summary || 'Noch keine Zusammenfassung vorhanden.'}
-- Aktuelles Ziel: ${sceneState.currentObjective || 'Noch kein konkretes Ziel.'}
-- Aktiver Handlungsfaden: ${sceneState.activeQuest || 'Noch kein Handlungsfaden.'}
-- Letzte Spieleraktion: ${sceneState.lastPlayerAction || 'Noch keine Aktion.'}
-- Letzte Entwicklung: ${sceneState.lastOutcome || 'Noch keine Entwicklung.'}
-- Letzter Szenenwechsel: ${sceneState.lastTransitionReason || 'Noch kein Wechsel.'}
-- Offene Fäden: ${threads}
-- Wichtige Hinweise: ${clues}
-- Relevante Elemente: ${notable}`
+  return [...new Set(normalized)]
 }
 
-export function buildSystemPrompt(character, adventure, messages = [], combat = null, sceneState = null) {
+function splitAdventureIntoChunks(text = '') {
+  const normalized = String(text || '')
+    .replace(/\r/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  if (!normalized) return []
+
+  const paragraphs = normalized
+    .split(/\n\n+/)
+    .map(paragraph => paragraph.trim())
+    .filter(Boolean)
+
+  const chunks = []
+  let current = ''
+
+  const flush = () => {
+    if (!current.trim()) return
+    chunks.push(current.trim())
+    current = ''
+  }
+
+  for (const paragraph of paragraphs) {
+    if ((current + '\n\n' + paragraph).trim().length <= 900) {
+      current = current ? `${current}\n\n${paragraph}` : paragraph
+      continue
+    }
+
+    flush()
+
+    if (paragraph.length <= 900) {
+      current = paragraph
+      continue
+    }
+
+    const sentences = paragraph.match(/[^.!?]+[.!?]?/g) || [paragraph]
+    for (const sentence of sentences) {
+      if ((current + ' ' + sentence).trim().length <= 900) {
+        current = current ? `${current} ${sentence.trim()}` : sentence.trim()
+      } else {
+        flush()
+        current = sentence.trim()
+      }
+    }
+  }
+
+  flush()
+
+  return chunks.map((chunk, index) => ({
+    index,
+    text: chunk,
+    lower: chunk.toLowerCase(),
+  }))
+}
+
+function getAdventureSearchContext(messages = [], combat = null) {
+  const recent = messages.slice(-6)
+  const joined = recent.map(message => message.content).join(' ')
+  const combatHint = combat?.active ? ' kampf gegner initiative schaden angriffe ' : ''
+  return `${joined} ${combatHint}`.trim()
+}
+
+function scoreAdventureChunk(chunk, tokens, isOpeningPhase) {
+  let score = 0
+
+  if (isOpeningPhase && chunk.index === 0) score += 8
+  if (isOpeningPhase && chunk.index === 1) score += 4
+
+  for (const token of tokens) {
+    if (!chunk.lower.includes(token)) continue
+    score += token.length >= 8 ? 4 : 2
+  }
+
+  const headings = ['übersicht', 'aufhänger', 'start', 'startszene', 'gasthaus', 'einleitung', 'hintergrund', 'wichtige orte']
+  for (const heading of headings) {
+    if (chunk.lower.includes(heading)) score += 1
+  }
+
+  score += Math.max(0, 2 - chunk.index * 0.15)
+  return score
+}
+
+function buildRelevantAdventureContext(adventure, messages = [], combat = null) {
+  if (!adventure?.text) {
+    return {
+      text: 'Kein Text verfügbar',
+      selectedIndexes: [],
+    }
+  }
+
+  const chunks = splitAdventureIntoChunks(adventure.text)
+  if (chunks.length === 0) {
+    return {
+      text: adventure.text.substring(0, 1600),
+      selectedIndexes: [0],
+    }
+  }
+
+  const searchContext = getAdventureSearchContext(messages, combat)
+  const tokens = buildSearchTokenSet(searchContext)
+  const isOpeningPhase = messages.length <= 2
+
+  const scored = chunks.map(chunk => ({
+    ...chunk,
+    score: scoreAdventureChunk(chunk, tokens, isOpeningPhase),
+  }))
+
+  const selected = []
+  const selectedIndexes = new Set()
+
+  const addChunk = (chunk) => {
+    if (!chunk || selectedIndexes.has(chunk.index)) return
+    selected.push(chunk)
+    selectedIndexes.add(chunk.index)
+  }
+
+  if (isOpeningPhase) {
+    addChunk(scored.find(chunk => chunk.index === 0))
+    addChunk(scored.find(chunk => chunk.index === 1))
+  } else {
+    addChunk(scored.find(chunk => chunk.index === 0))
+  }
+
+  scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4)
+    .forEach(addChunk)
+
+  const ordered = selected.sort((a, b) => a.index - b.index)
+
+  let totalLength = 0
+  const limited = []
+  for (const chunk of ordered) {
+    const nextLength = totalLength + chunk.text.length
+    if (limited.length >= 4 || nextLength > 3200) continue
+    limited.push(chunk)
+    totalLength = nextLength
+  }
+
+  const text = limited
+    .map(chunk => `### Abenteuerauszug ${chunk.index + 1}\n${chunk.text}`)
+    .join('\n\n')
+    .trim()
+
+  return {
+    text,
+    selectedIndexes: limited.map(chunk => chunk.index),
+  }
+}
+
+function stripCodeFences(text = '') {
+  return String(text || '').replace(/```[\s\S]*?```/g, '').trim()
+}
+
+function isMetaLeak(text = '') {
+  const cleaned = stripCodeFences(text)
+  if (!cleaned) return false
+  return META_LEAK_PATTERNS.some(pattern => pattern.test(cleaned))
+}
+
+function buildRoleLockRules() {
+  return `## Harter Rollen-Lock
+- Bleibe immer in der Spielwelt und antworte niemals meta.
+- Erkläre niemals deine Rolle, Funktion oder Aufgabe als Spielleiter, Assistent, App oder Modell.
+- Sage niemals Dinge wie "Als Spielleiter", "Ich bin der Spielleiter", "Meine Rolle ist" oder ähnliche Meta-Sätze.
+- Antworte niemals stellvertretend für den Spielercharakter, wenn ein NSC dem Spieler eine Frage stellt.
+- Wenn ein NSC den Spieler direkt anspricht, bleibe in-world und ende mit einer klaren In-World-Reaktion wie einer offenen Szene, direkter Rede oder "Was antwortest du?".
+- Wenn du unsicher bist, bleibe lieber knapp, atmosphärisch und in-world, statt Meta-Erklärungen zu geben.`
+}
+
+function buildRepairInstruction(leakedText = '') {
+  const snippet = stripCodeFences(leakedText).slice(0, MAX_REPAIR_SOURCE_CHARS)
+  return [
+    'Die vorige Antwort hat die Spielwelt verlassen oder meta über die Rolle des Spielleiters gesprochen.',
+    'Schreibe dieselbe Szene jetzt strikt neu.',
+    'Bleibe vollständig in-world.',
+    'Erwähne niemals Spielleiter, Assistent, App, Modell, Prompt oder System.',
+    'Antworte nicht für den Spielercharakter.',
+    'Wenn die Szene mit einer NPC-Frage an den Spieler endet, dann ende ebenfalls mit einer in-world Frage oder einem klaren Moment des Wartens.',
+    '',
+    'Fehlerhafte Antwort:',
+    snippet || '[leer]',
+  ].join('\n')
+}
+
+function buildSafeFallback(messages = []) {
+  const latestUserText = getLatestUserText(messages)
+  if (/angriff|greife|kampf|schlag|waffe/i.test(latestUserText)) {
+    return 'Die Spannung knistert in der Luft, als sich die Szene zuspitzt. Dein Gegenüber reagiert unmittelbar auf deine Bewegung. **Was tust du als Nächstes?**'
+  }
+
+  return 'Für einen Herzschlag bleibt die Szene stehen, während dein Gegenüber deine Worte mustert und auf deine Reaktion wartet. **Was antwortest du?**'
+}
+
+async function streamChatCompletion({ apiKey, model, messages, systemPrompt }) {
+  const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': window.location.origin,
+      'X-Title': PROJECT_NAME,
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 1800,
+      stream: true,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...messages,
+      ],
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await extractError(response))
+  }
+
+  if (!response.body) {
+    throw new Error('Keine Streaming-Antwort vom Server erhalten.')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let fullText = ''
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+
+      const data = line.slice(6).trim()
+      if (!data || data === '[DONE]') continue
+
+      try {
+        const json = JSON.parse(data)
+        if (json?.error?.message) {
+          throw new Error(json.error.message)
+        }
+
+        const delta = json?.choices?.[0]?.delta?.content
+        if (delta) {
+          fullText += delta
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message) {
+          throw error
+        }
+      }
+    }
+  }
+
+  return fullText.trim()
+}
+
+async function requestRepairCompletion({ apiKey, model, messages, systemPrompt, leakedText }) {
+  const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': window.location.origin,
+      'X-Title': PROJECT_NAME,
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 1200,
+      stream: false,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...messages,
+        { role: 'user', content: buildRepairInstruction(leakedText) },
+      ],
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await extractError(response))
+  }
+
+  const data = await response.json()
+  return data?.choices?.[0]?.message?.content?.trim() || ''
+}
+
+export function buildSystemPrompt(character, adventure, messages = [], combat = null) {
   const userText = getLatestUserText(messages)
   const relevantRules = buildRelevantRulesContext({ character, combat, userText })
-  const relevantAdventure = buildRelevantAdventureContext({ adventure, sceneState, messages, combat })
+  const relevantAdventure = buildRelevantAdventureContext(adventure, messages, combat)
 
   let prompt = `Du bist der Spielleiter von ${PROJECT_NAME}. Du leitest ein Solo-Abenteuer nach ${SRD_VERSION_LABEL}.
 
@@ -295,6 +617,7 @@ export function buildSystemPrompt(character, adventure, messages = [], combat = 
 - Wenn die Abenteuer-Vorlage holprig, bruchstückhaft oder schlecht formuliert ist, formuliere sie in sauberem Deutsch sinngemäß neu.
 - Erfinde keine sinnlosen Wortkombinationen oder kaputten Halbsätze.
 ${SRD_CORE_PROMPT_RULES}
+${buildRoleLockRules()}
 ## Würfelnotation
 Wenn Würfe nötig sind, gib folgende Anweisung:
 - [WÜRFEL:d20] für Angriffe, Rettungswürfe, Initiative oder Proben
@@ -336,16 +659,12 @@ ${combat.playerInitiative ? `**Spieler-Initiative:** ${combat.playerInitiative}\
 - Wenn der Kampf endet, nutze **KAMPF VORBEI** und fasse das Ergebnis kurz zusammen.`
   }
 
-  if (sceneState) {
-    prompt += `\n\n${buildSceneContextText(sceneState)}`
-  }
-
   if (adventure) {
     prompt += `\n\n## Abenteuerkontext
 **Titel:** ${adventure.title}
 ${relevantAdventure.text}
 
-Nutze diese relevanten Auszüge zusammen mit dem lokalen Szenenstatus als aktuelle Abenteuergrundlage. Bleib nahe am Modul und improvisiere nur dort, wo Lücken bestehen.`
+Nutze nur diese relevanten Auszüge als aktuelle Abenteuergrundlage. Wenn Informationen fehlen, improvisiere vorsichtig im Geist des Moduls, statt weit vom Material abzuweichen.`
   } else {
     prompt += `\n\n## Kein Abenteuer geladen
 Erstelle ein kurzes Improvisations-Abenteuer in einer klassischen Fantasy-Welt. Beginne mit einer spannenden ersten Szene und führe den Spieler in ein SRD-kompatibles Abenteuer.`
@@ -359,77 +678,48 @@ ${userText}`
   return prompt
 }
 
-export async function sendMessage({ messages, model, apiKey, character, adventure, combat, sceneState, onChunk }) {
+export async function sendMessage({ messages, model, apiKey, character, adventure, combat, onChunk }) {
   if (!apiKey) {
     throw new Error('Kein API Key konfiguriert. Bitte in den Einstellungen eingeben.')
   }
 
   const normalizedModel = normalizeModelId(model)
-  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat, sceneState)
+  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat)
 
-  const body = {
+  let finalText = await streamChatCompletion({
+    apiKey,
     model: normalizedModel,
-    max_tokens: 1800,
-    stream: true,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      ...messages,
-    ],
-  }
-
-  const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': window.location.origin,
-      'X-Title': PROJECT_NAME,
-    },
-    body: JSON.stringify(body),
+    messages,
+    systemPrompt,
   })
 
-  if (!response.ok) throw new Error(await extractError(response))
-  if (!response.body) throw new Error('Keine Streaming-Antwort vom Server erhalten.')
+  if (isMetaLeak(finalText)) {
+    try {
+      const repaired = await requestRepairCompletion({
+        apiKey,
+        model: normalizedModel,
+        messages,
+        systemPrompt,
+        leakedText: finalText,
+      })
 
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let fullText = ''
-  let buffer = ''
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() ?? ''
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue
-
-      const data = line.slice(6).trim()
-      if (!data || data === '[DONE]') continue
-
-      try {
-        const json = JSON.parse(data)
-        if (json?.error?.message) throw new Error(json.error.message)
-
-        const delta = json?.choices?.[0]?.delta?.content
-        if (delta) {
-          fullText += delta
-          onChunk?.(delta)
-        }
-      } catch (error) {
-        if (error instanceof Error && error.message) throw error
-      }
+      finalText = isMetaLeak(repaired) ? buildSafeFallback(messages) : repaired
+    } catch {
+      finalText = buildSafeFallback(messages)
     }
   }
 
-  return fullText
+  if (onChunk && finalText) {
+    onChunk(finalText)
+  }
+
+  return finalText
 }
 
 export async function testConnection(apiKey, model) {
-  if (!apiKey) throw new Error('Kein API Key konfiguriert.')
+  if (!apiKey) {
+    throw new Error('Kein API Key konfiguriert.')
+  }
 
   const normalizedModel = normalizeModelId(model)
 
@@ -448,7 +738,9 @@ export async function testConnection(apiKey, model) {
     }),
   })
 
-  if (!response.ok) throw new Error(await extractError(response))
+  if (!response.ok) {
+    throw new Error(await extractError(response))
+  }
 
   const data = await response.json()
   return data?.choices?.[0]?.message?.content || 'OK'
