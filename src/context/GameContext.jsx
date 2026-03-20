@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_MODEL_ID, normalizeModelId } from '../services/openrouter'
 import {
   createInitialSceneState,
@@ -15,6 +15,7 @@ const DEFAULT_GAME_LOG = []
 const DEFAULT_COMBAT = null
 const DEFAULT_SCENE_STATE = null
 const DEFAULT_CHARACTERS = []
+const DEFAULT_SESSIONS = []
 
 function loadFromStorage(key, fallback) {
   try {
@@ -148,8 +149,154 @@ function getInitialSceneState(adventure) {
   return adventure ? createInitialSceneState(adventure) : null
 }
 
+function normalizeGameLog(list) {
+  if (!Array.isArray(list)) return []
+
+  return list
+    .filter(entry => entry && typeof entry.content === 'string' && entry.role)
+    .map(entry => ({
+      id: entry.id || makeLocalId('msg'),
+      role: entry.role,
+      content: entry.content,
+      type: entry.type || 'narrative',
+      timestamp: entry.timestamp || new Date().toISOString(),
+    }))
+}
+
+function buildSessionRecord({
+  id = null,
+  characterId = null,
+  adventureId = null,
+  gameLog = DEFAULT_GAME_LOG,
+  combat = DEFAULT_COMBAT,
+  sceneState = DEFAULT_SCENE_STATE,
+  createdAt = null,
+  updatedAt = null,
+} = {}) {
+  const now = new Date().toISOString()
+
+  return {
+    id: id || makeLocalId('session'),
+    characterId: characterId || null,
+    adventureId: adventureId || null,
+    createdAt: createdAt || now,
+    updatedAt: updatedAt || now,
+    gameLog: normalizeGameLog(gameLog),
+    combat: combat || null,
+    sceneState: sceneState || null,
+  }
+}
+
+function normalizeSessionList(list = [], adventures = []) {
+  const seen = new Set()
+  const normalized = []
+
+  for (const entry of Array.isArray(list) ? list : []) {
+    const record = buildSessionRecord(entry)
+    if (seen.has(record.id)) continue
+    seen.add(record.id)
+
+    const adventure = adventures.find(item => item.id === record.adventureId) || null
+    normalized.push({
+      ...record,
+      adventureId: adventure?.id || null,
+      sceneState: record.sceneState || (adventure ? createInitialSceneState(adventure) : null),
+    })
+  }
+
+  return normalized.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+}
+
+function persistSessionsStore(sessions, activeSessionId = null) {
+  const normalizedSessions = normalizeSessionList(sessions)
+  const resolvedActiveSessionId = normalizedSessions.some(entry => entry.id === activeSessionId)
+    ? activeSessionId
+    : (normalizedSessions[0]?.id || null)
+
+  saveToStorage('dm_sessions', normalizedSessions)
+
+  if (resolvedActiveSessionId) {
+    localStorage.setItem('dm_activeSessionId', resolvedActiveSessionId)
+  } else {
+    localStorage.removeItem('dm_activeSessionId')
+  }
+
+  return {
+    sessions: normalizedSessions,
+    activeSessionId: resolvedActiveSessionId,
+  }
+}
+
+function buildInitialProviderState() {
+  const characterStore = getInitialCharacterStore()
+  const adventures = (() => {
+    const stored = loadFromStorage('dm_adventures', [])
+    return Array.isArray(stored) ? stored.map(normalizeAdventureEntry).filter(Boolean) : []
+  })()
+
+  const storedSessions = normalizeSessionList(loadFromStorage('dm_sessions', DEFAULT_SESSIONS), adventures)
+  let activeSessionId = localStorage.getItem('dm_activeSessionId') || null
+
+  if (!storedSessions.some(entry => entry.id === activeSessionId)) {
+    activeSessionId = null
+  }
+
+  let adventure = getInitialAdventure()
+  let gameLog = normalizeGameLog(loadFromStorage('dm_gameLog', DEFAULT_GAME_LOG))
+  let combat = loadFromStorage('dm_combat', DEFAULT_COMBAT)
+  let sceneState = getInitialSceneState(adventure)
+  let sessions = storedSessions
+
+  const activeSession = sessions.find(entry => entry.id === activeSessionId) || null
+
+  if (activeSession) {
+    adventure = adventures.find(entry => entry.id === activeSession.adventureId) || null
+    gameLog = normalizeGameLog(activeSession.gameLog)
+    combat = activeSession.combat || null
+    sceneState = activeSession.sceneState || (adventure ? createInitialSceneState(adventure) : null)
+
+    if (
+      activeSession.characterId &&
+      characterStore.characters.some(entry => entry.id === activeSession.characterId)
+    ) {
+      characterStore.activeCharacterId = activeSession.characterId
+    }
+  } else if (gameLog.length > 0 && characterStore.activeCharacterId) {
+    const migratedSession = buildSessionRecord({
+      characterId: characterStore.activeCharacterId,
+      adventureId: adventure?.id || null,
+      gameLog,
+      combat,
+      sceneState,
+    })
+
+    sessions = [migratedSession]
+    activeSessionId = migratedSession.id
+  }
+
+  return {
+    characterStore,
+    adventure,
+    gameLog,
+    combat,
+    sceneState,
+    apiKey: localStorage.getItem('dm_apiKey') || '',
+    selectedModel: getInitialModel(),
+    adventures,
+    sessions,
+    activeSessionId,
+  }
+}
+
 export function GameProvider({ children }) {
-  const [characterStore, setCharacterStore] = useState(getInitialCharacterStore)
+  const bootstrapRef = useRef(null)
+  if (!bootstrapRef.current) {
+    bootstrapRef.current = buildInitialProviderState()
+  }
+
+  const bootstrap = bootstrapRef.current
+
+  const [characterStore, setCharacterStore] = useState(bootstrap.characterStore)
   const characters = characterStore.characters
   const activeCharacterId = characterStore.activeCharacterId
   const character = useMemo(
@@ -157,16 +304,68 @@ export function GameProvider({ children }) {
     [characters, activeCharacterId]
   )
 
-  const [adventure, setAdventureState] = useState(getInitialAdventure)
-  const [gameLog, setGameLogState] = useState(() => loadFromStorage('dm_gameLog', DEFAULT_GAME_LOG))
-  const [combat, setCombatState] = useState(() => loadFromStorage('dm_combat', DEFAULT_COMBAT))
-  const [sceneState, setSceneStateState] = useState(() => getInitialSceneState(getInitialAdventure()))
-  const [apiKey, setApiKeyState] = useState(() => localStorage.getItem('dm_apiKey') || '')
-  const [selectedModel, setSelectedModelState] = useState(getInitialModel)
-  const [adventures, setAdventuresState] = useState(() => {
-    const stored = loadFromStorage('dm_adventures', [])
-    return Array.isArray(stored) ? stored.map(normalizeAdventureEntry) : []
-  })
+  const [adventure, setAdventureState] = useState(bootstrap.adventure)
+  const [gameLog, setGameLogState] = useState(bootstrap.gameLog)
+  const [combat, setCombatState] = useState(bootstrap.combat)
+  const [sceneState, setSceneStateState] = useState(bootstrap.sceneState)
+  const [apiKey, setApiKeyState] = useState(bootstrap.apiKey)
+  const [selectedModel, setSelectedModelState] = useState(bootstrap.selectedModel)
+  const [adventures, setAdventuresState] = useState(bootstrap.adventures)
+  const [sessions, setSessionsState] = useState(bootstrap.sessions)
+  const [activeSessionId, setActiveSessionIdState] = useState(bootstrap.activeSessionId)
+
+  const activeSession = useMemo(
+    () => sessions.find(entry => entry.id === activeSessionId) || null,
+    [sessions, activeSessionId]
+  )
+
+  const sessionsRef = useRef(sessions)
+  const activeSessionIdRef = useRef(activeSessionId)
+  const adventureRef = useRef(adventure)
+  const gameLogRef = useRef(gameLog)
+  const combatRef = useRef(combat)
+  const sceneStateRef = useRef(sceneState)
+  const adventuresRef = useRef(adventures)
+  const charactersRef = useRef(characters)
+  const activeCharacterIdRef = useRef(activeCharacterId)
+
+  useEffect(() => { sessionsRef.current = sessions }, [sessions])
+  useEffect(() => { activeSessionIdRef.current = activeSessionId }, [activeSessionId])
+  useEffect(() => { adventureRef.current = adventure }, [adventure])
+  useEffect(() => { gameLogRef.current = gameLog }, [gameLog])
+  useEffect(() => { combatRef.current = combat }, [combat])
+  useEffect(() => { sceneStateRef.current = sceneState }, [sceneState])
+  useEffect(() => { adventuresRef.current = adventures }, [adventures])
+  useEffect(() => { charactersRef.current = characters }, [characters])
+  useEffect(() => { activeCharacterIdRef.current = activeCharacterId }, [activeCharacterId])
+
+  const persistSessions = useCallback((nextSessions, nextActiveSessionId = null) => {
+    const persisted = persistSessionsStore(nextSessions, nextActiveSessionId)
+    sessionsRef.current = persisted.sessions
+    activeSessionIdRef.current = persisted.activeSessionId
+    setSessionsState(persisted.sessions)
+    setActiveSessionIdState(persisted.activeSessionId)
+    return persisted
+  }, [])
+
+  const patchSession = useCallback((sessionId, patch) => {
+    if (!sessionId) return null
+
+    const nextSessions = sessionsRef.current.map(entry => {
+      if (entry.id !== sessionId) return entry
+      const updates = typeof patch === 'function' ? patch(entry) : patch
+      return buildSessionRecord({
+        ...entry,
+        ...updates,
+        id: entry.id,
+        createdAt: entry.createdAt,
+        updatedAt: new Date().toISOString(),
+      })
+    })
+
+    persistSessions(nextSessions, sessionId)
+    return nextSessions.find(entry => entry.id === sessionId) || null
+  }, [persistSessions])
 
   const applyCharacterStore = useCallback((nextCharacters, nextActiveCharacterId = null) => {
     const persisted = persistCharacterStore(nextCharacters, nextActiveCharacterId)
@@ -174,29 +373,40 @@ export function GameProvider({ children }) {
       characters: persisted.characters,
       activeCharacterId: persisted.activeCharacterId,
     })
+    activeCharacterIdRef.current = persisted.activeCharacterId
+    charactersRef.current = persisted.characters
+
+    const liveSessionId = activeSessionIdRef.current
+    if (liveSessionId && persisted.activeCharacterId) {
+      patchSession(liveSessionId, { characterId: persisted.activeCharacterId })
+    }
+
     return persisted.activeCharacter
-  }, [])
+  }, [patchSession])
 
   const setCharacters = useCallback((value) => {
-    const nextValue = typeof value === 'function' ? value(characters) : value
+    const nextValue = typeof value === 'function' ? value(charactersRef.current) : value
     const nextCharacters = normalizeCharacterRoster(nextValue)
-    return applyCharacterStore(nextCharacters, activeCharacterId)
-  }, [activeCharacterId, applyCharacterStore, characters])
+    return applyCharacterStore(nextCharacters, activeCharacterIdRef.current)
+  }, [applyCharacterStore])
 
   const selectCharacter = useCallback((value) => {
     const nextId = typeof value === 'string'
       ? value
       : (value?.id || null)
 
-    return applyCharacterStore(characters, nextId)
-  }, [applyCharacterStore, characters])
+    return applyCharacterStore(charactersRef.current, nextId)
+  }, [applyCharacterStore])
 
   const saveCharacter = useCallback((value, options = {}) => {
-    const currentCharacter = character
+    const currentCharacter = charactersRef.current.find(entry => entry.id === activeCharacterIdRef.current) || null
     const nextValue = typeof value === 'function' ? value(currentCharacter) : value
 
     if (!nextValue) {
-      return applyCharacterStore(characters.filter(entry => entry.id !== currentCharacter?.id), null)
+      return applyCharacterStore(
+        charactersRef.current.filter(entry => entry.id !== currentCharacter?.id),
+        null
+      )
     }
 
     const explicitId = nextValue.id || options.id || null
@@ -204,26 +414,33 @@ export function GameProvider({ children }) {
     if (!normalized) return null
 
     let didUpdate = false
-    const nextCharacters = characters.map(entry => {
+    const nextCharacters = charactersRef.current.map(entry => {
       if (entry.id !== normalized.id) return entry
       didUpdate = true
       return normalized
     })
 
-    const finalCharacters = didUpdate ? nextCharacters : [...characters, normalized]
-    const nextActiveId = options.setActive === false ? activeCharacterId : normalized.id
+    const finalCharacters = didUpdate ? nextCharacters : [...charactersRef.current, normalized]
+    const nextActiveId = options.setActive === false ? activeCharacterIdRef.current : normalized.id
     return applyCharacterStore(finalCharacters, nextActiveId)
-  }, [activeCharacterId, applyCharacterStore, character, characters])
+  }, [applyCharacterStore])
 
   const upsertCharacter = useCallback((value, options = {}) => {
     return saveCharacter(value, options)
   }, [saveCharacter])
 
   const deleteCharacter = useCallback((characterId) => {
-    const nextCharacters = characters.filter(entry => entry.id !== characterId)
-    const nextActiveId = activeCharacterId === characterId ? null : activeCharacterId
+    const nextCharacters = charactersRef.current.filter(entry => entry.id !== characterId)
+    const nextActiveId = activeCharacterIdRef.current === characterId ? null : activeCharacterIdRef.current
+
+    const nextSessions = sessionsRef.current.filter(entry => entry.characterId !== characterId)
+    const nextActiveSessionId = nextSessions.some(entry => entry.id === activeSessionIdRef.current)
+      ? activeSessionIdRef.current
+      : null
+
+    persistSessions(nextSessions, nextActiveSessionId)
     return applyCharacterStore(nextCharacters, nextActiveId)
-  }, [activeCharacterId, applyCharacterStore, characters])
+  }, [applyCharacterStore, persistSessions])
 
   const setCharacter = useCallback((value) => {
     if (value === null) {
@@ -232,43 +449,90 @@ export function GameProvider({ children }) {
     }
 
     if (typeof value === 'function') {
-      return saveCharacter(value, { id: character?.id || null })
+      return saveCharacter(value, { id: activeCharacterIdRef.current || null })
     }
 
     return saveCharacter(value)
-  }, [character?.id, saveCharacter, selectCharacter])
+  }, [saveCharacter, selectCharacter])
 
-  const setAdventure = useCallback((val) => {
-    const nextValue = typeof val === 'function' ? val(adventure) : val
-    const normalized = normalizeAdventureEntry(nextValue)
+  const applyLiveAdventureState = useCallback((nextAdventure, sessionIdOverride = activeSessionIdRef.current) => {
+    const normalized = normalizeAdventureEntry(nextAdventure)
+    adventureRef.current = normalized
     setAdventureState(normalized)
     saveToStorage('dm_adventure', normalized)
 
+    if (sessionIdOverride) {
+      patchSession(sessionIdOverride, { adventureId: normalized?.id || null })
+    }
+
+    return normalized
+  }, [patchSession])
+
+  const applyLiveGameLog = useCallback((nextGameLog, sessionIdOverride = activeSessionIdRef.current) => {
+    const normalized = normalizeGameLog(nextGameLog)
+    gameLogRef.current = normalized
+    setGameLogState(normalized)
+    saveToStorage('dm_gameLog', normalized)
+
+    if (sessionIdOverride) {
+      patchSession(sessionIdOverride, { gameLog: normalized })
+    }
+
+    return normalized
+  }, [patchSession])
+
+  const applyLiveCombat = useCallback((nextCombat, sessionIdOverride = activeSessionIdRef.current) => {
+    const normalized = nextCombat || null
+    combatRef.current = normalized
+    setCombatState(normalized)
+    saveToStorage('dm_combat', normalized)
+
+    if (sessionIdOverride) {
+      patchSession(sessionIdOverride, { combat: normalized })
+    }
+
+    return normalized
+  }, [patchSession])
+
+  const applyLiveSceneState = useCallback((nextSceneState, sessionIdOverride = activeSessionIdRef.current) => {
+    const normalized = nextSceneState || null
+    sceneStateRef.current = normalized
+    setSceneStateState(normalized)
+    saveToStorage('dm_sceneState', normalized)
+
+    if (sessionIdOverride) {
+      patchSession(sessionIdOverride, { sceneState: normalized })
+    }
+
+    return normalized
+  }, [patchSession])
+
+  const setAdventure = useCallback((val) => {
+    const nextValue = typeof val === 'function' ? val(adventureRef.current) : val
+    const normalized = applyLiveAdventureState(nextValue)
+
     const nextSceneState = normalized ? createInitialSceneState(normalized) : null
-    setSceneStateState(nextSceneState)
-    saveToStorage('dm_sceneState', nextSceneState)
-  }, [adventure])
+    applyLiveSceneState(nextSceneState)
+    return normalized
+  }, [applyLiveAdventureState, applyLiveSceneState])
 
   const setGameLog = useCallback((val) => {
-    const v = typeof val === 'function' ? val(gameLog) : val
-    setGameLogState(v)
-    saveToStorage('dm_gameLog', v)
-  }, [gameLog])
+    const nextValue = typeof val === 'function' ? val(gameLogRef.current) : val
+    return applyLiveGameLog(nextValue)
+  }, [applyLiveGameLog])
 
   const setCombat = useCallback((val) => {
-    const v = typeof val === 'function' ? val(combat) : val
-    setCombatState(v)
-    saveToStorage('dm_combat', v)
-  }, [combat])
+    const nextValue = typeof val === 'function' ? val(combatRef.current) : val
+    return applyLiveCombat(nextValue)
+  }, [applyLiveCombat])
 
   const setSceneState = useCallback((val) => {
-    const v = typeof val === 'function' ? val(sceneState) : val
-    setSceneStateState(v)
-    saveToStorage('dm_sceneState', v)
-  }, [sceneState])
+    const nextValue = typeof val === 'function' ? val(sceneStateRef.current) : val
+    return applyLiveSceneState(nextValue)
+  }, [applyLiveSceneState])
 
   const syncSceneState = useCallback(({ messages, adventureOverride = null, combatOverride = null, fallbackUserText = '' }) => {
-    const activeAdventure = normalizeAdventureEntry(adventureOverride || adventure)
+    const activeAdventure = normalizeAdventureEntry(adventureOverride || adventureRef.current)
     if (!activeAdventure) {
       setSceneState(null)
       return null
@@ -276,22 +540,22 @@ export function GameProvider({ children }) {
 
     const nextSceneState = deriveSceneState({
       adventure: activeAdventure,
-      previousSceneState: sceneState,
+      previousSceneState: sceneStateRef.current,
       messages,
-      combat: combatOverride ?? combat,
+      combat: combatOverride ?? combatRef.current,
       fallbackUserText,
     })
 
     setSceneState(nextSceneState)
     return nextSceneState
-  }, [adventure, combat, sceneState, setSceneState])
+  }, [setSceneState])
 
   const resetSceneState = useCallback((adventureOverride = null) => {
-    const activeAdventure = normalizeAdventureEntry(adventureOverride || adventure)
+    const activeAdventure = normalizeAdventureEntry(adventureOverride || adventureRef.current)
     const initialState = activeAdventure ? createInitialSceneState(activeAdventure) : null
     setSceneState(initialState)
     return initialState
-  }, [adventure, setSceneState])
+  }, [setSceneState])
 
   const setApiKey = useCallback((key) => {
     setApiKeyState(key)
@@ -305,11 +569,30 @@ export function GameProvider({ children }) {
   }, [])
 
   const setAdventures = useCallback((val) => {
-    const nextValue = typeof val === 'function' ? val(adventures) : val
-    const normalized = Array.isArray(nextValue) ? nextValue.map(normalizeAdventureEntry) : []
+    const nextValue = typeof val === 'function' ? val(adventuresRef.current) : val
+    const normalized = Array.isArray(nextValue)
+      ? nextValue.map(normalizeAdventureEntry).filter(Boolean)
+      : []
+
+    adventuresRef.current = normalized
     setAdventuresState(normalized)
     saveToStorage('dm_adventures', normalized)
-  }, [adventures])
+
+    const nextSessions = normalizeSessionList(sessionsRef.current, normalized).filter(entry => {
+      return entry.adventureId ? normalized.some(item => item.id === entry.adventureId) : true
+    })
+
+    persistSessions(nextSessions, activeSessionIdRef.current)
+
+    const liveAdventureStillExists = adventureRef.current?.id
+      ? normalized.some(item => item.id === adventureRef.current.id)
+      : true
+
+    if (!liveAdventureStillExists) {
+      applyLiveAdventureState(null, activeSessionIdRef.current)
+      applyLiveSceneState(null, activeSessionIdRef.current)
+    }
+  }, [applyLiveAdventureState, applyLiveSceneState, persistSessions])
 
   const addMessage = useCallback((role, content, type = 'narrative') => {
     const msg = {
@@ -319,15 +602,17 @@ export function GameProvider({ children }) {
       type,
       timestamp: new Date().toISOString(),
     }
-    setGameLog(prev => [...prev, msg])
+
+    applyLiveGameLog([...gameLogRef.current, msg])
     return msg
-  }, [setGameLog])
+  }, [applyLiveGameLog])
 
   const clearGameLog = useCallback(() => {
-    setGameLog([])
-    setCombat(null)
-    resetSceneState()
-  }, [resetSceneState, setCombat, setGameLog])
+    applyLiveGameLog([])
+    applyLiveCombat(null)
+    const activeAdventure = adventureRef.current
+    applyLiveSceneState(activeAdventure ? createInitialSceneState(activeAdventure) : null)
+  }, [applyLiveCombat, applyLiveGameLog, applyLiveSceneState])
 
   const updateCharacterHP = useCallback((newHP) => {
     setCharacter(prev => (
@@ -350,6 +635,71 @@ export function GameProvider({ children }) {
   const endCombat = useCallback(() => {
     setCombat(null)
   }, [setCombat])
+
+  const createSession = useCallback(({ characterId, adventureId = null } = {}) => {
+    const resolvedCharacterId = characterId || activeCharacterIdRef.current || null
+    const resolvedAdventure = adventuresRef.current.find(entry => entry.id === adventureId) || null
+    const initialSceneState = resolvedAdventure ? createInitialSceneState(resolvedAdventure) : null
+
+    const session = buildSessionRecord({
+      characterId: resolvedCharacterId,
+      adventureId: resolvedAdventure?.id || null,
+      gameLog: [],
+      combat: null,
+      sceneState: initialSceneState,
+    })
+
+    persistSessions([session, ...sessionsRef.current], session.id)
+
+    if (resolvedCharacterId) {
+      applyCharacterStore(charactersRef.current, resolvedCharacterId)
+    }
+
+    applyLiveAdventureState(resolvedAdventure, session.id)
+    applyLiveGameLog([], session.id)
+    applyLiveCombat(null, session.id)
+    applyLiveSceneState(initialSceneState, session.id)
+
+    return session
+  }, [applyCharacterStore, applyLiveAdventureState, applyLiveCombat, applyLiveGameLog, applyLiveSceneState, persistSessions])
+
+  const loadSession = useCallback((sessionId) => {
+    const session = sessionsRef.current.find(entry => entry.id === sessionId) || null
+    if (!session) return null
+
+    persistSessions(sessionsRef.current, session.id)
+
+    if (session.characterId) {
+      applyCharacterStore(charactersRef.current, session.characterId)
+    }
+
+    const resolvedAdventure = adventuresRef.current.find(entry => entry.id === session.adventureId) || null
+    applyLiveAdventureState(resolvedAdventure, session.id)
+    applyLiveGameLog(session.gameLog || [], session.id)
+    applyLiveCombat(session.combat || null, session.id)
+    applyLiveSceneState(session.sceneState || (resolvedAdventure ? createInitialSceneState(resolvedAdventure) : null), session.id)
+
+    return session
+  }, [applyCharacterStore, applyLiveAdventureState, applyLiveCombat, applyLiveGameLog, applyLiveSceneState, persistSessions])
+
+  const deleteSession = useCallback((sessionId) => {
+    const nextSessions = sessionsRef.current.filter(entry => entry.id !== sessionId)
+    const isDeletingActive = activeSessionIdRef.current === sessionId
+    const nextActiveSessionId = isDeletingActive ? null : activeSessionIdRef.current
+
+    persistSessions(nextSessions, nextActiveSessionId)
+
+    if (isDeletingActive) {
+      applyLiveGameLog([], null)
+      applyLiveCombat(null, null)
+      applyLiveSceneState(null, null)
+      applyLiveAdventureState(null, null)
+    }
+  }, [applyLiveAdventureState, applyLiveCombat, applyLiveGameLog, applyLiveSceneState, persistSessions])
+
+  const leaveSessionSelection = useCallback(() => {
+    persistSessions(sessionsRef.current, activeSessionIdRef.current)
+  }, [persistSessions])
 
   const getModifier = (score) => getAbilityModifier(score)
 
@@ -383,6 +733,13 @@ export function GameProvider({ children }) {
       setSelectedModel,
       adventures,
       setAdventures,
+      sessions,
+      activeSession,
+      activeSessionId,
+      createSession,
+      loadSession,
+      deleteSession,
+      leaveSessionSelection,
       updateCharacterHP,
       getModifier,
     }}>

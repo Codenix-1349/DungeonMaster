@@ -34,7 +34,7 @@ async function extractTextFromTXT(file) {
 
 export default function AdventurePage() {
   const navigate = useNavigate()
-  const { adventures, setAdventures, adventure, setAdventure, characters } = useGame()
+  const { adventures, setAdventures, adventure, setAdventure, characters, activeSession } = useGame()
   const [dragOver, setDragOver] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [processMsg, setProcessMsg] = useState('')
@@ -97,27 +97,37 @@ export default function AdventurePage() {
   }, [processFile])
 
   const selectAdventure = useCallback((adv) => {
+    if (activeSession) return
     setAdventure(adv)
-  }, [setAdventure])
+  }, [activeSession, setAdventure])
 
   const deleteAdventure = useCallback((id) => {
     setAdventures(prev => prev.filter(a => a.id !== id))
-    if (adventure?.id === id) setAdventure(null)
-  }, [setAdventures, adventure, setAdventure])
+    if (adventure?.id === id && !activeSession) setAdventure(null)
+  }, [setAdventures, adventure, setAdventure, activeSession])
 
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-8 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="section-title text-3xl mb-2">Abenteuer-Module</h1>
-          <p className="font-body text-stone-500 italic">Lade Abenteuermodule als PDF oder TXT hoch und wähle gezielt, welches Modul die nächste Session starten soll.</p>
+          <p className="font-body text-stone-500 italic">Lade Abenteuermodule als PDF oder TXT hoch und stelle deine Modulbibliothek für neue Sessions bereit.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <span className="badge-gold">{adventures.length === 1 ? '1 Modul' : `${adventures.length} Module`}</span>
           <span className="badge-gold">{characters.length === 1 ? '1 Held verfügbar' : `${characters.length} Helden verfügbar`}</span>
-          <button onClick={() => navigate('/game')} className="btn-primary">Zur Session-Auswahl</button>
+          <button onClick={() => navigate('/game?mode=new')} className="btn-primary">Neues Abenteuer vorbereiten</button>
         </div>
       </div>
+
+      {activeSession && (
+        <div className="panel-gold p-4 mb-6">
+          <p className="section-subtitle mb-1">Session-Sperre</p>
+          <p className="font-body text-sm text-stone-400">
+            Eine Session ist aktuell geladen. Das gebundene Abenteuer sollte nicht mitten im laufenden Abenteuer gewechselt werden. Starte für eine neue Kombination bitte über <span className="text-gold-400">Neues Abenteuer</span> eine frische Session.
+          </p>
+        </div>
+      )}
 
       <div
         className={`border-2 border-dashed rounded-lg p-12 text-center mb-8 transition-all duration-300 cursor-pointer ${
@@ -166,13 +176,13 @@ export default function AdventurePage() {
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <span className="text-2xl">⚔️</span>
             <div className="min-w-0">
-              <p className="section-subtitle">Aktives Abenteuer</p>
+              <p className="section-subtitle">Ausgewähltes Abenteuer</p>
               <p className="font-heading text-parchment truncate">{adventure.title}</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => navigate('/game')} className="btn-primary text-xs">Mit Held starten</button>
-            <button onClick={() => setAdventure(null)} className="btn-ghost text-xs">Abwählen</button>
+            <button onClick={() => navigate('/game?mode=new')} className="btn-primary text-xs">Mit Held neu starten</button>
+            {!activeSession && <button onClick={() => setAdventure(null)} className="btn-ghost text-xs">Abwählen</button>}
           </div>
         </div>
       )}
@@ -215,14 +225,18 @@ export default function AdventurePage() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {adventure?.id !== adv.id ? (
-                    <button onClick={() => selectAdventure(adv)} className="btn-primary text-xs px-3 py-1.5">
+                    <button
+                      onClick={() => selectAdventure(adv)}
+                      disabled={!!activeSession}
+                      className="btn-primary text-xs px-3 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
                       Auswählen
                     </button>
                   ) : (
                     <span className="badge-green">● Aktiv</span>
                   )}
-                  <button onClick={() => navigate('/game')} className="btn-ghost text-xs px-3 py-1.5">
-                    Zur Session
+                  <button onClick={() => navigate('/game?mode=new')} className="btn-ghost text-xs px-3 py-1.5">
+                    Neue Session
                   </button>
                   <button
                     onClick={() => deleteAdventure(adv.id)}

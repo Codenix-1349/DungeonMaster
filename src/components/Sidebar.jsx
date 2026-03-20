@@ -51,7 +51,7 @@ const navItems = [
 ]
 
 export default function Sidebar() {
-  const { character, characters, adventure, adventures, combat } = useGame()
+  const { character, characters, adventure, adventures, combat, sessions, activeSession } = useGame()
 
   return (
     <aside className="w-64 min-h-screen flex flex-col border-r border-gold-700/20"
@@ -88,7 +88,7 @@ export default function Sidebar() {
         {character ? (
           <div className="panel px-3 py-2.5">
             <div className="flex items-center justify-between gap-2 mb-1">
-              <p className="section-subtitle">Aktiver Held</p>
+              <p className="section-subtitle">Gebundener Held</p>
               <span className="font-body text-[11px] text-stone-600">{characters.length}</span>
             </div>
             <p className="font-heading text-sm text-parchment">{character.name}</p>
@@ -119,6 +119,16 @@ export default function Sidebar() {
             <span className="font-body text-[11px] text-stone-600">{adventures.length}</span>
           </div>
           <p className="font-body text-xs text-stone-400 truncate">{adventure ? adventure.title : 'Kein Modul aktiv'}</p>
+        </div>
+
+        <div className="panel px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="section-subtitle mb-0.5">Sessions</p>
+            <span className="font-body text-[11px] text-stone-600">{sessions.length}</span>
+          </div>
+          <p className="font-body text-xs text-stone-400 truncate">
+            {activeSession ? 'Aktive Session geladen' : 'Keine Session aktiv'}
+          </p>
         </div>
 
         <div className="panel px-3 py-2">

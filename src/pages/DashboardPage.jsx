@@ -7,7 +7,7 @@ const RUNE_DECORATION = '✦ ✧ ✦'
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const { character, characters, adventure, adventures, gameLog } = useGame()
+  const { character, characters, adventure, adventures, gameLog, sessions, activeSession } = useGame()
 
   const lastEntry = gameLog[gameLog.length - 1]
   const sessionDate = lastEntry ? new Date(lastEntry.timestamp).toLocaleString('de-DE') : null
@@ -33,7 +33,7 @@ export default function DashboardPage() {
 
         <p className="font-body text-lg text-stone-400 italic max-w-2xl mx-auto">
           Begib dich auf ein Solo-Abenteuer, geführt von KI und ausgerichtet auf das frei verfügbare {SRD_VERSION_LABEL}.
-          Lade ein Abenteuer, wähle gezielt deinen Helden und starte dann eine frische Session.
+          Starte ein neues Abenteuer mit Held und Modul oder setze eine bestehende Session gezielt fort.
         </p>
       </div>
 
@@ -96,23 +96,41 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        <div className={`panel p-5 transition-all duration-300 ${gameLog.length > 0 ? 'border-gold-600/40' : 'border-stone-800'}`}>
+        <div className={`panel p-5 transition-all duration-300 ${activeSession ? 'border-gold-600/40' : 'border-stone-800'}`}>
           <div className="flex items-start justify-between mb-3">
-            <p className="section-subtitle">Session</p>
-            <span className={`badge ${gameLog.length > 0 ? 'badge-gold' : 'badge-red'}`}>
-              {gameLog.length > 0 ? `${gameLog.length} Nachrichten` : '○ Neu'}
+            <p className="section-subtitle">Abenteuerstatus</p>
+            <span className={`badge ${activeSession ? 'badge-gold' : 'badge-red'}`}>
+              {activeSession ? `${sessions.length} aktiv` : '○ Keine Session'}
             </span>
           </div>
-          {lastEntry ? (
+          {activeSession ? (
             <>
-              <p className="font-body text-sm text-stone-400 italic line-clamp-2">„{lastEntry.content.substring(0, 80)}…“</p>
-              <p className="font-body text-xs text-stone-600 mt-2">{sessionDate}</p>
+              <p className="font-heading text-lg text-parchment leading-tight mb-1">
+                {adventure?.title || 'Freies Solo-Abenteuer'}
+              </p>
+              {character && (
+                <p className="font-body text-xs text-stone-500 italic mb-2">
+                  Gebundener Held: {character.name}
+                </p>
+              )}
+              {lastEntry ? (
+                <>
+                  <p className="font-body text-sm text-stone-400 italic line-clamp-2">„{lastEntry.content.substring(0, 80)}…“</p>
+                  <p className="font-body text-xs text-stone-600 mt-2">{sessionDate}</p>
+                </>
+              ) : (
+                <p className="font-body text-sm text-stone-600 italic mt-2">Session angelegt, aber noch nicht gestartet</p>
+              )}
             </>
           ) : (
-            <p className="font-body text-sm text-stone-600 italic mt-2">Noch keine Session gestartet</p>
+            <p className="font-body text-sm text-stone-600 italic mt-2">Noch keine aktive Session geladen</p>
           )}
-          <button onClick={() => navigate('/game')} className="btn-ghost w-full mt-4 text-center">
-            {gameLog.length > 0 ? 'Fortsetzen →' : 'Session vorbereiten →'}
+          <div className="mt-4 flex items-center justify-between text-xs text-stone-600">
+            <span>Gespeicherte Sessions</span>
+            <span>{sessions.length}</span>
+          </div>
+          <button onClick={() => navigate('/game?mode=continue')} className="btn-ghost w-full mt-4 text-center">
+            Abenteuer fortfahren →
           </button>
         </div>
       </div>
@@ -120,19 +138,16 @@ export default function DashboardPage() {
       <div className="panel-gold p-6 text-center">
         <div className="ornament mb-4 text-gold-700/40 font-heading text-sm tracking-widest">Schnellstart</div>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <button onClick={() => navigate('/game')} className="btn-primary text-base px-8 py-3">
-            ⚔️ Session auswählen & starten
+          <button onClick={() => navigate('/game?mode=new')} className="btn-primary text-base px-8 py-3">
+            ⚔️ Neues Abenteuer
           </button>
-          <button onClick={() => navigate('/adventure')} className="btn-ghost text-base px-8 py-3">
-            📜 Modul laden
-          </button>
-          <button onClick={() => navigate('/character')} className="btn-ghost text-base px-8 py-3">
-            🛡️ Helden verwalten
+          <button onClick={() => navigate('/game?mode=continue')} className="btn-ghost text-base px-8 py-3">
+            📜 Abenteuer fortfahren
           </button>
         </div>
         {characters.length === 0 && (
           <p className="font-body text-xs text-stone-600 italic mt-3">
-            Erstelle zuerst mindestens einen Helden, damit du neue Abenteuer gezielt mit einer Auswahl starten kannst.
+            Erstelle zuerst mindestens einen Helden, damit du ein neues Abenteuer gezielt mit einer Auswahl starten kannst.
           </p>
         )}
       </div>
@@ -140,8 +155,8 @@ export default function DashboardPage() {
       <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
         {[
           { step: '1', title: 'Einstellungen', desc: 'OpenRouter API Key eingeben und Modell wählen', route: '/settings' },
-          { step: '2', title: 'Abenteuer', desc: 'PDF oder TXT Abenteuer hochladen und Modul auswählen', route: '/adventure' },
-          { step: '3', title: 'Helden', desc: 'Mehrere SRD-Helden erstellen, speichern und auswählen', route: '/character' },
+          { step: '2', title: 'Abenteuer', desc: 'PDF oder TXT Abenteuer hochladen und Modulbibliothek pflegen', route: '/adventure' },
+          { step: '3', title: 'Helden', desc: 'Mehrere SRD-Helden erstellen, speichern und für Sessions bereithalten', route: '/character' },
         ].map(({ step, title, desc, route }) => (
           <div key={step} className="panel p-4 cursor-pointer hover:border-gold-600/30 transition-colors" onClick={() => navigate(route)}>
             <div className="font-display text-4xl text-gold-700/40 mb-2">{step}</div>

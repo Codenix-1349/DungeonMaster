@@ -50,7 +50,7 @@ function getDefaultForm() {
   return createCharacterTemplate()
 }
 
-function CharacterLibraryCard({ entry, isActive, onActivate, onEdit, onDelete, onStart }) {
+function CharacterLibraryCard({ entry, isActive, sessionLocked = false, onActivate, onEdit, onDelete, onStart }) {
   const hpPercent = Math.max(0, Math.min(((entry.currentHP ?? entry.maxHP) / entry.maxHP) * 100, 100))
 
   return (
@@ -74,11 +74,11 @@ function CharacterLibraryCard({ entry, isActive, onActivate, onEdit, onDelete, o
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <button onClick={onActivate} className="btn-ghost text-xs py-1.5">
+        <button onClick={onActivate} disabled={sessionLocked && !isActive} className="btn-ghost text-xs py-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
           {isActive ? 'Ausgewählt' : 'Aktiv setzen'}
         </button>
         <button onClick={onEdit} className="btn-ghost text-xs py-1.5">Bearbeiten</button>
-        <button onClick={onStart} className="btn-primary text-xs py-1.5">Mit Held starten</button>
+        <button onClick={onStart} className="btn-primary text-xs py-1.5">Neues Abenteuer</button>
         <button onClick={onDelete} className="btn-danger text-xs py-1.5">Löschen</button>
       </div>
     </div>
@@ -94,6 +94,7 @@ export default function CharacterPage() {
     saveCharacter,
     selectCharacter,
     deleteCharacter,
+    activeSession,
   } = useGame()
 
   const [step, setStep] = useState(0)
@@ -193,6 +194,9 @@ export default function CharacterPage() {
           <div>
             <h1 className="section-title text-3xl mb-1">Heldenverwaltung</h1>
             <p className="font-body text-stone-500 italic">Mehrere SRD-Helden speichern, auswählen und für neue Abenteuer bereithalten.</p>
+            {activeSession && (
+              <p className="font-body text-xs text-stone-600 italic mt-2">Eine Session ist aktuell geladen. Helden sollten nicht mitten im Abenteuer gewechselt werden.</p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="badge-gold">{rosterCountLabel}</span>
@@ -204,7 +208,7 @@ export default function CharacterPage() {
           <>
             <div className="flex flex-wrap gap-2 mb-4">
               <button onClick={() => startEdit(character)} className="btn-ghost">Aktiven Helden bearbeiten</button>
-              <button onClick={() => navigate('/game')} className="btn-primary">Mit aktivem Helden zur Session</button>
+              <button onClick={() => navigate('/game?mode=new')} className="btn-primary">Mit aktivem Helden neues Abenteuer</button>
             </div>
             <CharacterSheet />
 
@@ -297,12 +301,16 @@ export default function CharacterPage() {
                   key={entry.id}
                   entry={entry}
                   isActive={character?.id === entry.id}
-                  onActivate={() => selectCharacter(entry.id)}
+                  sessionLocked={!!activeSession}
+                  onActivate={() => {
+                    if (activeSession && character?.id !== entry.id) return
+                    selectCharacter(entry.id)
+                  }}
                   onEdit={() => startEdit(entry)}
                   onDelete={() => handleDeleteCharacter(entry.id, entry.name)}
                   onStart={() => {
                     selectCharacter(entry.id)
-                    navigate('/game')
+                    navigate('/game?mode=new')
                   }}
                 />
               ))}

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
 import { sendMessage } from '../services/openrouter'
 import CombatTracker from '../components/CombatTracker'
@@ -42,12 +42,13 @@ function MessageBubble({ msg }) {
   )
 }
 
-function SelectionTile({ title, subtitle, active, onClick, children }) {
+function SelectionTile({ title, subtitle, active, disabled = false, onClick, children }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`panel p-4 text-left transition-all duration-200 ${active ? 'border-gold-600/50 bg-gold-600/10' : 'hover:border-gold-700/30'}`}
+      disabled={disabled}
+      className={`panel p-4 text-left transition-all duration-200 ${active ? 'border-gold-600/50 bg-gold-600/10' : 'hover:border-gold-700/30'} ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
     >
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="min-w-0">
@@ -61,17 +62,58 @@ function SelectionTile({ title, subtitle, active, onClick, children }) {
   )
 }
 
+function SessionCard({ session, character, adventure, isActive, onContinue, onDelete }) {
+  const lastEntry = session.gameLog?.[session.gameLog.length - 1]
+
+  return (
+    <div className={`panel p-4 ${isActive ? 'border-gold-600/40' : ''}`}>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="min-w-0">
+          <p className="font-heading text-parchment text-base truncate">
+            {adventure?.title || 'Freies Solo-Abenteuer'}
+          </p>
+          <p className="font-body text-xs text-stone-500 mt-0.5">
+            {character ? `${character.name} · ${character.race} ${character.class}` : 'Held nicht mehr vorhanden'}
+          </p>
+        </div>
+        {isActive && <span className="badge-green">● Aktiv</span>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-xs font-body text-stone-500 mb-3">
+        <div>
+          <p className="section-subtitle mb-1">Stand</p>
+          <p>{session.gameLog?.length || 0} Nachrichten</p>
+        </div>
+        <div>
+          <p className="section-subtitle mb-1">Zuletzt</p>
+          <p>{new Date(session.updatedAt).toLocaleString('de-DE')}</p>
+        </div>
+      </div>
+
+      {lastEntry ? (
+        <p className="font-body text-sm text-stone-400 italic line-clamp-2 mb-4">
+          „{lastEntry.content.substring(0, 120)}{lastEntry.content.length > 120 ? '…' : ''}“
+        </p>
+      ) : (
+        <p className="font-body text-sm text-stone-600 italic mb-4">Session angelegt, aber noch nicht gestartet.</p>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <button onClick={onContinue} className="btn-primary text-xs px-4 py-2">Fortsetzen →</button>
+        <button onClick={onDelete} className="btn-danger text-xs px-4 py-2">Löschen</button>
+      </div>
+    </div>
+  )
+}
+
 export default function GamePage() {
   const {
     character,
     characters,
-    selectCharacter,
     adventure,
     adventures,
-    setAdventure,
     gameLog,
     addMessage,
-    clearGameLog,
     combat,
     startCombat,
     apiKey,
@@ -79,9 +121,17 @@ export default function GamePage() {
     sceneState,
     syncSceneState,
     resetSceneState,
+    sessions,
+    activeSession,
+    createSession,
+    loadSession,
+    deleteSession,
   } = useGame()
 
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const mode = searchParams.get('mode')
+
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
@@ -98,12 +148,11 @@ export default function GamePage() {
   }, [gameLog, streamingText])
 
   useEffect(() => {
-    setSelectedCharacterId(character?.id || '')
-  }, [character?.id])
-
-  useEffect(() => {
-    setSelectedAdventureId(adventure?.id || '')
-  }, [adventure?.id])
+    if (mode !== 'continue') {
+      setSelectedCharacterId(character?.id || '')
+      setSelectedAdventureId(adventure?.id || '')
+    }
+  }, [character?.id, adventure?.id, mode])
 
   const selectedCharacter = useMemo(
     () => characters.find(entry => entry.id === selectedCharacterId) || null,
@@ -114,6 +163,14 @@ export default function GamePage() {
     () => adventures.find(entry => entry.id === selectedAdventureId) || null,
     [adventures, selectedAdventureId]
   )
+
+  const enrichedSessions = useMemo(() => {
+    return sessions.map(session => ({
+      ...session,
+      character: characters.find(entry => entry.id === session.characterId) || null,
+      adventure: adventures.find(entry => entry.id === session.adventureId) || null,
+    }))
+  }, [adventures, characters, sessions])
 
   const buildHistory = useCallback((sourceMessages = gameLog) => {
     const trimmedHistory = sourceMessages.slice(-12)
@@ -176,7 +233,6 @@ export default function GamePage() {
         adventureOverride: activeAdventure,
         combatOverride: combat,
         fallbackUserText: text,
-        previousSceneStateOverride: activeSceneState,
       })
 
       if (full.includes('KAMPF BEGINNT') && !combat?.active) startCombat([])
@@ -225,22 +281,7 @@ export default function GamePage() {
     return 'Das Abenteuer beginnt. Führe mich direkt in eine spannende erste Szene eines klassischen Fantasy-Abenteuers nach dem D&D-SRD. Stoppe an klaren Entscheidungspunkten.'
   }, [])
 
-  const prepareSelectedSession = useCallback(() => {
-    const nextCharacter = selectedCharacter || null
-    const nextAdventure = selectedAdventure || null
-
-    if ((nextCharacter?.id || null) !== (character?.id || null)) {
-      selectCharacter(nextCharacter ? nextCharacter.id : null)
-    }
-
-    if ((nextAdventure?.id || null) !== (adventure?.id || null)) {
-      setAdventure(nextAdventure)
-    }
-
-    return { nextCharacter, nextAdventure }
-  }, [selectedCharacter, selectedAdventure, character?.id, adventure?.id, selectCharacter, setAdventure])
-
-  const startSelectedSession = useCallback(() => {
+  const handleStartNewSession = useCallback(() => {
     if (!apiKey) {
       setError('Bitte zuerst einen OpenRouter API Key hinterlegen.')
       return
@@ -251,43 +292,62 @@ export default function GamePage() {
       return
     }
 
-    const { nextCharacter, nextAdventure } = prepareSelectedSession()
-    clearGameLog()
-    const initialScene = resetSceneState(nextAdventure)
+    const session = createSession({
+      characterId: selectedCharacter.id,
+      adventureId: selectedAdventure?.id || null,
+    })
 
-    handleSend(startAdventurePrompt(nextAdventure), {
-      characterOverride: nextCharacter,
-      adventureOverride: nextAdventure,
-      sceneStateOverride: initialScene,
+    setError('')
+    navigate('/game', { replace: true })
+
+    handleSend(startAdventurePrompt(selectedAdventure), {
+      characterOverride: selectedCharacter,
+      adventureOverride: selectedAdventure,
+      sceneStateOverride: session?.sceneState || resetSceneState(selectedAdventure),
       historyOverride: [],
       rawHistoryOverride: [],
     })
-  }, [
-    apiKey,
-    selectedCharacter,
-    prepareSelectedSession,
-    clearGameLog,
-    resetSceneState,
-    handleSend,
-    startAdventurePrompt,
-  ])
+  }, [apiKey, selectedAdventure, selectedCharacter, createSession, navigate, handleSend, startAdventurePrompt, resetSceneState])
+
+  const handleContinueSession = useCallback((sessionId) => {
+    const session = loadSession(sessionId)
+    if (!session) {
+      setError('Session konnte nicht geladen werden.')
+      return
+    }
+
+    setError('')
+    navigate('/game', { replace: true })
+  }, [loadSession, navigate])
+
+  const handleDeleteSession = useCallback((session) => {
+    const adventureTitle = session.adventure?.title || 'Freies Solo-Abenteuer'
+    const heroName = session.character?.name || 'unbekannter Held'
+    if (!window.confirm(`Session „${adventureTitle}“ mit ${heroName} wirklich löschen?`)) return
+    deleteSession(session.id)
+  }, [deleteSession])
 
   const currentCharacterHpPercent = character
     ? Math.max(0, Math.min(((character.currentHP ?? character.maxHP) / character.maxHP) * 100, 100))
     : 0
+
+  const showNewSessionSetup = mode === 'new' || (!activeSession && gameLog.length === 0 && mode !== 'continue')
+  const showContinueSelection = mode === 'continue'
+  const showTranscript = !showNewSessionSetup && !showContinueSelection
 
   return (
     <div className="flex flex-col h-screen max-h-screen -m-6 lg:-m-8">
       <div className="flex items-center justify-between px-6 py-3 border-b border-gold-700/20 bg-dungeon-200/80 backdrop-blur-sm flex-shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <h1 className="font-heading text-gold-500 tracking-wider">Spielsitzung</h1>
-          {adventure && <span className="badge-gold text-xs max-w-32 truncate">{adventure.title}</span>}
+          {adventure && <span className="badge-gold text-xs max-w-40 truncate">{adventure.title}</span>}
           {character && <span className="badge text-xs bg-stone-800 text-stone-400 border border-stone-700">{character.name}</span>}
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowRules(!showRules)} className="btn-ghost text-xs px-3 py-1.5">📖</button>
           <button onClick={() => setShowDice(!showDice)} className="btn-ghost text-xs px-3 py-1.5">🎲</button>
-          <button onClick={() => { if (window.confirm('Aktuelle Session löschen und neue Auswahl vorbereiten?')) clearGameLog() }} className="btn-ghost text-xs px-3 py-1.5">Neu</button>
+          <button onClick={() => navigate('/game?mode=new')} className="btn-ghost text-xs px-3 py-1.5">Neu</button>
+          <button onClick={() => navigate('/game?mode=continue')} className="btn-ghost text-xs px-3 py-1.5">Fortfahren</button>
         </div>
       </div>
 
@@ -307,28 +367,28 @@ export default function GamePage() {
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-            {gameLog.length === 0 && !streaming && (
+            {showNewSessionSetup && !streaming && (
               <div className="space-y-6">
                 <div className="text-center py-8">
                   <div className="text-6xl mb-4 animate-float">🏰</div>
-                  <h2 className="font-display text-2xl text-gold-600 mb-3">Neue Session vorbereiten</h2>
+                  <h2 className="font-display text-2xl text-gold-600 mb-3">Neues Abenteuer starten</h2>
                   <p className="font-body text-stone-500 italic max-w-2xl mx-auto">
-                    Wähle gezielt dein Abenteuer und deinen Helden aus. Dann startet eine frische Spielsitzung mit genau dieser Kombination.
+                    Wähle dein Abenteuer und genau einen Helden. Du kannst auch erst einen neuen Helden erstellen und danach diese frische Session starten.
                   </p>
                 </div>
 
                 <div className="panel-gold p-5">
                   <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
                     <div>
-                      <p className="section-subtitle mb-1">Session-Start</p>
+                      <p className="section-subtitle mb-1">Neue Session</p>
                       <p className="font-body text-sm text-stone-400">
-                        Aktiver Held und aktives Modul werden beim Start übernommen. Bestehende Session-Logs werden dabei zurückgesetzt.
+                        Für jede neue Kombination wird eine eigene Session angelegt. Der gewählte Held bleibt danach an diese Session gebunden.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {!apiKey && <button onClick={() => navigate('/settings')} className="btn-primary">⚙️ API Key eingeben</button>}
-                      <button onClick={() => navigate('/character')} className="btn-ghost">🛡️ Helden verwalten</button>
-                      <button onClick={() => navigate('/adventure')} className="btn-ghost">📜 Module verwalten</button>
+                      <button onClick={() => navigate('/character')} className="btn-ghost">🛡️ Helden auswählen oder neu erstellen</button>
+                      <button onClick={() => navigate('/adventure')} className="btn-ghost">📜 Abenteuer verwalten</button>
                     </div>
                   </div>
 
@@ -428,11 +488,11 @@ export default function GamePage() {
                     </div>
 
                     <button
-                      onClick={startSelectedSession}
+                      onClick={handleStartNewSession}
                       disabled={!apiKey || !selectedCharacter}
                       className="btn-primary text-base px-8 py-3"
                     >
-                      ⚔️ Neue Session starten
+                      ⚔️ Neues Abenteuer starten
                     </button>
                     {apiKey && !selectedCharacter && (
                       <p className="font-body text-xs text-stone-600 italic mt-3">Du brauchst mindestens einen gespeicherten Helden für den gezielten Start.</p>
@@ -442,9 +502,42 @@ export default function GamePage() {
               </div>
             )}
 
-            {gameLog.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
+            {showContinueSelection && !streaming && (
+              <div className="space-y-6">
+                <div className="text-center py-8">
+                  <div className="text-6xl mb-4 animate-float">📜</div>
+                  <h2 className="font-display text-2xl text-gold-600 mb-3">Abenteuer fortfahren</h2>
+                  <p className="font-body text-stone-500 italic max-w-2xl mx-auto">
+                    Wähle eine bestehende Session aus. Der zugehörige Held bleibt dabei fest an dieses Abenteuer gebunden und wird nicht gewechselt.
+                  </p>
+                </div>
 
-            {streaming && (
+                {enrichedSessions.length === 0 ? (
+                  <div className="panel-gold p-8 text-center">
+                    <p className="font-body text-stone-400 italic mb-4">Noch keine aktiven Abenteuer vorhanden.</p>
+                    <button onClick={() => navigate('/game?mode=new')} className="btn-primary">Neues Abenteuer anlegen</button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {enrichedSessions.map(session => (
+                      <SessionCard
+                        key={session.id}
+                        session={session}
+                        character={session.character}
+                        adventure={session.adventure}
+                        isActive={activeSession?.id === session.id}
+                        onContinue={() => handleContinueSession(session.id)}
+                        onDelete={() => handleDeleteSession(session)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {showTranscript && gameLog.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
+
+            {showTranscript && streaming && (
               <div className="animate-fade-in">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-heading text-xs text-gold-600 tracking-wider">🗡️ DUNGEONS & DAGGERS</span>
@@ -471,26 +564,26 @@ export default function GamePage() {
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={streaming ? 'Spielleiter antwortet…' : 'Deine Aktion… (Enter senden, Shift+Enter Zeilenumbruch)'}
-                disabled={streaming || gameLog.length === 0}
+                disabled={streaming || !showTranscript || gameLog.length === 0}
                 rows={2}
                 className="input-dark flex-1 resize-none leading-relaxed"
               />
-              <button onClick={() => handleSend()} disabled={streaming || !input.trim() || gameLog.length === 0} className="btn-primary px-5 self-end">
+              <button onClick={() => handleSend()} disabled={streaming || !input.trim() || !showTranscript || gameLog.length === 0} className="btn-primary px-5 self-end">
                 {streaming ? <span className="spinner" /> : '→'}
               </button>
             </div>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {QUICK_ACTIONS.map(action => (
-                <button key={action} onClick={() => setInput(action)} disabled={gameLog.length === 0} className="btn-ghost text-xs px-2 py-1">{action}</button>
+                <button key={action} onClick={() => setInput(action)} disabled={!showTranscript || gameLog.length === 0} className="btn-ghost text-xs px-2 py-1">{action}</button>
               ))}
             </div>
           </div>
         </div>
 
         <div className="w-80 border-l border-gold-700/10 overflow-y-auto flex flex-col gap-4 p-4 bg-dungeon-200/30 flex-shrink-0">
-          {combat?.active && <CombatTracker onCombatAction={handleCombatAction} />}
+          {showTranscript && combat?.active && <CombatTracker onCombatAction={handleCombatAction} />}
 
-          {showDice && (
+          {showTranscript && showDice && (
             <div>
               <p className="section-subtitle mb-2">Würfelsystem</p>
               <div className="flex flex-wrap gap-1.5">
@@ -504,7 +597,7 @@ export default function GamePage() {
             </div>
           )}
 
-          {sceneState && (
+          {showTranscript && sceneState && (
             <div className="panel p-3">
               <p className="section-subtitle mb-2">Szenenstatus</p>
               <p className="font-heading text-sm text-gold-400">{sceneState.currentSectionTitle}</p>
@@ -530,39 +623,12 @@ export default function GamePage() {
                   <p className="font-body text-xs text-stone-400">{sceneState.lastPlayerAction}</p>
                 </div>
               )}
-              {sceneState.discoveredClues?.length > 0 && (
-                <div className="mt-3">
-                  <p className="section-subtitle mb-1">Hinweise</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {sceneState.discoveredClues.map(item => (
-                      <span key={item} className="badge-gold text-[11px]">{item}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {sceneState.openThreads?.length > 0 && (
-                <div className="mt-3">
-                  <p className="section-subtitle mb-1">Offene Fäden</p>
-                  <ul className="space-y-1">
-                    {sceneState.openThreads.map(item => (
-                      <li key={item} className="font-body text-xs text-stone-400">• {item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {sceneState.notableElements?.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {sceneState.notableElements.map(item => (
-                    <span key={item} className="badge-gold text-[11px]">{item}</span>
-                  ))}
-                </div>
-              )}
             </div>
           )}
 
           {character && (
             <div className="panel p-3">
-              <p className="section-subtitle mb-2">Aktiver Held</p>
+              <p className="section-subtitle mb-2">Gebundener Held</p>
               <p className="font-heading text-sm text-gold-400">{character.name}</p>
               <p className="font-body text-xs text-stone-500 mb-2">{character.race} {character.class} · Stufe {character.level || 1}</p>
               <div className="hp-bar-bg mb-1">
@@ -585,7 +651,7 @@ export default function GamePage() {
                 <p>Angriff {character.attackBonus >= 0 ? '+' : ''}{character.attackBonus}</p>
                 <p>Prof +{character.proficiencyBonus || 2}</p>
               </div>
-              {!combat?.active && gameLog.length > 0 && (
+              {showTranscript && !combat?.active && gameLog.length > 0 && (
                 <button onClick={() => startCombat([])} className="btn-danger w-full mt-3 text-xs py-1">
                   ⚔️ Kampf beginnen
                 </button>
@@ -596,11 +662,13 @@ export default function GamePage() {
           <div className="panel p-3">
             <p className="section-subtitle mb-2">Session</p>
             <div className="space-y-1 font-body text-xs text-stone-500">
-              <p>{gameLog.length} Nachrichten</p>
+              <p>Aktive Sessions: <span className="text-stone-400">{sessions.length}</span></p>
+              <p>Nachrichten: <span className="text-stone-400">{gameLog.length}</span></p>
               <p>Modell: <span className="text-stone-400">{selectedModel.split('/').pop()}</span></p>
               <p>Heldenbibliothek: <span className="text-stone-400">{characters.length}</span></p>
               <p>Module: <span className="text-stone-400">{adventures.length}</span></p>
               {adventure && <p>Modul: <span className="text-stone-400">{adventure.title}</span></p>}
+              <p>System: <span className="text-stone-400">{PROJECT_NAME}</span></p>
             </div>
           </div>
         </div>
