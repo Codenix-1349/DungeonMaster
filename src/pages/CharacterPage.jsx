@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
 import CharacterSheet from '../components/CharacterSheet'
 import {
@@ -24,12 +25,14 @@ import {
 function buildCharacterFromForm(form) {
   const level = Math.max(1, Number(form.level) || 1)
   const attrs = { ...form.attributes }
+  const calculatedMaxHP = calcHitPoints(form.class, attrs.con, level)
+
   const normalized = normalizeCharacter({
     ...form,
     level,
     armorClass: calcArmorClass(attrs.dex, form.armorBonus),
-    maxHP: calcHitPoints(form.class, attrs.con, level),
-    currentHP: Math.min(Number(form.currentHP || 0) || calcHitPoints(form.class, attrs.con, level), calcHitPoints(form.class, attrs.con, level)),
+    maxHP: calculatedMaxHP,
+    currentHP: Math.min(Number(form.currentHP || 0) || calculatedMaxHP, calculatedMaxHP),
     proficiencyBonus: getProficiencyBonus(level),
     initiativeBonus: calcInitiativeBonus(attrs.dex),
     attackBonus: calcAttackBonus(form.class, attrs, level),
@@ -47,12 +50,57 @@ function getDefaultForm() {
   return createCharacterTemplate()
 }
 
+function CharacterLibraryCard({ entry, isActive, onActivate, onEdit, onDelete, onStart }) {
+  const hpPercent = Math.max(0, Math.min(((entry.currentHP ?? entry.maxHP) / entry.maxHP) * 100, 100))
+
+  return (
+    <div className={`panel p-4 transition-all duration-200 ${isActive ? 'border-gold-600/50' : ''}`}>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="min-w-0">
+          <p className="font-heading text-parchment text-base truncate">{entry.name}</p>
+          <p className="font-body text-xs text-stone-500">
+            {entry.race} {entry.class} · Stufe {entry.level || 1}
+          </p>
+        </div>
+        <span className={isActive ? 'badge-green' : 'badge-gold'}>{isActive ? '● Aktiv' : 'Bereit'}</span>
+      </div>
+
+      <div className="hp-bar-bg mb-1.5">
+        <div className="hp-bar-fill" style={{ width: `${hpPercent}%` }} />
+      </div>
+      <div className="flex justify-between text-xs font-body text-stone-500 mb-3">
+        <span>HP {entry.currentHP ?? entry.maxHP}/{entry.maxHP}</span>
+        <span>AC {entry.armorClass}</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={onActivate} className="btn-ghost text-xs py-1.5">
+          {isActive ? 'Ausgewählt' : 'Aktiv setzen'}
+        </button>
+        <button onClick={onEdit} className="btn-ghost text-xs py-1.5">Bearbeiten</button>
+        <button onClick={onStart} className="btn-primary text-xs py-1.5">Mit Held starten</button>
+        <button onClick={onDelete} className="btn-danger text-xs py-1.5">Löschen</button>
+      </div>
+    </div>
+  )
+}
+
 export default function CharacterPage() {
-  const { character, setCharacter } = useGame()
-  const [step, setStep] = useState(character ? 4 : 0)
+  const navigate = useNavigate()
+  const {
+    character,
+    characters,
+    setCharacter,
+    saveCharacter,
+    selectCharacter,
+    deleteCharacter,
+  } = useGame()
+
+  const [step, setStep] = useState(0)
   const [editing, setEditing] = useState(false)
+  const [editingId, setEditingId] = useState(null)
   const [newItem, setNewItem] = useState('')
-  const [form, setForm] = useState(() => normalizeCharacter(character) || getDefaultForm())
+  const [form, setForm] = useState(getDefaultForm)
 
   const updateForm = (patch) => {
     setForm(prev => buildCharacterFromForm({ ...prev, ...patch }))
@@ -79,11 +127,17 @@ export default function CharacterPage() {
     })
   }
 
-  const saveCharacter = () => {
-    const normalized = buildCharacterFromForm(form)
-    setCharacter(normalized)
+  const saveCurrentCharacter = () => {
+    const normalized = buildCharacterFromForm({
+      ...form,
+      id: editingId || form.id || null,
+    })
+
+    saveCharacter(normalized)
     setEditing(false)
-    setStep(4)
+    setEditingId(null)
+    setStep(0)
+    setNewItem('')
   }
 
   const addInventoryItem = () => {
@@ -97,98 +151,163 @@ export default function CharacterPage() {
   }
 
   const startNewCharacter = () => {
-    setCharacter(null)
-    const blank = getDefaultForm()
-    setForm(blank)
+    setForm(buildCharacterFromForm(getDefaultForm()))
     setEditing(true)
+    setEditingId(null)
     setStep(0)
+    setNewItem('')
   }
 
-  const startEdit = () => {
-    const normalized = normalizeCharacter(character) || getDefaultForm()
-    setForm(normalized)
+  const startEdit = (target = character) => {
+    const normalized = normalizeCharacter(target) || getDefaultForm()
+    setForm(buildCharacterFromForm(normalized))
     setEditing(true)
+    setEditingId(normalized?.id || null)
     setStep(1)
+    setNewItem('')
+  }
+
+  const handleDeleteCharacter = (characterId, name) => {
+    if (!window.confirm(`Charakter „${name}“ wirklich löschen?`)) return
+    deleteCharacter(characterId)
   }
 
   const currentProficiency = getProficiencyBonus(form.level)
   const currentInitiative = calcInitiativeBonus(form.attributes.dex)
   const primaryAbility = CLASS_CONFIG[form.class]?.primaryAbility || 'str'
   const primaryMod = getAbilityModifier(form.attributes[primaryAbility])
+  const rosterCountLabel = characters.length === 1 ? '1 Held gespeichert' : `${characters.length} Helden gespeichert`
 
-  if (!editing && character) {
+  const sortedCharacters = useMemo(() => {
+    return [...characters].sort((a, b) => {
+      if (character?.id === a.id) return -1
+      if (character?.id === b.id) return 1
+      return (a.name || '').localeCompare(b.name || '')
+    })
+  }, [characters, character])
+
+  if (!editing) {
     return (
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
+      <div className="max-w-5xl mx-auto">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
-            <h1 className="section-title text-3xl mb-1">Charakterbogen</h1>
-            <p className="font-body text-stone-500 italic">SRD-Abenteurer für {PROJECT_NAME}</p>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={startEdit} className="btn-ghost">Bearbeiten</button>
-            <button onClick={startNewCharacter} className="btn-danger">Neu</button>
-          </div>
-        </div>
-        <CharacterSheet />
-
-        <div className="panel p-4 mt-4">
-          <p className="section-subtitle mb-3">Inventar verwalten</p>
-          <div className="flex gap-2 mb-3">
-            <input
-              type="text"
-              value={newItem}
-              onChange={e => setNewItem(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addInventoryItem()}
-              placeholder="Gegenstand…"
-              className="input-dark flex-1"
-            />
-            <button onClick={addInventoryItem} className="btn-primary px-4">+</button>
+            <h1 className="section-title text-3xl mb-1">Heldenverwaltung</h1>
+            <p className="font-body text-stone-500 italic">Mehrere SRD-Helden speichern, auswählen und für neue Abenteuer bereithalten.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {(character.inventory || []).map((item, i) => (
-              <span
-                key={i}
-                className="badge-gold cursor-pointer hover:bg-red-900/30 transition-colors"
-                onClick={() => setCharacter(prev => ({ ...prev, inventory: prev.inventory.filter((_, idx) => idx !== i) }))}
-              >
-                {item} ✕
-              </span>
-            ))}
+            <span className="badge-gold">{rosterCountLabel}</span>
+            <button onClick={startNewCharacter} className="btn-primary">+ Neuer Held</button>
           </div>
         </div>
 
-        <div className="panel p-4 mt-4 grid grid-cols-3 gap-4">
-          <div>
-            <p className="section-subtitle mb-1">Aktuelle HP</p>
-            <input
-              type="number"
-              value={character.currentHP ?? character.maxHP}
-              onChange={e => setCharacter(prev => ({ ...prev, currentHP: Math.min(Number(e.target.value), prev.maxHP) }))}
-              className="input-dark"
-              min="0"
-              max={character.maxHP}
-            />
+        {character ? (
+          <>
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button onClick={() => startEdit(character)} className="btn-ghost">Aktiven Helden bearbeiten</button>
+              <button onClick={() => navigate('/game')} className="btn-primary">Mit aktivem Helden zur Session</button>
+            </div>
+            <CharacterSheet />
+
+            <div className="panel p-4 mt-4">
+              <p className="section-subtitle mb-3">Inventar des aktiven Helden</p>
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="text"
+                  value={newItem}
+                  onChange={e => setNewItem(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addInventoryItem()}
+                  placeholder="Gegenstand…"
+                  className="input-dark flex-1"
+                />
+                <button onClick={addInventoryItem} className="btn-primary px-4">+</button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(character.inventory || []).map((item, i) => (
+                  <span
+                    key={i}
+                    className="badge-gold cursor-pointer hover:bg-red-900/30 transition-colors"
+                    onClick={() => setCharacter(prev => ({ ...prev, inventory: prev.inventory.filter((_, idx) => idx !== i) }))}
+                  >
+                    {item} ✕
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="panel p-4 mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <p className="section-subtitle mb-1">Aktuelle HP</p>
+                <input
+                  type="number"
+                  value={character.currentHP ?? character.maxHP}
+                  onChange={e => setCharacter(prev => ({ ...prev, currentHP: Math.min(Number(e.target.value), prev.maxHP) }))}
+                  className="input-dark"
+                  min="0"
+                  max={character.maxHP}
+                />
+              </div>
+              <div>
+                <p className="section-subtitle mb-1">Max HP</p>
+                <input
+                  type="number"
+                  value={character.maxHP}
+                  onChange={e => setCharacter(prev => ({ ...prev, maxHP: Number(e.target.value) }))}
+                  className="input-dark"
+                  min="1"
+                />
+              </div>
+              <div>
+                <p className="section-subtitle mb-1">Erfahrung (XP)</p>
+                <input
+                  type="number"
+                  value={character.xp || 0}
+                  onChange={e => setCharacter(prev => ({ ...prev, xp: Number(e.target.value) }))}
+                  className="input-dark"
+                  min="0"
+                />
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="panel-gold p-8 text-center mb-6">
+            <div className="text-5xl mb-4">🛡️</div>
+            <h2 className="font-display text-2xl text-gold-400 mb-3">Noch kein aktiver Held</h2>
+            <p className="font-body text-stone-400 italic mb-6">
+              Erstelle einen neuen Helden oder wähle einen aus deiner Bibliothek aus.
+            </p>
+            <button onClick={startNewCharacter} className="btn-primary text-base px-8 py-3">Helden erschaffen</button>
           </div>
-          <div>
-            <p className="section-subtitle mb-1">Max HP</p>
-            <input
-              type="number"
-              value={character.maxHP}
-              onChange={e => setCharacter(prev => ({ ...prev, maxHP: Number(e.target.value) }))}
-              className="input-dark"
-              min="1"
-            />
+        )}
+
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-heading text-lg text-gold-600 tracking-wide">Heldenbibliothek</h2>
+            {character && <span className="font-body text-xs text-stone-600 italic">Aktiv: {character.name}</span>}
           </div>
-          <div>
-            <p className="section-subtitle mb-1">Erfahrung (XP)</p>
-            <input
-              type="number"
-              value={character.xp || 0}
-              onChange={e => setCharacter(prev => ({ ...prev, xp: Number(e.target.value) }))}
-              className="input-dark"
-              min="0"
-            />
-          </div>
+
+          {sortedCharacters.length === 0 ? (
+            <div className="panel p-8 text-center">
+              <p className="font-body text-stone-500 italic">Noch keine Helden gespeichert.</p>
+              <p className="font-body text-xs text-stone-600 mt-1">Lege deinen ersten Helden an, damit du Abenteuer gezielt starten kannst.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {sortedCharacters.map(entry => (
+                <CharacterLibraryCard
+                  key={entry.id}
+                  entry={entry}
+                  isActive={character?.id === entry.id}
+                  onActivate={() => selectCharacter(entry.id)}
+                  onEdit={() => startEdit(entry)}
+                  onDelete={() => handleDeleteCharacter(entry.id, entry.name)}
+                  onStart={() => {
+                    selectCharacter(entry.id)
+                    navigate('/game')
+                  }}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )
@@ -220,7 +339,10 @@ export default function CharacterPage() {
           <p className="font-body text-stone-400 italic mb-8">
             Erschaffe deinen Helden auf Basis des freien D&D-SRD. Wähle Rasse und Klasse, würfle Attribute und rüste dich für {PROJECT_NAME}.
           </p>
-          <button onClick={() => setStep(1)} className="btn-primary text-base px-10 py-3">Beginnen →</button>
+          <div className="flex flex-wrap justify-center gap-3">
+            <button onClick={() => setStep(1)} className="btn-primary text-base px-10 py-3">Beginnen →</button>
+            <button onClick={() => setEditing(false)} className="btn-ghost text-base px-8 py-3">Abbrechen</button>
+          </div>
         </div>
       )}
 
@@ -240,7 +362,7 @@ export default function CharacterPage() {
             </div>
             <div>
               <label className="section-subtitle block mb-2">Rasse</label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {RACES.map(race => (
                   <button
                     key={race}
@@ -256,7 +378,7 @@ export default function CharacterPage() {
             </div>
             <div>
               <label className="section-subtitle block mb-2">Klasse</label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {CLASSES.map(cls => (
                   <button
                     key={cls}
@@ -280,11 +402,11 @@ export default function CharacterPage() {
 
       {step === 2 && (
         <div className="panel-gold p-6">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
             <h2 className="font-heading text-xl text-gold-400">Attribute (4d6, niedrigsten Würfel streichen)</h2>
             <button onClick={rollAllAttrs} className="btn-primary text-xs px-4 py-2">🎲 Alle würfeln</button>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {Object.entries(ATTR_LABELS).map(([key, label]) => (
               <div key={key} className="panel p-3 flex items-center gap-3">
                 <div className="flex-1">
@@ -300,7 +422,7 @@ export default function CharacterPage() {
               </div>
             ))}
           </div>
-          <div className="panel p-3 mt-4 grid grid-cols-4 gap-2 text-center">
+          <div className="panel p-3 mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
             <div>
               <p className="section-subtitle">HP</p>
               <p className="font-display text-2xl text-gold-400">{form.maxHP}</p>
@@ -318,7 +440,7 @@ export default function CharacterPage() {
               <p className="font-display text-2xl text-gold-400">+{currentProficiency}</p>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 mt-3 text-center">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 text-center">
             <div className="panel p-3">
               <p className="section-subtitle mb-1">Primäres Attribut</p>
               <p className="font-heading text-gold-400">{ATTR_LABELS[primaryAbility]}</p>
@@ -344,7 +466,7 @@ export default function CharacterPage() {
         <div className="panel-gold p-6">
           <h2 className="font-heading text-xl text-gold-400 mb-6">Ausrüstung & Details</h2>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="section-subtitle block mb-1">Stufe</label>
                 <input
@@ -406,25 +528,34 @@ export default function CharacterPage() {
                   value={form.spells}
                   onChange={e => updateForm({ spells: e.target.value })}
                   className="input-dark w-full h-20 resize-none"
-                  placeholder="Zauber, Cantrips, Klassenfähigkeiten …"
+                  placeholder="Cantrips, bekannte Zauber, besondere Fähigkeiten…"
                 />
               </div>
             )}
           </div>
-          <div className="flex justify-between mt-8">
+          <div className="flex justify-between mt-6">
             <button onClick={() => setStep(2)} className="btn-ghost">← Zurück</button>
-            <button onClick={saveCharacter} disabled={!form.name.trim()} className="btn-primary">✓ Charakter speichern</button>
+            <button onClick={() => setStep(4)} className="btn-primary">Weiter →</button>
           </div>
         </div>
       )}
 
-      {step === 4 && character && (
-        <div className="panel-gold p-8 text-center">
-          <div className="text-5xl mb-4">⚔️</div>
-          <h2 className="font-display text-2xl text-gold-400 mb-2">{character.name}</h2>
-          <p className="font-body text-stone-400 italic mb-6">{character.race} {character.class} – bereit für {PROJECT_NAME}!</p>
-          <CharacterSheet />
-          <button onClick={() => setEditing(false)} className="btn-ghost mt-6">Zum Charakterbogen</button>
+      {step === 4 && (
+        <div className="panel-gold p-6">
+          <h2 className="font-heading text-xl text-gold-400 mb-4">Bereit für das Abenteuer</h2>
+          <div className="panel p-4 mb-6 space-y-2">
+            <p><span className="section-subtitle">Name:</span> <span className="font-body text-parchment">{form.name}</span></p>
+            <p><span className="section-subtitle">Rasse/Klasse:</span> <span className="font-body text-parchment">{form.race} {form.class}</span></p>
+            <p><span className="section-subtitle">HP / AC:</span> <span className="font-body text-parchment">{form.maxHP} HP · AC {form.armorClass}</span></p>
+            <p><span className="section-subtitle">Inventar:</span> <span className="font-body text-parchment">{form.inventory.join(', ') || '—'}</span></p>
+          </div>
+          <div className="flex justify-between">
+            <button onClick={() => setStep(3)} className="btn-ghost">← Zurück</button>
+            <div className="flex gap-2">
+              <button onClick={() => setEditing(false)} className="btn-ghost">Abbrechen</button>
+              <button onClick={saveCurrentCharacter} className="btn-primary">Held speichern</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

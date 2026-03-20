@@ -45,13 +45,13 @@ const GearIcon = () => (
 const navItems = [
   { to: '/', label: 'Übersicht', icon: ScrollIcon, end: true },
   { to: '/adventure', label: 'Abenteuer', icon: BookIcon },
-  { to: '/character', label: 'Charakter', icon: ShieldIcon },
+  { to: '/character', label: 'Helden', icon: ShieldIcon },
   { to: '/game', label: 'Spielsitzung', icon: SwordIcon },
   { to: '/settings', label: 'Einstellungen', icon: GearIcon },
 ]
 
 export default function Sidebar() {
-  const { character, adventure, combat } = useGame()
+  const { character, characters, adventure, adventures, combat } = useGame()
 
   return (
     <aside className="w-64 min-h-screen flex flex-col border-r border-gold-700/20"
@@ -87,7 +87,10 @@ export default function Sidebar() {
 
         {character ? (
           <div className="panel px-3 py-2.5">
-            <p className="section-subtitle mb-1">Aktiver Charakter</p>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <p className="section-subtitle">Aktiver Held</p>
+              <span className="font-body text-[11px] text-stone-600">{characters.length}</span>
+            </div>
             <p className="font-heading text-sm text-parchment">{character.name}</p>
             <p className="font-body text-xs text-stone-500">{character.race} {character.class} · Stufe {character.level || 1}</p>
             <div className="mt-2">
@@ -105,16 +108,18 @@ export default function Sidebar() {
           </div>
         ) : (
           <div className="panel px-3 py-2.5 text-center">
-            <p className="font-body text-xs text-stone-600 italic">Kein Charakter aktiv</p>
+            <p className="font-body text-xs text-stone-600 italic">Kein Held aktiv</p>
+            <p className="font-body text-[11px] text-stone-700 mt-1">Bibliothek: {characters.length}</p>
           </div>
         )}
 
-        {adventure && (
-          <div className="panel px-3 py-2">
+        <div className="panel px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
             <p className="section-subtitle mb-0.5">Abenteuer</p>
-            <p className="font-body text-xs text-stone-400 truncate">{adventure.title}</p>
+            <span className="font-body text-[11px] text-stone-600">{adventures.length}</span>
           </div>
-        )}
+          <p className="font-body text-xs text-stone-400 truncate">{adventure ? adventure.title : 'Kein Modul aktiv'}</p>
+        </div>
 
         <div className="panel px-3 py-2">
           <p className="section-subtitle mb-0.5">System</p>

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react'
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import { DEFAULT_MODEL_ID, normalizeModelId } from '../services/openrouter'
 import {
   createInitialSceneState,
@@ -10,11 +10,11 @@ import {
 
 const GameContext = createContext(null)
 
-const DEFAULT_CHARACTER = null
 const DEFAULT_ADVENTURE = null
 const DEFAULT_GAME_LOG = []
 const DEFAULT_COMBAT = null
 const DEFAULT_SCENE_STATE = null
+const DEFAULT_CHARACTERS = []
 
 function loadFromStorage(key, fallback) {
   try {
@@ -33,15 +33,109 @@ function saveToStorage(key, value) {
   }
 }
 
+function makeLocalId(prefix = 'id') {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function sanitizeIdPart(value = '') {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9äöüß]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function deriveLegacyCharacterId(character) {
+  const seed = [character?.name, character?.class, character?.race]
+    .map(sanitizeIdPart)
+    .filter(Boolean)
+    .join('-')
+
+  return seed ? `char-${seed}` : makeLocalId('char')
+}
+
+function ensureCharacterRecord(character, fallbackId = null) {
+  const normalized = normalizeCharacter(character)
+  if (!normalized) return null
+
+  const now = new Date().toISOString()
+
+  return {
+    ...normalized,
+    id: normalized.id || fallbackId || deriveLegacyCharacterId(normalized),
+    createdAt: normalized.createdAt || now,
+    updatedAt: now,
+  }
+}
+
+function normalizeCharacterRoster(list = []) {
+  const seen = new Set()
+  const roster = []
+
+  for (const entry of Array.isArray(list) ? list : []) {
+    const normalized = ensureCharacterRecord(entry)
+    if (!normalized) continue
+    if (seen.has(normalized.id)) continue
+    seen.add(normalized.id)
+    roster.push(normalized)
+  }
+
+  return roster
+}
+
+function getInitialCharacterStore() {
+  const storedRoster = loadFromStorage('dm_characters', DEFAULT_CHARACTERS)
+  const normalizedRoster = normalizeCharacterRoster(storedRoster)
+
+  if (normalizedRoster.length > 0) {
+    const storedActiveId = localStorage.getItem('dm_activeCharacterId')
+    const activeCharacterId = normalizedRoster.some(entry => entry.id === storedActiveId)
+      ? storedActiveId
+      : normalizedRoster[0].id
+
+    return {
+      characters: normalizedRoster,
+      activeCharacterId,
+    }
+  }
+
+  const legacyCharacter = loadFromStorage('dm_character', null)
+  const migratedCharacter = legacyCharacter ? ensureCharacterRecord(legacyCharacter) : null
+
+  return {
+    characters: migratedCharacter ? [migratedCharacter] : [],
+    activeCharacterId: migratedCharacter?.id || null,
+  }
+}
+
+function persistCharacterStore(characters, activeCharacterId) {
+  const normalizedRoster = normalizeCharacterRoster(characters)
+  const resolvedActiveCharacterId = normalizedRoster.some(entry => entry.id === activeCharacterId)
+    ? activeCharacterId
+    : (normalizedRoster[0]?.id || null)
+
+  saveToStorage('dm_characters', normalizedRoster)
+
+  if (resolvedActiveCharacterId) {
+    localStorage.setItem('dm_activeCharacterId', resolvedActiveCharacterId)
+  } else {
+    localStorage.removeItem('dm_activeCharacterId')
+  }
+
+  const activeCharacter = normalizedRoster.find(entry => entry.id === resolvedActiveCharacterId) || null
+  saveToStorage('dm_character', activeCharacter)
+
+  return {
+    characters: normalizedRoster,
+    activeCharacterId: resolvedActiveCharacterId,
+    activeCharacter,
+  }
+}
+
 function getInitialModel() {
   const stored = localStorage.getItem('dm_model')
   const normalized = normalizeModelId(stored || DEFAULT_MODEL_ID)
   localStorage.setItem('dm_model', normalized)
   return normalized
-}
-
-function getInitialCharacter() {
-  return normalizeCharacter(loadFromStorage('dm_character', DEFAULT_CHARACTER))
 }
 
 function getInitialAdventure() {
@@ -55,7 +149,14 @@ function getInitialSceneState(adventure) {
 }
 
 export function GameProvider({ children }) {
-  const [character, setCharacterState] = useState(getInitialCharacter)
+  const [characterStore, setCharacterStore] = useState(getInitialCharacterStore)
+  const characters = characterStore.characters
+  const activeCharacterId = characterStore.activeCharacterId
+  const character = useMemo(
+    () => characters.find(entry => entry.id === activeCharacterId) || null,
+    [characters, activeCharacterId]
+  )
+
   const [adventure, setAdventureState] = useState(getInitialAdventure)
   const [gameLog, setGameLogState] = useState(() => loadFromStorage('dm_gameLog', DEFAULT_GAME_LOG))
   const [combat, setCombatState] = useState(() => loadFromStorage('dm_combat', DEFAULT_COMBAT))
@@ -67,12 +168,75 @@ export function GameProvider({ children }) {
     return Array.isArray(stored) ? stored.map(normalizeAdventureEntry) : []
   })
 
-  const setCharacter = useCallback((val) => {
-    const nextValue = typeof val === 'function' ? val(character) : val
-    const normalized = normalizeCharacter(nextValue)
-    setCharacterState(normalized)
-    saveToStorage('dm_character', normalized)
-  }, [character])
+  const applyCharacterStore = useCallback((nextCharacters, nextActiveCharacterId = null) => {
+    const persisted = persistCharacterStore(nextCharacters, nextActiveCharacterId)
+    setCharacterStore({
+      characters: persisted.characters,
+      activeCharacterId: persisted.activeCharacterId,
+    })
+    return persisted.activeCharacter
+  }, [])
+
+  const setCharacters = useCallback((value) => {
+    const nextValue = typeof value === 'function' ? value(characters) : value
+    const nextCharacters = normalizeCharacterRoster(nextValue)
+    return applyCharacterStore(nextCharacters, activeCharacterId)
+  }, [activeCharacterId, applyCharacterStore, characters])
+
+  const selectCharacter = useCallback((value) => {
+    const nextId = typeof value === 'string'
+      ? value
+      : (value?.id || null)
+
+    return applyCharacterStore(characters, nextId)
+  }, [applyCharacterStore, characters])
+
+  const saveCharacter = useCallback((value, options = {}) => {
+    const currentCharacter = character
+    const nextValue = typeof value === 'function' ? value(currentCharacter) : value
+
+    if (!nextValue) {
+      return applyCharacterStore(characters.filter(entry => entry.id !== currentCharacter?.id), null)
+    }
+
+    const explicitId = nextValue.id || options.id || null
+    const normalized = ensureCharacterRecord(nextValue, explicitId)
+    if (!normalized) return null
+
+    let didUpdate = false
+    const nextCharacters = characters.map(entry => {
+      if (entry.id !== normalized.id) return entry
+      didUpdate = true
+      return normalized
+    })
+
+    const finalCharacters = didUpdate ? nextCharacters : [...characters, normalized]
+    const nextActiveId = options.setActive === false ? activeCharacterId : normalized.id
+    return applyCharacterStore(finalCharacters, nextActiveId)
+  }, [activeCharacterId, applyCharacterStore, character, characters])
+
+  const upsertCharacter = useCallback((value, options = {}) => {
+    return saveCharacter(value, options)
+  }, [saveCharacter])
+
+  const deleteCharacter = useCallback((characterId) => {
+    const nextCharacters = characters.filter(entry => entry.id !== characterId)
+    const nextActiveId = activeCharacterId === characterId ? null : activeCharacterId
+    return applyCharacterStore(nextCharacters, nextActiveId)
+  }, [activeCharacterId, applyCharacterStore, characters])
+
+  const setCharacter = useCallback((value) => {
+    if (value === null) {
+      selectCharacter(null)
+      return null
+    }
+
+    if (typeof value === 'function') {
+      return saveCharacter(value, { id: character?.id || null })
+    }
+
+    return saveCharacter(value)
+  }, [character?.id, saveCharacter, selectCharacter])
 
   const setAdventure = useCallback((val) => {
     const nextValue = typeof val === 'function' ? val(adventure) : val
@@ -163,7 +327,7 @@ export function GameProvider({ children }) {
     setGameLog([])
     setCombat(null)
     resetSceneState()
-  }, [setGameLog, setCombat, resetSceneState])
+  }, [resetSceneState, setCombat, setGameLog])
 
   const updateCharacterHP = useCallback((newHP) => {
     setCharacter(prev => (
@@ -191,14 +355,34 @@ export function GameProvider({ children }) {
 
   return (
     <GameContext.Provider value={{
-      character, setCharacter,
-      adventure, setAdventure,
-      gameLog, setGameLog, addMessage, clearGameLog,
-      combat, setCombat, startCombat, endCombat,
-      sceneState, setSceneState, syncSceneState, resetSceneState,
-      apiKey, setApiKey,
-      selectedModel, setSelectedModel,
-      adventures, setAdventures,
+      characters,
+      setCharacters,
+      character,
+      setCharacter,
+      saveCharacter,
+      upsertCharacter,
+      deleteCharacter,
+      selectCharacter,
+      adventure,
+      setAdventure,
+      gameLog,
+      setGameLog,
+      addMessage,
+      clearGameLog,
+      combat,
+      setCombat,
+      startCombat,
+      endCombat,
+      sceneState,
+      setSceneState,
+      syncSceneState,
+      resetSceneState,
+      apiKey,
+      setApiKey,
+      selectedModel,
+      setSelectedModel,
+      adventures,
+      setAdventures,
       updateCharacterHP,
       getModifier,
     }}>
