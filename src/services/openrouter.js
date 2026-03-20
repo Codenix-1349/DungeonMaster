@@ -1,4 +1,9 @@
-import { PROJECT_NAME, SRD_SYSTEM_PROMPT_RULES, SRD_VERSION_LABEL } from '../data/srd'
+import {
+  PROJECT_NAME,
+  SRD_CORE_PROMPT_RULES,
+  SRD_VERSION_LABEL,
+  buildRelevantRulesContext,
+} from '../data/srd'
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 
@@ -266,10 +271,19 @@ async function extractError(response) {
 
 function summarizeAdventureText(adventure) {
   if (!adventure?.text) return 'Kein Text verfügbar'
-  return adventure.text.substring(0, 8000)
+  return adventure.text.substring(0, 7000)
 }
 
-export function buildSystemPrompt(character, adventure) {
+function getLatestUserText(messages = []) {
+  const reversed = [...messages].reverse()
+  const latestUserMessage = reversed.find(message => message.role === 'user' && typeof message.content === 'string')
+  return latestUserMessage?.content || ''
+}
+
+export function buildSystemPrompt(character, adventure, messages = [], combat = null) {
+  const userText = getLatestUserText(messages)
+  const relevantRules = buildRelevantRulesContext({ character, combat, userText })
+
   let prompt = `Du bist der Spielleiter von ${PROJECT_NAME}. Du leitest ein Solo-Abenteuer nach ${SRD_VERSION_LABEL}.
 
 ## Deine Rolle
@@ -285,24 +299,21 @@ export function buildSystemPrompt(character, adventure) {
 - Gib niemals interne Regieanweisungen, Arbeitsnotizen oder Meta-Überschriften wie "Hinweise für den Spieler", "Was tun?" oder "Hinweise für den Spielleiter" aus.
 - Wenn die Abenteuer-Vorlage holprig, bruchstückhaft oder schlecht formuliert ist, formuliere sie in sauberem Deutsch sinngemäß neu.
 - Erfinde keine sinnlosen Wortkombinationen oder kaputten Halbsätze.
-${SRD_SYSTEM_PROMPT_RULES}
+${SRD_CORE_PROMPT_RULES}
 ## Würfelnotation
 Wenn Würfe nötig sind, gib folgende Anweisung:
 - [WÜRFEL:d20] für Angriffe, Rettungswürfe, Initiative oder Proben
 - [WÜRFEL:d4], [WÜRFEL:d6], [WÜRFEL:d8], [WÜRFEL:d10], [WÜRFEL:d12] für Schaden und Effekte
 Der Spieler sieht Würfel-Buttons und kann selbst würfeln.
 
-## Kampfstruktur
-Bei Kampfbeginn: Beschreibe die Gegner, fordere Initiative auf.
-Format: **KAMPF BEGINNT** gefolgt von Gegnerbeschreibung.
-Bei Kampfende: **KAMPF VORBEI** mit einer kurzen Zusammenfassung und XP-/Belohnungshinweis.
+## Wichtige Leitplanken
+- Nutze nur die gerade relevanten Regelmodule und ziehe keine unnötigen Zusatzregeln heran.
+- Wenn die App bereits Würfe oder Werte geliefert hat, behandle sie als verbindlich.
+- Wenn etwas nicht im Kontext steht, entscheide pragmatisch im Geist des SRD statt Sonderregeln zu erfinden.`
 
-## Wichtig
-- Lass den Spieler bedeutsame Entscheidungen treffen.
-- Fordere Würfelwürfe explizit an, wenn nötig.
-- Beschreibe Konsequenzen von Handlungen detailliert.
-- Nutze die von der App gelieferten Werte für RK, HP, Angriff, Zauber-SG und Übungsbonus als maßgeblich.
-- Wenn etwas nicht im gelieferten Kontext steht, entscheide pragmatisch im Geist des SRD statt Sonderregeln zu erfinden.`
+  if (relevantRules.text) {
+    prompt += `\n\n## Aktive SRD-Regelmodule\n${relevantRules.text}`
+  }
 
   if (character) {
     const attrs = character.attributes || {}
@@ -321,6 +332,15 @@ ${character.spellSaveDC ? `**Zauber-SG:** ${character.spellSaveDC}\n` : ''}${cha
 ${character.spells ? `**Zauber/Fähigkeiten:** ${character.spells}` : ''}`
   }
 
+  if (combat?.active) {
+    prompt += `\n\n## Kampfsituation
+**Kampfstatus:** aktiv
+**Runde:** ${combat.round || 1}
+**Phase:** ${combat.phase || 'action'}
+${combat.playerInitiative ? `**Spieler-Initiative:** ${combat.playerInitiative}\n` : ''}- Wenn ein Kampf startet, nutze das Format **KAMPF BEGINNT**.
+- Wenn der Kampf endet, nutze **KAMPF VORBEI** und fasse das Ergebnis kurz zusammen.`
+  }
+
   if (adventure) {
     prompt += `\n\n## Das Abenteuer
 **Titel:** ${adventure.title}
@@ -334,16 +354,21 @@ Nutze diesen Text als Basis für das Abenteuer. Bleib beim Inhalt, aber formulie
 Erstelle ein kurzes Improvisations-Abenteuer in einer klassischen Fantasy-Welt. Beginne mit einer spannenden ersten Szene und führe den Spieler in ein SRD-kompatibles Abenteuer.`
   }
 
+  if (userText) {
+    prompt += `\n\n## Aktuelle Spielerabsicht
+${userText}`
+  }
+
   return prompt
 }
 
-export async function sendMessage({ messages, model, apiKey, character, adventure, onChunk }) {
+export async function sendMessage({ messages, model, apiKey, character, adventure, combat, onChunk }) {
   if (!apiKey) {
     throw new Error('Kein API Key konfiguriert. Bitte in den Einstellungen eingeben.')
   }
 
   const normalizedModel = normalizeModelId(model)
-  const systemPrompt = buildSystemPrompt(character, adventure)
+  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat)
 
   const body = {
     model: normalizedModel,

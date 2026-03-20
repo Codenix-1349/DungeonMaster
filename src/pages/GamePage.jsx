@@ -103,6 +103,7 @@ export default function GamePage() {
         apiKey,
         character,
         adventure,
+        combat,
         onChunk: chunk => {
           full += chunk
           setStreamingText(prev => prev + chunk)
