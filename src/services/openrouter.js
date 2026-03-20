@@ -269,20 +269,177 @@ async function extractError(response) {
   }
 }
 
-function summarizeAdventureText(adventure) {
-  if (!adventure?.text) return 'Kein Text verfügbar'
-  return adventure.text.substring(0, 7000)
-}
-
 function getLatestUserText(messages = []) {
   const reversed = [...messages].reverse()
   const latestUserMessage = reversed.find(message => message.role === 'user' && typeof message.content === 'string')
   return latestUserMessage?.content || ''
 }
 
+function buildSearchTokenSet(text = '') {
+  const normalized = String(text || '')
+    .toLowerCase()
+    .replace(/[^a-zäöüß0-9\s-]/gi, ' ')
+    .split(/\s+/)
+    .map(token => token.trim())
+    .filter(token => token.length >= 3)
+
+  return [...new Set(normalized)]
+}
+
+function splitAdventureIntoChunks(text = '') {
+  const normalized = String(text || '')
+    .replace(/\r/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  if (!normalized) return []
+
+  const paragraphs = normalized
+    .split(/\n\n+/)
+    .map(paragraph => paragraph.trim())
+    .filter(Boolean)
+
+  const chunks = []
+  let current = ''
+
+  const flush = () => {
+    if (!current.trim()) return
+    chunks.push(current.trim())
+    current = ''
+  }
+
+  for (const paragraph of paragraphs) {
+    if ((current + '\n\n' + paragraph).trim().length <= 900) {
+      current = current ? `${current}\n\n${paragraph}` : paragraph
+      continue
+    }
+
+    flush()
+
+    if (paragraph.length <= 900) {
+      current = paragraph
+      continue
+    }
+
+    const sentences = paragraph.match(/[^.!?]+[.!?]?/g) || [paragraph]
+    for (const sentence of sentences) {
+      if ((current + ' ' + sentence).trim().length <= 900) {
+        current = current ? `${current} ${sentence.trim()}` : sentence.trim()
+      } else {
+        flush()
+        current = sentence.trim()
+      }
+    }
+  }
+
+  flush()
+
+  return chunks.map((chunk, index) => ({
+    index,
+    text: chunk,
+    lower: chunk.toLowerCase(),
+  }))
+}
+
+function getAdventureSearchContext(messages = [], combat = null) {
+  const recent = messages.slice(-6)
+  const joined = recent.map(message => message.content).join(' ')
+  const combatHint = combat?.active ? ' kampf gegner initiative schaden angriffe ' : ''
+  return `${joined} ${combatHint}`.trim()
+}
+
+function scoreAdventureChunk(chunk, tokens, isOpeningPhase) {
+  let score = 0
+
+  if (isOpeningPhase && chunk.index === 0) score += 8
+  if (isOpeningPhase && chunk.index === 1) score += 4
+
+  for (const token of tokens) {
+    if (!chunk.lower.includes(token)) continue
+    score += token.length >= 8 ? 4 : 2
+  }
+
+  const headings = ['übersicht', 'aufhänger', 'start', 'startszene', 'gasthaus', 'einleitung', 'hintergrund', 'wichtige orte']
+  for (const heading of headings) {
+    if (chunk.lower.includes(heading)) score += 1
+  }
+
+  score += Math.max(0, 2 - chunk.index * 0.15)
+  return score
+}
+
+function buildRelevantAdventureContext(adventure, messages = [], combat = null) {
+  if (!adventure?.text) {
+    return {
+      text: 'Kein Text verfügbar',
+      selectedIndexes: [],
+    }
+  }
+
+  const chunks = splitAdventureIntoChunks(adventure.text)
+  if (chunks.length === 0) {
+    return {
+      text: adventure.text.substring(0, 1600),
+      selectedIndexes: [0],
+    }
+  }
+
+  const searchContext = getAdventureSearchContext(messages, combat)
+  const tokens = buildSearchTokenSet(searchContext)
+  const isOpeningPhase = messages.length <= 2
+
+  const scored = chunks.map(chunk => ({
+    ...chunk,
+    score: scoreAdventureChunk(chunk, tokens, isOpeningPhase),
+  }))
+
+  const selected = []
+  const selectedIndexes = new Set()
+
+  const addChunk = (chunk) => {
+    if (!chunk || selectedIndexes.has(chunk.index)) return
+    selected.push(chunk)
+    selectedIndexes.add(chunk.index)
+  }
+
+  if (isOpeningPhase) {
+    addChunk(scored.find(chunk => chunk.index === 0))
+    addChunk(scored.find(chunk => chunk.index === 1))
+  } else {
+    addChunk(scored.find(chunk => chunk.index === 0))
+  }
+
+  scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4)
+    .forEach(addChunk)
+
+  const ordered = selected.sort((a, b) => a.index - b.index)
+
+  let totalLength = 0
+  const limited = []
+  for (const chunk of ordered) {
+    const nextLength = totalLength + chunk.text.length
+    if (limited.length >= 4 || nextLength > 3200) continue
+    limited.push(chunk)
+    totalLength = nextLength
+  }
+
+  const text = limited
+    .map(chunk => `### Abenteuerauszug ${chunk.index + 1}\n${chunk.text}`)
+    .join('\n\n')
+    .trim()
+
+  return {
+    text,
+    selectedIndexes: limited.map(chunk => chunk.index),
+  }
+}
+
 export function buildSystemPrompt(character, adventure, messages = [], combat = null) {
   const userText = getLatestUserText(messages)
   const relevantRules = buildRelevantRulesContext({ character, combat, userText })
+  const relevantAdventure = buildRelevantAdventureContext(adventure, messages, combat)
 
   let prompt = `Du bist der Spielleiter von ${PROJECT_NAME}. Du leitest ein Solo-Abenteuer nach ${SRD_VERSION_LABEL}.
 
@@ -307,7 +464,7 @@ Wenn Würfe nötig sind, gib folgende Anweisung:
 Der Spieler sieht Würfel-Buttons und kann selbst würfeln.
 
 ## Wichtige Leitplanken
-- Nutze nur die gerade relevanten Regelmodule und ziehe keine unnötigen Zusatzregeln heran.
+- Nutze nur die gerade relevanten Regelmodule und Abenteuerauszüge.
 - Wenn die App bereits Würfe oder Werte geliefert hat, behandle sie als verbindlich.
 - Wenn etwas nicht im Kontext steht, entscheide pragmatisch im Geist des SRD statt Sonderregeln zu erfinden.`
 
@@ -342,13 +499,11 @@ ${combat.playerInitiative ? `**Spieler-Initiative:** ${combat.playerInitiative}\
   }
 
   if (adventure) {
-    prompt += `\n\n## Das Abenteuer
+    prompt += `\n\n## Abenteuerkontext
 **Titel:** ${adventure.title}
+${relevantAdventure.text}
 
-**Abenteuertext (Zusammenfassung/Kontext):**
-${summarizeAdventureText(adventure)}
-
-Nutze diesen Text als Basis für das Abenteuer. Bleib beim Inhalt, aber formuliere Szenen und Beschreibungen in sauberem, natürlichem Deutsch.`
+Nutze nur diese relevanten Auszüge als aktuelle Abenteuergrundlage. Wenn Informationen fehlen, improvisiere vorsichtig im Geist des Moduls, statt weit vom Material abzuweichen.`
   } else {
     prompt += `\n\n## Kein Abenteuer geladen
 Erstelle ein kurzes Improvisations-Abenteuer in einer klassischen Fantasy-Welt. Beginne mit einer spannenden ersten Szene und führe den Spieler in ein SRD-kompatibles Abenteuer.`
