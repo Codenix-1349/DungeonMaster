@@ -1,0 +1,171 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-dungeon-100 text-stone-200 font-body;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-dungeon-200/90 border border-stone-800 rounded-lg shadow-lg backdrop-blur-sm;
+  }
+
+  .panel-gold {
+    @apply panel border-gold-700/40;
+    box-shadow: 0 0 0 1px rgba(212, 160, 23, 0.08), 0 10px 30px rgba(0, 0, 0, 0.35);
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-md border border-gold-700/40 bg-gold-600/10 px-4 py-2 font-heading tracking-wide text-gold-400 transition-all duration-200 hover:border-gold-500/50 hover:bg-gold-600/20 hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center rounded-md border border-stone-800 bg-dungeon-200/70 px-4 py-2 font-heading tracking-wide text-stone-400 transition-all duration-200 hover:border-gold-700/30 hover:text-gold-400 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center rounded-md border border-blood-500/40 bg-blood-500/10 px-4 py-2 font-heading tracking-wide text-red-400 transition-all duration-200 hover:border-blood-500/60 hover:bg-blood-500/20 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .input-dark {
+    @apply w-full rounded-md border border-stone-800 bg-dungeon-300/70 px-3 py-2 font-body text-parchment outline-none transition-all duration-200 placeholder:text-stone-600 focus:border-gold-700/50 focus:ring-1 focus:ring-gold-700/30 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .divider-gold {
+    @apply h-px w-full bg-gradient-to-r from-transparent via-gold-700/30 to-transparent;
+  }
+
+  .section-subtitle {
+    @apply font-heading text-xs uppercase tracking-[0.2em] text-stone-500;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-heading tracking-wide;
+  }
+
+  .badge-gold {
+    @apply badge bg-gold-600/20 text-gold-400 border border-gold-700/30;
+  }
+
+  .badge-red {
+    @apply badge bg-blood-500/20 text-red-400 border border-blood-500/50;
+  }
+
+  .badge-green {
+    @apply badge bg-emerald-900/30 text-emerald-400 border border-emerald-800/50;
+  }
+
+  .stat-box {
+    @apply panel flex flex-col items-center justify-center p-3 gap-1 cursor-default;
+    min-width: 70px;
+  }
+
+  .stat-label {
+    @apply font-heading text-xs text-stone-500 tracking-widest uppercase;
+  }
+
+  .stat-value {
+    @apply font-display text-2xl text-gold-400;
+    text-shadow: 0 0 10px rgba(212, 160, 23, 0.4);
+  }
+
+  .stat-mod {
+    @apply font-body text-sm text-stone-400;
+  }
+
+  .chat-dm {
+    @apply panel-gold p-4 rounded-lg text-base leading-relaxed;
+    border-left: 3px solid rgba(212, 160, 23, 0.6);
+  }
+
+  .chat-player,
+  .chat-user {
+    @apply panel p-3 rounded-lg text-base leading-relaxed;
+    border-left: 3px solid rgba(139, 0, 0, 0.6);
+    background: rgba(139, 0, 0, 0.05);
+  }
+
+  .hp-bar-bg {
+    @apply w-full h-2 rounded-full bg-stone-800;
+  }
+
+  .hp-bar-fill {
+    @apply h-full rounded-full transition-all duration-500;
+    background: linear-gradient(90deg, #8b0000, #dc2626);
+  }
+
+  .dice-btn {
+    @apply flex flex-col items-center justify-center
+           w-14 h-14 rounded
+           border border-stone-700 text-stone-400
+           font-heading text-xs tracking-wide
+           transition-all duration-200 cursor-pointer select-none
+           hover:border-gold-600 hover:text-gold-400 hover:scale-105
+           active:scale-95;
+    background: linear-gradient(135deg, rgba(21,21,21,0.9), rgba(10,10,10,0.95));
+  }
+
+  .dice-btn:hover {
+    box-shadow: 0 0 12px rgba(212, 160, 23, 0.25);
+  }
+
+  .dice-btn.rolling {
+    @apply animate-spin border-gold-400 text-gold-300;
+    animation: diceRoll 0.4s ease-out;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded
+           font-heading text-sm tracking-wider
+           text-stone-400 border border-transparent
+           transition-all duration-200 cursor-pointer;
+  }
+
+  .nav-item:hover {
+    @apply text-gold-400 border-gold-700/40;
+    background: rgba(212, 160, 23, 0.06);
+  }
+
+  .nav-item.active {
+    @apply text-gold-300 border-gold-700/40;
+    background: linear-gradient(90deg, rgba(212,160,23,0.08), rgba(212,160,23,0.03));
+    box-shadow: inset 0 0 0 1px rgba(212, 160, 23, 0.08);
+  }
+
+  .spinner {
+    @apply inline-block h-4 w-4 animate-spin rounded-full border-2 border-gold-600/30 border-t-gold-400;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Cinzel Decorative', serif;
+  }
+
+  .font-heading {
+    font-family: 'Cinzel', serif;
+  }
+
+  .font-body {
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@keyframes diceRoll {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.08);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
