@@ -1,9 +1,11 @@
 import {
   PROJECT_NAME,
+  SKILLS,
   SRD_VERSION_LABEL,
   SRD_CORE_PROMPT_RULES,
   buildRelevantAdventureContext,
   buildRelevantRulesContext,
+  calcSkillBonus,
 } from '../data/srd'
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
@@ -508,6 +510,19 @@ ${buildChoiceStyleInstruction(userText, Boolean(combat?.active))}`
 
   if (character) {
     const attrs = character.attributes || {}
+    // Build skill proficiency line for AI context
+    let skillLine = ''
+    if (character.skillProficiencies?.length) {
+      const profSkills = character.skillProficiencies
+        .map(key => {
+          const skill = SKILLS.find(s => s.key === key)
+          if (!skill) return null
+          const bonus = calcSkillBonus(attrs[skill.ability] || 10, character.level || 1, true)
+          return `${skill.label} ${bonus >= 0 ? '+' : ''}${bonus}`
+        })
+        .filter(Boolean)
+      if (profSkills.length) skillLine = `\n**Geübte Fertigkeiten:** ${profSkills.join(', ')}`
+    }
     prompt += `\n\n## Aktueller Charakter
 **Name:** ${character.name}
 **Rasse:** ${character.race}
@@ -517,7 +532,7 @@ ${buildChoiceStyleInstruction(userText, Boolean(combat?.active))}`
 **Übungsbonus:** +${character.proficiencyBonus || 2}
 **Attribute:** STR ${attrs.str}, DEX ${attrs.dex}, CON ${attrs.con}, INT ${attrs.int}, WIS ${attrs.wis}, CHA ${attrs.cha}
 **Erfahrung:** ${character.xp || 0} XP
-**Inventar:** ${(character.inventory || []).join(', ') || 'Leer'}
+**Inventar:** ${(character.inventory || []).join(', ') || 'Leer'}${skillLine}
 ${character.spells ? `**Zaubersprüche:** ${character.spells}` : ''}
 ${character.spellSaveDC ? `**Zauber-SG:** ${character.spellSaveDC}` : ''}
 ${character.spellAttackBonus !== null && character.spellAttackBonus !== undefined ? `**Zauberangriff:** ${character.spellAttackBonus >= 0 ? '+' : ''}${character.spellAttackBonus}` : ''}`
