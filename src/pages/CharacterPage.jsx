@@ -40,7 +40,7 @@ function buildCharacterFromForm(form) {
     attributes: attrs,
     armorClass: calcArmorClass(attrs.dex, form.armorBonus, form.class, attrs),
     maxHP: calculatedMaxHP,
-    currentHP: Math.min(Number(form.currentHP || 0) || calculatedMaxHP, calculatedMaxHP),
+    currentHP: calculatedMaxHP,
     proficiencyBonus: getProficiencyBonus(level),
     initiativeBonus: calcInitiativeBonus(attrs.dex),
     attackBonus: calcAttackBonus(form.class, attrs, level),
@@ -124,10 +124,9 @@ export default function CharacterPage() {
     setForm(prev => buildCharacterFromForm({ ...prev, ...patch }))
   }
 
-  const setAttr = (key, val) => {
-    const num = Math.min(18, Math.max(3, Number(val) || 10))
+  const setAttrDice = (key) => {
     const base = form.baseAttributes || form.attributes
-    updateForm({ baseAttributes: { ...base, [key]: num } })
+    updateForm({ baseAttributes: { ...base, [key]: roll4d6DropLowest() } })
   }
 
   const rollAllAttrs = () => {
@@ -449,9 +448,19 @@ export default function CharacterPage() {
       {step === 2 && (
         <div className="panel-gold p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-            <h2 className="font-heading text-xl text-gold-400">Attribute (4d6, niedrigsten Würfel streichen)</h2>
-            <button onClick={rollAllAttrs} className="btn-primary text-xs px-4 py-2">🎲 Alle würfeln</button>
+            <h2 className="font-heading text-xl text-gold-400">Attribute</h2>
+            <div className="flex gap-2">
+              <button onClick={() => {
+                const keys = Object.keys(ATTR_LABELS)
+                const std = [15, 14, 13, 12, 10, 8]
+                const base = {}
+                keys.forEach((k, i) => { base[k] = std[i] })
+                updateForm({ baseAttributes: base })
+              }} className="btn-ghost text-xs px-3 py-2">Standard Array</button>
+              <button onClick={rollAllAttrs} className="btn-primary text-xs px-4 py-2">🎲 Alle würfeln</button>
+            </div>
           </div>
+          <p className="font-body text-xs text-stone-500 italic mb-4">4d6 (niedrigsten Würfel streichen) oder Standard Array (15, 14, 13, 12, 10, 8)</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {Object.entries(ATTR_LABELS).map(([key, label]) => {
               const baseVal = (form.baseAttributes || form.attributes)?.[key] || 10
@@ -467,10 +476,8 @@ export default function CharacterPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => setAttr(key, baseVal - 1)} className="w-6 h-6 rounded border border-stone-700 text-stone-400 hover:border-stone-500">-</button>
-                    <span className="font-display text-2xl text-gold-400 w-8 text-center">{finalVal}</span>
-                    <button onClick={() => setAttr(key, baseVal + 1)} className="w-6 h-6 rounded border border-stone-700 text-stone-400 hover:border-stone-500">+</button>
-                    <button onClick={() => setAttr(key, roll4d6DropLowest())} className="w-6 h-6 rounded border border-stone-700 text-xs ml-1 text-stone-500 hover:border-gold-700">🎲</button>
+                    <span className="font-display text-2xl text-gold-400 w-10 text-center">{finalVal}</span>
+                    <button onClick={() => setAttrDice(key)} className="w-8 h-8 rounded border border-stone-700 text-sm text-stone-500 hover:border-gold-700 hover:text-gold-400">🎲</button>
                   </div>
                 </div>
               )
@@ -590,10 +597,12 @@ export default function CharacterPage() {
                 <input
                   type="number"
                   value={form.armorBonus}
-                  onChange={e => updateForm({ armorBonus: Number(e.target.value) || 0 })}
+                  onChange={e => updateForm({ armorBonus: Math.max(0, Math.min(8, Number(e.target.value) || 0)) })}
                   className="input-dark"
+                  min="0"
+                  max="8"
                 />
-                <p className="font-body text-xs text-stone-600 italic mt-1">AC = 10 + DEX-Mod + Rüstungsbonus</p>
+                <p className="font-body text-xs text-stone-600 italic mt-1">0–8 (Leder 2, Kette 4, Platte 6, +Schild 2)</p>
               </div>
             </div>
 
