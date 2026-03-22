@@ -40,7 +40,7 @@ function buildCharacterFromForm(form) {
     attributes: attrs,
     armorClass: calcArmorClass(attrs.dex, form.armorBonus, form.class, attrs),
     maxHP: calculatedMaxHP,
-    currentHP: Math.min(Number(form.currentHP || 0) || calculatedMaxHP, calculatedMaxHP),
+    currentHP: calculatedMaxHP,
     proficiencyBonus: getProficiencyBonus(level),
     initiativeBonus: calcInitiativeBonus(attrs.dex),
     attackBonus: calcAttackBonus(form.class, attrs, level),
@@ -124,10 +124,16 @@ export default function CharacterPage() {
     setForm(prev => buildCharacterFromForm({ ...prev, ...patch }))
   }
 
-  const setAttr = (key, val) => {
-    const num = Math.min(18, Math.max(3, Number(val) || 10))
+  const setAttr = (key, delta) => {
     const base = form.baseAttributes || form.attributes
+    const current = Number(base[key]) || 10
+    const num = Math.min(18, Math.max(3, current + delta))
     updateForm({ baseAttributes: { ...base, [key]: num } })
+  }
+
+  const setAttrDice = (key) => {
+    const base = form.baseAttributes || form.attributes
+    updateForm({ baseAttributes: { ...base, [key]: roll4d6DropLowest() } })
   }
 
   const rollAllAttrs = () => {
@@ -467,10 +473,10 @@ export default function CharacterPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => setAttr(key, baseVal - 1)} className="w-6 h-6 rounded border border-stone-700 text-stone-400 hover:border-stone-500">-</button>
+                    <button onClick={() => setAttr(key, -1)} disabled={baseVal <= 3} className="w-6 h-6 rounded border border-stone-700 text-stone-400 hover:border-stone-500 disabled:opacity-30">-</button>
                     <span className="font-display text-2xl text-gold-400 w-8 text-center">{finalVal}</span>
-                    <button onClick={() => setAttr(key, baseVal + 1)} className="w-6 h-6 rounded border border-stone-700 text-stone-400 hover:border-stone-500">+</button>
-                    <button onClick={() => setAttr(key, roll4d6DropLowest())} className="w-6 h-6 rounded border border-stone-700 text-xs ml-1 text-stone-500 hover:border-gold-700">🎲</button>
+                    <button onClick={() => setAttr(key, +1)} disabled={baseVal >= 18} className="w-6 h-6 rounded border border-stone-700 text-stone-400 hover:border-stone-500 disabled:opacity-30">+</button>
+                    <button onClick={() => setAttrDice(key)} className="w-6 h-6 rounded border border-stone-700 text-xs ml-1 text-stone-500 hover:border-gold-700">🎲</button>
                   </div>
                 </div>
               )
