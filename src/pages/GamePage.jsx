@@ -50,7 +50,6 @@ function parseEnemyTags(text = '') {
       ac: parseInt(m[3]) || 12,
       attackBonus: parseInt(m[4]) || 3,
       damageDice: m[5].trim(),
-      damageBonus: 0,
       xp: parseInt(m[6]) || 25,
       initiativeBonus: 0,
     })
@@ -413,15 +412,32 @@ export default function GamePage() {
   const showContinueSelection = mode === 'continue'
   const showTranscript = !showNewSessionSetup && !showContinueSelection
 
-  // Music: dungeon ambient during game, battle music during combat
+  // Derive ambient music track from scene context
+  const sceneTrack = useMemo(() => {
+    if (!sceneState) return 'dungeon'
+    const loc = [
+      sceneState.currentLocation || '',
+      sceneState.currentSectionTitle || '',
+      sceneState.summary || '',
+    ].join(' ').toLowerCase()
+
+    if (/tavern|kneipe|wirtshaus|gasth|schenke|bar|krug/.test(loc)) return 'tavern'
+    if (/wald|forest|lichtung|wiese|pfad|draußen|outdoor|hain|fluss|see/.test(loc)) return 'forest'
+    return 'dungeon'
+  }, [sceneState])
+
+  // Music: landing on pre-game, battle during combat, scene-aware ambient otherwise
   useEffect(() => {
-    if (!showTranscript) return
+    if (!showTranscript) {
+      playMusic('landing')
+      return
+    }
     if (combat?.active) {
       playMusic('battle')
     } else {
-      playMusic('dungeon')
+      playMusic(sceneTrack)
     }
-  }, [combat?.active, showTranscript, playMusic])
+  }, [combat?.active, showTranscript, sceneTrack, playMusic])
 
   return (
     <div className="flex flex-col h-screen max-h-screen -m-6 lg:-m-8">

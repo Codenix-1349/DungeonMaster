@@ -171,8 +171,7 @@ export default function CombatTracker({ onCombatAction }) {
         logs.push(`${enemy.name}: Patzer! Verfehlt.`)
       } else if (attackRoll === 20 || atkTotal >= playerAC) {
         const dmgDice = enemy.damageDice || '1d6'
-        const bonusDmg = enemy.damageBonus || 0
-        let dmg = rollDamageStr(dmgDice) + bonusDmg
+        let dmg = rollDamageStr(dmgDice)
         if (attackRoll === 20) dmg += rollDamageStr(dmgDice)
         newHP = Math.max(0, newHP - dmg)
         logs.push(attackRoll === 20
@@ -184,16 +183,25 @@ export default function CombatTracker({ onCombatAction }) {
     }
     updateCharacterHP(newHP)
     logs.forEach(addLog)
-    if (newHP <= 0) addLog('Du bist bewusstlos! (0 HP)')
+
+    if (newHP <= 0) {
+      // Player defeated — end combat, let AI narrate the defeat
+      addLog('Du bist gefallen! (0 HP)')
+      const summary = `[Gegner-Angriff] ${logs.join(' | ')} → Du: 0/${character.maxHP} HP — [SPIELER BESIEGT] Der Held ist gefallen.`
+      if (onCombatAction) onCombatAction(summary)
+      setTimeout(() => endCombat(), 800)
+      enemyTurnRunningRef.current = false
+      return
+    }
 
     // Send enemy turn summary to AI
-    const summary = `[Gegner-Angriff] ${logs.join(' | ')} → Du: ${newHP}/${character.maxHP} HP${newHP <= 0 ? ' — Bewusstlos!' : ''}`
+    const summary = `[Gegner-Angriff] ${logs.join(' | ')} → Du: ${newHP}/${character.maxHP} HP`
     if (onCombatAction) onCombatAction(summary)
 
     // Advance round and give turn back to player
     setCombat(prev => ({ ...prev, isPlayerTurn: true, round: (prev.round || 1) + 1 }))
     enemyTurnRunningRef.current = false
-  }, [enemyTurnPending, combat, character, updateCharacterHP, addLog, onCombatAction, setCombat])
+  }, [enemyTurnPending, combat, character, updateCharacterHP, addLog, onCombatAction, setCombat, endCombat])
 
   // Player attack: auto-resolve hit/miss against target AC
   const rollAttack = useCallback(() => {

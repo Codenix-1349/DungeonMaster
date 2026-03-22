@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
+import { useSound } from '../context/SoundContext'
 import CharacterSheet from '../components/CharacterSheet'
 import {
   ATTR_LABELS,
@@ -91,6 +92,10 @@ function CharacterLibraryCard({ entry, isActive, sessionLocked = false, onActiva
 
 export default function CharacterPage() {
   const navigate = useNavigate()
+  const { playMusic } = useSound()
+
+  useEffect(() => { playMusic('landing') }, [playMusic])
+
   const {
     character,
     characters,
