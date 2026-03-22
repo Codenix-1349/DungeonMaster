@@ -124,13 +124,6 @@ export default function CharacterPage() {
     setForm(prev => buildCharacterFromForm({ ...prev, ...patch }))
   }
 
-  const setAttr = (key, delta) => {
-    const base = form.baseAttributes || form.attributes
-    const current = Number(base[key]) || 10
-    const num = Math.min(18, Math.max(3, current + delta))
-    updateForm({ baseAttributes: { ...base, [key]: num } })
-  }
-
   const setAttrDice = (key) => {
     const base = form.baseAttributes || form.attributes
     updateForm({ baseAttributes: { ...base, [key]: roll4d6DropLowest() } })
@@ -473,10 +466,8 @@ export default function CharacterPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => setAttr(key, -1)} disabled={baseVal <= 3} className="w-6 h-6 rounded border border-stone-700 text-stone-400 hover:border-stone-500 disabled:opacity-30">-</button>
-                    <span className="font-display text-2xl text-gold-400 w-8 text-center">{finalVal}</span>
-                    <button onClick={() => setAttr(key, +1)} disabled={baseVal >= 18} className="w-6 h-6 rounded border border-stone-700 text-stone-400 hover:border-stone-500 disabled:opacity-30">+</button>
-                    <button onClick={() => setAttrDice(key)} className="w-6 h-6 rounded border border-stone-700 text-xs ml-1 text-stone-500 hover:border-gold-700">🎲</button>
+                    <span className="font-display text-2xl text-gold-400 w-10 text-center">{finalVal}</span>
+                    <button onClick={() => setAttrDice(key)} className="w-8 h-8 rounded border border-stone-700 text-sm text-stone-500 hover:border-gold-700 hover:text-gold-400">🎲</button>
                   </div>
                 </div>
               )
@@ -596,10 +587,12 @@ export default function CharacterPage() {
                 <input
                   type="number"
                   value={form.armorBonus}
-                  onChange={e => updateForm({ armorBonus: Number(e.target.value) || 0 })}
+                  onChange={e => updateForm({ armorBonus: Math.max(0, Math.min(8, Number(e.target.value) || 0)) })}
                   className="input-dark"
+                  min="0"
+                  max="8"
                 />
-                <p className="font-body text-xs text-stone-600 italic mt-1">AC = 10 + DEX-Mod + Rüstungsbonus</p>
+                <p className="font-body text-xs text-stone-600 italic mt-1">0–8 (Leder 2, Kette 4, Platte 6, +Schild 2)</p>
               </div>
             </div>
 
