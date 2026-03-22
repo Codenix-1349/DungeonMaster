@@ -197,6 +197,28 @@ export function getClassWeaponDefaults(className) {
     || { damageDice: '1d6', abilityMod: 'str', label: 'Waffe' }
 }
 
+// Allowed armor presets per class (D&D 5e SRD proficiencies, simplified)
+export const CLASS_ARMOR_OPTIONS = {
+  'Kämpfer':      [{ label: 'Keine', bonus: 0 }, { label: 'Leder', bonus: 2 }, { label: 'Kette', bonus: 4 }, { label: 'Kette + Schild', bonus: 6, isDefault: true }, { label: 'Platte + Schild', bonus: 8 }],
+  'Paladin':      [{ label: 'Keine', bonus: 0 }, { label: 'Leder', bonus: 2 }, { label: 'Kette', bonus: 4 }, { label: 'Kette + Schild', bonus: 6, isDefault: true }, { label: 'Platte + Schild', bonus: 8 }],
+  'Kleriker':     [{ label: 'Keine', bonus: 0 }, { label: 'Leder', bonus: 2 }, { label: 'Kette', bonus: 4 }, { label: 'Kette + Schild', bonus: 6, isDefault: true }],
+  'Waldläufer':   [{ label: 'Keine', bonus: 0 }, { label: 'Leder', bonus: 2, isDefault: true }, { label: 'Kette', bonus: 4 }, { label: 'Kette + Schild', bonus: 6 }],
+  'Druide':       [{ label: 'Keine', bonus: 0 }, { label: 'Leder', bonus: 2, isDefault: true }, { label: 'Leder + Schild', bonus: 4 }],
+  'Schurke':      [{ label: 'Keine', bonus: 0 }, { label: 'Leder', bonus: 2, isDefault: true }],
+  'Barde':        [{ label: 'Keine', bonus: 0 }, { label: 'Leder', bonus: 2, isDefault: true }],
+  'Hexenmeister': [{ label: 'Keine', bonus: 0 }, { label: 'Leder', bonus: 2, isDefault: true }],
+  'Barbar':       [{ label: 'Ungerüstet', bonus: 0, isDefault: true }],
+  'Mönch':        [{ label: 'Ungerüstet', bonus: 0, isDefault: true }],
+  'Zauberer':     [{ label: 'Keine', bonus: 0, isDefault: true }],
+  'Hexer':        [{ label: 'Keine', bonus: 0, isDefault: true }],
+}
+
+export function getDefaultArmorBonus(className) {
+  const options = CLASS_ARMOR_OPTIONS[className] || [{ bonus: 0, isDefault: true }]
+  const def = options.find(o => o.isDefault)
+  return def ? def.bonus : (options[0]?.bonus ?? 0)
+}
+
 export const ABILITY_SAVE_LABELS = [
   { key: 'str', label: 'STR Save' },
   { key: 'dex', label: 'DEX Save' },
@@ -926,8 +948,8 @@ export function createCharacterTemplate() {
     skillProficiencies: [],
     maxHP: calcHitPoints(defaultClass, defaultAttributes.con, 1),
     currentHP: calcHitPoints(defaultClass, defaultAttributes.con, 1),
-    armorClass: calcArmorClass(defaultAttributes.dex, 2, defaultClass, defaultAttributes),
-    armorBonus: 2,
+    armorClass: calcArmorClass(defaultAttributes.dex, getDefaultArmorBonus(defaultClass), defaultClass, defaultAttributes),
+    armorBonus: getDefaultArmorBonus(defaultClass),
     proficiencyBonus: getProficiencyBonus(1),
     initiativeBonus: calcInitiativeBonus(defaultAttributes.dex),
     attackBonus: calcAttackBonus(defaultClass, defaultAttributes, 1),
