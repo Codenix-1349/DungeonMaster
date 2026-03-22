@@ -47,6 +47,7 @@ export function SoundProvider({ children }) {
   const musicRef = useRef(null)
   const fadeRef = useRef(null)
   const unlockedRef = useRef(false)
+  const musicVolumeRef = useRef(musicVolume)
 
   // Initialize music audio element once
   useEffect(() => {
@@ -60,15 +61,33 @@ export function SoundProvider({ children }) {
     }
   }, [])
 
+  // Keep volume ref in sync for use in unlock handler
+  useEffect(() => { musicVolumeRef.current = musicVolume }, [musicVolume])
+
   // Unlock audio on first user interaction (browser autoplay policy)
   useEffect(() => {
     const unlock = () => {
       if (unlockedRef.current) return
       unlockedRef.current = true
       const audio = musicRef.current
-      // If a track was queued before unlock, start playback now
+      // If a track was queued before unlock, fade in from zero
       if (audio && audio.src && audio.paused) {
+        if (fadeRef.current) clearInterval(fadeRef.current)
+        audio.volume = 0
         audio.play().catch(() => {})
+        // Fade in to current music volume
+        const target = musicVolumeRef.current
+        const steps = Math.max(1, Math.round(FADE_MS / FADE_STEP_MS))
+        let step = 0
+        fadeRef.current = setInterval(() => {
+          step++
+          audio.volume = Math.max(0, Math.min(1, target * step / steps))
+          if (step >= steps) {
+            clearInterval(fadeRef.current)
+            fadeRef.current = null
+            audio.volume = Math.max(0, Math.min(1, target))
+          }
+        }, FADE_STEP_MS)
       }
       document.removeEventListener('click', unlock)
       document.removeEventListener('keydown', unlock)
