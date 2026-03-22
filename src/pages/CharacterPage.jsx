@@ -448,9 +448,19 @@ export default function CharacterPage() {
       {step === 2 && (
         <div className="panel-gold p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-            <h2 className="font-heading text-xl text-gold-400">Attribute (4d6, niedrigsten Würfel streichen)</h2>
-            <button onClick={rollAllAttrs} className="btn-primary text-xs px-4 py-2">🎲 Alle würfeln</button>
+            <h2 className="font-heading text-xl text-gold-400">Attribute</h2>
+            <div className="flex gap-2">
+              <button onClick={() => {
+                const keys = Object.keys(ATTR_LABELS)
+                const std = [15, 14, 13, 12, 10, 8]
+                const base = {}
+                keys.forEach((k, i) => { base[k] = std[i] })
+                updateForm({ baseAttributes: base })
+              }} className="btn-ghost text-xs px-3 py-2">Standard Array</button>
+              <button onClick={rollAllAttrs} className="btn-primary text-xs px-4 py-2">🎲 Alle würfeln</button>
+            </div>
           </div>
+          <p className="font-body text-xs text-stone-500 italic mb-4">4d6 (niedrigsten Würfel streichen) oder Standard Array (15, 14, 13, 12, 10, 8)</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {Object.entries(ATTR_LABELS).map(([key, label]) => {
               const baseVal = (form.baseAttributes || form.attributes)?.[key] || 10
