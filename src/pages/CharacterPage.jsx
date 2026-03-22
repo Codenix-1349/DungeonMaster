@@ -5,6 +5,7 @@ import { useSound } from '../context/SoundContext'
 import CharacterSheet from '../components/CharacterSheet'
 import {
   ATTR_LABELS,
+  CLASS_ARMOR_OPTIONS,
   CLASS_CONFIG,
   CLASS_SKILL_OPTIONS,
   CLASSES,
@@ -22,6 +23,7 @@ import {
   calcSpellSaveDC,
   createCharacterTemplate,
   getAbilityModifier,
+  getDefaultArmorBonus,
   getProficiencyBonus,
   normalizeCharacter,
   roll4d6DropLowest,
@@ -143,7 +145,7 @@ export default function CharacterPage() {
       inventory: [...(CLASS_CONFIG[cls]?.starterInventory || [])],
       spells: CLASS_CONFIG[cls]?.spells || '',
       skillProficiencies: [],
-      armorBonus: CLASS_CONFIG[cls]?.unarmoredDefense ? 0 : 2,
+      armorBonus: getDefaultArmorBonus(cls),
     })
   }
 
@@ -580,18 +582,23 @@ export default function CharacterPage() {
         <div className="panel-gold p-6">
           <h2 className="font-heading text-xl text-gold-400 mb-6">Ausrüstung & Details</h2>
           <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="section-subtitle block mb-1">Rüstungsbonus</label>
-                <input
-                  type="number"
-                  value={form.armorBonus}
-                  onChange={e => updateForm({ armorBonus: Math.max(0, Math.min(8, Number(e.target.value) || 0)) })}
-                  className="input-dark"
-                  min="0"
-                  max="8"
-                />
-                <p className="font-body text-xs text-stone-600 italic mt-1">0–8 (Leder 2, Kette 4, Platte 6, +Schild 2)</p>
+            <div>
+              <label className="section-subtitle block mb-2">Rüstung</label>
+              <div className="flex flex-wrap gap-2">
+                {(CLASS_ARMOR_OPTIONS[form.class] || [{ label: 'Keine', bonus: 0 }]).map(opt => (
+                  <button
+                    key={opt.label}
+                    onClick={() => updateForm({ armorBonus: opt.bonus })}
+                    className={`py-2 px-3 rounded border text-xs font-heading tracking-wide transition-all ${
+                      form.armorBonus === opt.bonus
+                        ? 'border-gold-500 text-gold-300 bg-gold-600/15'
+                        : 'border-stone-700 text-stone-400 hover:border-stone-500'
+                    }`}
+                  >
+                    {opt.label}
+                    <span className="block text-[10px] text-stone-500 font-body mt-0.5">+{opt.bonus} AC</span>
+                  </button>
+                ))}
               </div>
             </div>
 
