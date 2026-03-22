@@ -1,6 +1,6 @@
-# DungeonMaster AI – AD&D Solo-Abenteuer
+# Dungeons & Daggers – KI Solo-Abenteuer
 
-Ein KI-gestützter Dungeon Master für AD&D 2nd Edition Solo-Abenteuer.
+Ein KI-gestützter Dungeon Master für D&D 5e (SRD 5.2.1) Solo-Abenteuer, komplett im Browser.
 
 ## Setup
 
@@ -11,13 +11,8 @@ Ein KI-gestützter Dungeon Master für AD&D 2nd Edition Solo-Abenteuer.
 ### Installation
 
 ```bash
-# In den Projektordner wechseln
 cd DungeonMaster
-
-# Abhängigkeiten installieren
 npm install
-
-# Entwicklungsserver starten
 npm run dev
 ```
 
@@ -26,19 +21,20 @@ Dann im Browser öffnen: **http://localhost:5173**
 ## Erste Schritte
 
 1. **Einstellungen** → OpenRouter API Key eingeben → Verbindung testen
-2. **Abenteuer** → Optional: AD&D Modul als PDF oder TXT hochladen
-3. **Charakter** → Deinen Helden erschaffen (Wizard-Stil)
+2. **Abenteuer** → Optional: D&D Modul als PDF oder TXT hochladen
+3. **Charakter** → Helden erstellen (Klasse, Rasse, Attribute)
 4. **Spielsitzung** → Abenteuer starten und mit dem KI-DM spielen!
 
 ## Features
 
-- 🎲 **Vollständiges Würfelsystem** – d4, d6, d8, d10, d12, d20, d100 mit Modifikatoren
-- ⚔️ **AD&D 2nd Edition Regeln** – THAC0, Rüstungsklasse, Rettungswürfe
-- 📜 **PDF/TXT Upload** – Echte Abenteuermodule laden und spielen
-- 🧙 **Charakter-Assistent** – Schritt-für-Schritt Charakter-Erstellung
-- 💾 **Auto-Speicherung** – Alles wird im Browser localStorage gespeichert
-- 🤖 **KI-Streaming** – Antworten werden live übertragen
-- 🏹 **Kampfsystem** – Initiative, Angriffswürfe, HP-Tracker
+- ⚔️ **D&D 5e SRD Regeln** – Attributsmodifikatoren, Rüstungsklasse, Übungsbonus, Rettungswürfe
+- 🎲 **Würfelsystem** – d4, d6, d8, d10, d12, d20, d100
+- 🗡️ **Kampfsystem** – Auto-Initiative, phasenbasierte Züge (Zielwahl → Angriff → Treffer-Check → Schaden), Gegnerzüge automatisch, klassenbasierte Waffen
+- 📜 **PDF/TXT Upload** – Abenteuermodule laden, KI nutzt Inhalte kontextbasiert
+- 🧙 **Charakter-Erstellung** – 8 Klassen (Kämpfer, Zauberer, Kleriker, Schurke, Waldläufer, Paladin, Druide, Barde), 7 Rassen, Attributverteilung
+- 🎭 **Szenenstatus** – Automatisches Tracking von Ort, Zielen, Hinweisen und offenen Fäden
+- 💾 **Auto-Speicherung** – Alles im Browser localStorage, mehrere Sessions und Charaktere
+- 🤖 **KI-Streaming** – Antworten werden live gestreamt, situative Handlungsoptionen als Buttons
 
 ## Unterstützte Modelle (via OpenRouter)
 
@@ -46,6 +42,14 @@ Dann im Browser öffnen: **http://localhost:5173**
 - Anthropic Claude Sonnet / Opus
 - OpenAI GPT-4o
 - Meta Llama 3.3 70B *(Kostenlos)*
+
+## Techstack
+
+- React 18 + Vite
+- Tailwind CSS
+- PDF.js (Modulimport)
+- OpenRouter API (LLM-Anbindung)
+- Kein Backend – reine Client-App
 
 ## Datenschutz
 

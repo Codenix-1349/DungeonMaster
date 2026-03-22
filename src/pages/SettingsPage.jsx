@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useGame } from '../context/GameContext'
+import { useSound } from '../context/SoundContext'
 import {
   AVAILABLE_MODELS,
   fetchModelCatalog,
@@ -17,6 +18,7 @@ function pricingText(pricing) {
 
 export default function SettingsPage() {
   const { apiKey, setApiKey, selectedModel, setSelectedModel } = useGame()
+  const { musicVolume, sfxVolume, setMusicVolume, setSfxVolume, playSfx } = useSound()
 
   const [keyInput, setKeyInput] = useState(apiKey)
   const [showKey, setShowKey] = useState(false)
@@ -302,8 +304,57 @@ export default function SettingsPage() {
         )}
       </div>
 
+      <div className="panel-gold p-6 mb-6">
+        <h2 className="font-heading text-lg text-gold-400 mb-1 tracking-wide">Sound</h2>
+        <p className="font-body text-sm text-stone-500 italic mb-4">
+          Musik und Soundeffekte getrennt regeln. Bei 0% ist der jeweilige Kanal stumm.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="font-heading text-sm text-parchment">Musik</label>
+              <span className="font-heading text-sm text-gold-400">{Math.round(musicVolume * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={musicVolume}
+              onChange={e => setMusicVolume(parseFloat(e.target.value))}
+              className="w-full accent-gold-500 h-2 bg-stone-800 rounded-lg appearance-none cursor-pointer"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="font-heading text-sm text-parchment">Soundeffekte</label>
+              <span className="font-heading text-sm text-gold-400">{Math.round(sfxVolume * 100)}%</span>
+            </div>
+            <div className="flex gap-2 items-center">
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={sfxVolume}
+                onChange={e => setSfxVolume(parseFloat(e.target.value))}
+                className="flex-1 accent-gold-500 h-2 bg-stone-800 rounded-lg appearance-none cursor-pointer"
+              />
+              <button
+                onClick={() => playSfx('lock')}
+                className="btn-ghost text-xs px-2 py-1 flex-shrink-0"
+              >
+                Test
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="panel p-5">
-        <h2 className="font-heading text-sm text-gold-600 mb-3 tracking-wide">ℹ️ Hinweise</h2>
+        <h2 className="font-heading text-sm text-gold-600 mb-3 tracking-wide">Hinweise</h2>
         <ul className="font-body text-sm text-stone-500 space-y-2 italic">
           <li>• Alle Daten (Charakter, Abenteuer, Spielstand) werden lokal im Browser gespeichert.</li>
           <li>• Die einzige externe Verbindung ist der OpenRouter API-Endpunkt.</li>

@@ -85,6 +85,22 @@ export const CLASS_CONFIG = {
   },
 }
 
+export const CLASS_WEAPON_DEFAULTS = {
+  'Kämpfer':    { damageDice: '1d8', abilityMod: 'str', label: 'Langschwert' },
+  'Zauberer':   { damageDice: '1d6', abilityMod: 'str', label: 'Stab' },
+  'Kleriker':   { damageDice: '1d6', abilityMod: 'str', label: 'Streitkolben' },
+  'Schurke':    { damageDice: '1d8', abilityMod: 'dex', label: 'Rapier' },
+  'Waldläufer': { damageDice: '1d8', abilityMod: 'dex', label: 'Langbogen' },
+  'Paladin':    { damageDice: '1d8', abilityMod: 'str', label: 'Langschwert' },
+  'Druide':     { damageDice: '1d6', abilityMod: 'wis', label: 'Krummsäbel' },
+  'Barde':      { damageDice: '1d8', abilityMod: 'dex', label: 'Rapier' },
+}
+
+export function getClassWeaponDefaults(className) {
+  return CLASS_WEAPON_DEFAULTS[className]
+    || { damageDice: '1d6', abilityMod: 'str', label: 'Waffe' }
+}
+
 export const ABILITY_SAVE_LABELS = [
   { key: 'str', label: 'STR Save' },
   { key: 'dex', label: 'DEX Save' },

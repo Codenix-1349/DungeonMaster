@@ -1,6 +1,7 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
+import { useSound } from '../context/SoundContext'
 import { PROJECT_NAME, SRD_VERSION_LABEL } from '../data/srd'
 
 const RUNE_DECORATION = '✦ ✧ ✦'
@@ -8,6 +9,12 @@ const RUNE_DECORATION = '✦ ✧ ✦'
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { character, characters, adventure, adventures, gameLog, sessions, activeSession } = useGame()
+  const { playMusic } = useSound()
+
+  // Play landing music on dashboard
+  useEffect(() => {
+    playMusic('landing')
+  }, [playMusic])
 
   const lastEntry = gameLog[gameLog.length - 1]
   const sessionDate = lastEntry ? new Date(lastEntry.timestamp).toLocaleString('de-DE') : null
