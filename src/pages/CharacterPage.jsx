@@ -5,6 +5,7 @@ import { useSound } from '../context/SoundContext'
 import CharacterSheet from '../components/CharacterSheet'
 import {
   ATTR_LABELS,
+  CASTER_PROGRESSION,
   CLASS_ARMOR_OPTIONS,
   CLASS_CONFIG,
   CLASS_SKILL_OPTIONS,
@@ -13,6 +14,7 @@ import {
   RACE_CONFIG,
   RACES,
   SKILLS,
+  SPELL_LIST,
   SRD_VERSION_LABEL,
   applyRacialBonuses,
   calcArmorClass,
@@ -23,8 +25,13 @@ import {
   calcSpellSaveDC,
   createCharacterTemplate,
   getAbilityModifier,
+  getCantripsKnownCount,
+  getClassSpells,
   getDefaultArmorBonus,
+  getMaxSpellLevel,
   getProficiencyBonus,
+  getSpellSlots,
+  getSpellsKnownCount,
   normalizeCharacter,
   roll4d6DropLowest,
 } from '../data/srd'
@@ -34,6 +41,13 @@ function buildCharacterFromForm(form) {
   const baseAttrs = form.baseAttributes || form.attributes || {}
   const attrs = applyRacialBonuses(baseAttrs, form.race || 'Mensch')
   const calculatedMaxHP = calcHitPoints(form.class, attrs.con, level)
+
+  // Auto-generate spells string from known cantrips and spells
+  const cantripNames = (form.knownCantrips || [])
+    .map(key => SPELL_LIST.find(s => s.key === key)?.name).filter(Boolean)
+  const spellNames = (form.knownSpells || [])
+    .map(key => SPELL_LIST.find(s => s.key === key)?.name).filter(Boolean)
+  const autoSpells = [...cantripNames, ...spellNames].join(', ')
 
   const normalized = normalizeCharacter({
     ...form,
@@ -48,6 +62,10 @@ function buildCharacterFromForm(form) {
     attackBonus: calcAttackBonus(form.class, attrs, level),
     spellSaveDC: calcSpellSaveDC(form.class, attrs, level),
     spellAttackBonus: calcSpellAttackBonus(form.class, attrs, level),
+    spells: autoSpells || form.spells || '',
+    knownCantrips: form.knownCantrips || [],
+    knownSpells: form.knownSpells || [],
+    spellSlots: getSpellSlots(form.class, level),
   })
 
   return {
@@ -145,6 +163,8 @@ export default function CharacterPage() {
       inventory: [...(CLASS_CONFIG[cls]?.starterInventory || [])],
       spells: CLASS_CONFIG[cls]?.spells || '',
       skillProficiencies: [],
+      knownCantrips: [],
+      knownSpells: [],
       armorBonus: getDefaultArmorBonus(cls),
     })
   }
@@ -359,20 +379,27 @@ export default function CharacterPage() {
     )
   }
 
+  const hasSpellStep = !!CASTER_PROGRESSION[form.class]
+  const EQUIP_STEP = hasSpellStep ? 5 : 4
+  const FINAL_STEP = hasSpellStep ? 6 : 5
+  const stepLabels = hasSpellStep
+    ? ['Intro', 'Basis', 'Attribute', 'Fertigkeiten', 'Zauber', 'Ausrüstung', 'Fertig']
+    : ['Intro', 'Basis', 'Attribute', 'Fertigkeiten', 'Ausrüstung', 'Fertig']
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-8">
         <h1 className="section-title text-3xl mb-2">Charakter erschaffen</h1>
         <p className="font-body text-stone-500 italic">{SRD_VERSION_LABEL}</p>
         <div className="flex items-center gap-1 mt-4">
-          {['Intro', 'Basis', 'Attribute', 'Fertigkeiten', 'Ausrüstung', 'Fertig'].map((label, i) => (
+          {stepLabels.map((label, i) => (
             <React.Fragment key={i}>
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-heading transition-colors ${
                 i <= step ? 'bg-gold-600 text-black' : 'bg-stone-800 text-stone-600'
               }`}>
                 {i + 1}
               </div>
-              {i < 5 && <div className={`flex-1 h-px transition-colors ${i < step ? 'bg-gold-600' : 'bg-stone-800'}`} />}
+              {i < stepLabels.length - 1 && <div className={`flex-1 h-px transition-colors ${i < step ? 'bg-gold-600' : 'bg-stone-800'}`} />}
             </React.Fragment>
           ))}
         </div>
@@ -578,7 +605,134 @@ export default function CharacterPage() {
         )
       })()}
 
-      {step === 4 && (
+      {step === 4 && hasSpellStep && (() => {
+        const cantripCount = getCantripsKnownCount(form.class, 1)
+        const spellCount = getSpellsKnownCount(form.class, 1)
+        const maxLevel = getMaxSpellLevel(form.class, 1)
+        const selectedCantrips = form.knownCantrips || []
+        const selectedSpells = form.knownSpells || []
+
+        if (cantripCount === 0 && spellCount === 0) {
+          return (
+            <div className="panel-gold p-6 text-center">
+              <h2 className="font-heading text-xl text-gold-400 mb-4">Zauber</h2>
+              <p className="font-body text-stone-400 italic mb-6">
+                Als {form.class} erhältst du Zauber ab Stufe 2.
+              </p>
+              <div className="flex justify-between">
+                <button onClick={() => setStep(3)} className="btn-ghost">← Zurück</button>
+                <button onClick={() => setStep(EQUIP_STEP)} className="btn-primary">Weiter →</button>
+              </div>
+            </div>
+          )
+        }
+
+        const toggleCantrip = (key) => {
+          const current = form.knownCantrips || []
+          if (current.includes(key)) {
+            updateForm({ knownCantrips: current.filter(k => k !== key) })
+          } else if (current.length < cantripCount) {
+            updateForm({ knownCantrips: [...current, key] })
+          }
+        }
+
+        const toggleSpell = (key) => {
+          const current = form.knownSpells || []
+          if (current.includes(key)) {
+            updateForm({ knownSpells: current.filter(k => k !== key) })
+          } else if (current.length < spellCount) {
+            updateForm({ knownSpells: [...current, key] })
+          }
+        }
+
+        const canProceed = selectedCantrips.length === cantripCount && selectedSpells.length === spellCount
+
+        return (
+          <div className="panel-gold p-6">
+            <h2 className="font-heading text-xl text-gold-400 mb-2">Zauber</h2>
+
+            {cantripCount > 0 && (
+              <>
+                <p className="font-body text-sm text-stone-400 italic mb-3">
+                  Wähle {cantripCount} Cantrips ({selectedCantrips.length}/{cantripCount})
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-6">
+                  {getClassSpells(form.class, 0).map(spell => {
+                    const isSelected = selectedCantrips.includes(spell.key)
+                    return (
+                      <button
+                        key={spell.key}
+                        onClick={() => toggleCantrip(spell.key)}
+                        disabled={!isSelected && selectedCantrips.length >= cantripCount}
+                        className={`p-2 rounded border text-left text-sm font-body transition-all ${
+                          isSelected
+                            ? 'border-gold-500 bg-gold-600/15 text-gold-300'
+                            : selectedCantrips.length >= cantripCount
+                              ? 'border-stone-800 text-stone-600 opacity-50'
+                              : 'border-stone-700 text-stone-400 hover:border-stone-500'
+                        }`}
+                      >
+                        <span className="font-heading">{spell.name}</span>
+                        <span className="block text-xs text-stone-500 mt-0.5">{spell.description}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {spellCount > 0 && maxLevel >= 1 && (
+              <>
+                <p className="font-body text-sm text-stone-400 italic mb-3">
+                  Wähle {spellCount} Zaubersprüche Stufe 1 ({selectedSpells.length}/{spellCount})
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-6">
+                  {getClassSpells(form.class, 1).map(spell => {
+                    const isSelected = selectedSpells.includes(spell.key)
+                    return (
+                      <button
+                        key={spell.key}
+                        onClick={() => toggleSpell(spell.key)}
+                        disabled={!isSelected && selectedSpells.length >= spellCount}
+                        className={`p-2 rounded border text-left text-sm font-body transition-all ${
+                          isSelected
+                            ? 'border-gold-500 bg-gold-600/15 text-gold-300'
+                            : selectedSpells.length >= spellCount
+                              ? 'border-stone-800 text-stone-600 opacity-50'
+                              : 'border-stone-700 text-stone-400 hover:border-stone-500'
+                        }`}
+                      >
+                        <span className="font-heading">{spell.name}</span>
+                        <span className="block text-xs text-stone-500 mt-0.5">{spell.description}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            <div className="panel p-3 grid grid-cols-3 gap-3 text-center mb-4">
+              {[1, 2, 3].map(lvl => {
+                const slots = getSpellSlots(form.class, 1)
+                return (
+                  <div key={lvl}>
+                    <p className="section-subtitle">Stufe {lvl}</p>
+                    <p className="font-display text-xl text-gold-400">{slots[lvl] || '—'}</p>
+                    <p className="font-body text-xs text-stone-500">Plätze</p>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="flex justify-between">
+              <button onClick={() => setStep(3)} className="btn-ghost">← Zurück</button>
+              <button onClick={() => setStep(EQUIP_STEP)} disabled={!canProceed} className="btn-primary">Weiter →</button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {step === EQUIP_STEP && (
         <div className="panel-gold p-6">
           <h2 className="font-heading text-xl text-gold-400 mb-6">Ausrüstung & Details</h2>
           <div className="space-y-4">
@@ -633,26 +787,15 @@ export default function CharacterPage() {
               </div>
             </div>
 
-            {CLASS_CONFIG[form.class]?.spellcastingAbility && (
-              <div>
-                <label className="section-subtitle block mb-1">Zauber & Klassenfähigkeiten</label>
-                <textarea
-                  value={form.spells}
-                  onChange={e => updateForm({ spells: e.target.value })}
-                  className="input-dark w-full h-20 resize-none"
-                  placeholder="Cantrips, bekannte Zauber, besondere Fähigkeiten…"
-                />
-              </div>
-            )}
           </div>
           <div className="flex justify-between mt-6">
-            <button onClick={() => setStep(3)} className="btn-ghost">← Zurück</button>
-            <button onClick={() => setStep(5)} className="btn-primary">Weiter →</button>
+            <button onClick={() => setStep(hasSpellStep ? 4 : 3)} className="btn-ghost">← Zurück</button>
+            <button onClick={() => setStep(FINAL_STEP)} className="btn-primary">Weiter →</button>
           </div>
         </div>
       )}
 
-      {step === 5 && (
+      {step === FINAL_STEP && (
         <div className="panel-gold p-6">
           <h2 className="font-heading text-xl text-gold-400 mb-4">Bereit für das Abenteuer</h2>
           <div className="panel p-4 mb-6 space-y-2">
@@ -660,10 +803,15 @@ export default function CharacterPage() {
             <p><span className="section-subtitle">Rasse/Klasse:</span> <span className="font-body text-parchment">{form.race} {form.class}</span></p>
             <p><span className="section-subtitle">HP / AC:</span> <span className="font-body text-parchment">{form.maxHP} HP · AC {form.armorClass}</span></p>
             <p><span className="section-subtitle">Fertigkeiten:</span> <span className="font-body text-parchment">{(form.skillProficiencies || []).map(k => SKILLS.find(s => s.key === k)?.label).filter(Boolean).join(', ') || '—'}</span></p>
+            <p><span className="section-subtitle">Zauber:</span> <span className="font-body text-parchment">{
+              [...(form.knownCantrips || []), ...(form.knownSpells || [])]
+                .map(key => SPELL_LIST.find(s => s.key === key)?.name)
+                .filter(Boolean).join(', ') || '—'
+            }</span></p>
             <p><span className="section-subtitle">Inventar:</span> <span className="font-body text-parchment">{form.inventory.join(', ') || '—'}</span></p>
           </div>
           <div className="flex justify-between">
-            <button onClick={() => setStep(4)} className="btn-ghost">← Zurück</button>
+            <button onClick={() => setStep(EQUIP_STEP)} className="btn-ghost">← Zurück</button>
             <div className="flex gap-2">
               <button onClick={() => setEditing(false)} className="btn-ghost">Abbrechen</button>
               <button onClick={saveCurrentCharacter} className="btn-primary">Held speichern</button>

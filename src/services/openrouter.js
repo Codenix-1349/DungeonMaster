@@ -1,6 +1,7 @@
 import {
   PROJECT_NAME,
   SKILLS,
+  SPELL_LIST,
   SRD_VERSION_LABEL,
   SRD_CORE_PROMPT_RULES,
   buildRelevantAdventureContext,
@@ -533,9 +534,22 @@ ${buildChoiceStyleInstruction(userText, Boolean(combat?.active))}`
 **Attribute:** STR ${attrs.str}, DEX ${attrs.dex}, CON ${attrs.con}, INT ${attrs.int}, WIS ${attrs.wis}, CHA ${attrs.cha}
 **Erfahrung:** ${character.xp || 0} XP
 **Inventar:** ${(character.inventory || []).join(', ') || 'Leer'}${skillLine}
-${character.spells ? `**Zaubersprüche:** ${character.spells}` : ''}
-${character.spellSaveDC ? `**Zauber-SG:** ${character.spellSaveDC}` : ''}
-${character.spellAttackBonus !== null && character.spellAttackBonus !== undefined ? `**Zauberangriff:** ${character.spellAttackBonus >= 0 ? '+' : ''}${character.spellAttackBonus}` : ''}`
+${(() => {
+  const parts = []
+  if (character.knownCantrips?.length) {
+    parts.push(`**Cantrips:** ${character.knownCantrips.map(k => SPELL_LIST.find(s => s.key === k)?.name).filter(Boolean).join(', ')}`)
+  }
+  if (character.knownSpells?.length) {
+    parts.push(`**Zaubersprüche:** ${character.knownSpells.map(k => { const s = SPELL_LIST.find(sp => sp.key === k); return s ? `${s.name} (Stufe ${s.level})` : null }).filter(Boolean).join(', ')}`)
+  }
+  if (character.spellSlots && Object.keys(character.spellSlots).length) {
+    parts.push(`**Zauberplätze:** ${Object.entries(character.spellSlots).map(([l, c]) => `Stufe ${l}: ${c}`).join(', ')}`)
+  }
+  if (!parts.length && character.spells) parts.push(`**Zaubersprüche:** ${character.spells}`)
+  if (character.spellSaveDC) parts.push(`**Zauber-SG:** ${character.spellSaveDC}`)
+  if (character.spellAttackBonus !== null && character.spellAttackBonus !== undefined) parts.push(`**Zauberangriff:** ${character.spellAttackBonus >= 0 ? '+' : ''}${character.spellAttackBonus}`)
+  return parts.join('\n')
+})()}`
   }
 
   if (combat?.active) {

@@ -12,6 +12,7 @@ import {
   calcAttackBonus,
   calcSpellSaveDC,
   calcSpellAttackBonus,
+  getSpellSlots,
 } from '../data/srd'
 
 const GameContext = createContext(null)
@@ -659,6 +660,7 @@ export function GameProvider({ children }) {
       if (calcSpellAttackBonus && updatedChar.spellAttackBonus !== undefined) {
         updatedChar.spellAttackBonus = calcSpellAttackBonus(current.class, current.attributes, newLevel)
       }
+      updatedChar.spellSlots = getSpellSlots(current.class, newLevel)
     }
 
     saveCharacter(updatedChar)
