@@ -46,6 +46,7 @@ export function SoundProvider({ children }) {
 
   const musicRef = useRef(null)
   const fadeRef = useRef(null)
+  const unlockedRef = useRef(false)
 
   // Initialize music audio element once
   useEffect(() => {
@@ -56,6 +57,30 @@ export function SoundProvider({ children }) {
     return () => {
       audio.pause()
       audio.src = ''
+    }
+  }, [])
+
+  // Unlock audio on first user interaction (browser autoplay policy)
+  useEffect(() => {
+    const unlock = () => {
+      if (unlockedRef.current) return
+      unlockedRef.current = true
+      const audio = musicRef.current
+      // If a track was queued before unlock, start playback now
+      if (audio && audio.src && audio.paused) {
+        audio.play().catch(() => {})
+      }
+      document.removeEventListener('click', unlock)
+      document.removeEventListener('keydown', unlock)
+      document.removeEventListener('touchstart', unlock)
+    }
+    document.addEventListener('click', unlock)
+    document.addEventListener('keydown', unlock)
+    document.addEventListener('touchstart', unlock)
+    return () => {
+      document.removeEventListener('click', unlock)
+      document.removeEventListener('keydown', unlock)
+      document.removeEventListener('touchstart', unlock)
     }
   }, [])
 
