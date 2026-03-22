@@ -412,19 +412,32 @@ export default function GamePage() {
   const showContinueSelection = mode === 'continue'
   const showTranscript = !showNewSessionSetup && !showContinueSelection
 
-  // Derive ambient music track from scene context
+  // Derive ambient music track from scene context + recent AI messages
   const sceneTrack = useMemo(() => {
-    if (!sceneState) return 'dungeon'
-    const loc = [
-      sceneState.currentLocation || '',
-      sceneState.currentSectionTitle || '',
-      sceneState.summary || '',
-    ].join(' ').toLowerCase()
+    // Collect all context: sceneState fields + last few AI messages
+    const parts = []
+    if (sceneState) {
+      parts.push(sceneState.currentLocation || '')
+      parts.push(sceneState.currentSectionTitle || '')
+      parts.push(sceneState.summary || '')
+      parts.push(sceneState.lastOutcome || '')
+    }
+    // Recent AI messages are the most reliable source for current scene
+    const recentAI = gameLog
+      .filter(m => m.role === 'assistant')
+      .slice(-3)
+      .map(m => m.content || '')
+    parts.push(...recentAI)
 
-    if (/tavern|kneipe|wirtshaus|gasth|schenke|bar|krug/.test(loc)) return 'tavern'
-    if (/wald|forest|lichtung|wiese|pfad|draußen|outdoor|hain|fluss|see/.test(loc)) return 'forest'
+    const text = parts.join(' ').toLowerCase()
+
+    // Tavern/inn: social indoor scenes with food, drink, fireplace
+    if (/tavern|kneipe|wirtshaus|gasth(aus|of|haus)|schenke|schankraum|kessel|krug|bierstube|trinkstube|herberge|feuer.*kamin|kamin.*feuer|wirt\b|bardame|theke|ausschank/.test(text)) return 'tavern'
+    // Forest/outdoor: nature, wilderness, travel
+    if (/wald|forest|lichtung|wiese|pfad|draußen|outdoor|hain|fluss|see|bach|ufer|berg|hügel|tal|steppe|moor|sumpf|küste|strand|garten|feld|weide|straße|landstraße|reise|wanderung|camp|lager(?!raum)/.test(text)) return 'forest'
+    // Default: dungeon/indoor (caves, ruins, temples, dungeons, buildings)
     return 'dungeon'
-  }, [sceneState])
+  }, [sceneState, gameLog])
 
   // Music: landing on pre-game, battle during combat, scene-aware ambient otherwise
   useEffect(() => {
