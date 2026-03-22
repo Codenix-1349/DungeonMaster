@@ -50,19 +50,32 @@ const navItems = [
   { to: '/settings', label: 'Einstellungen', icon: GearIcon },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ onClose }) {
   const { character, characters, adventure, adventures, combat, sessions, activeSession } = useGame()
 
   return (
     <aside className="w-64 min-h-screen flex flex-col border-r border-gold-700/20"
       style={{ background: 'linear-gradient(180deg, #0d0d0d 0%, #0a0a0a 100%)' }}>
 
-      <div className="px-6 py-8 border-b border-gold-700/20">
-        <h1 className="font-display text-xl text-gold-500 leading-tight"
-          style={{ textShadow: '0 0 20px rgba(212,160,23,0.5)' }}>
-          Dungeons<br />& Daggers
-        </h1>
-        <p className="font-body text-xs text-stone-600 mt-1 italic">{SRD_VERSION_LABEL} Solo-Abenteuer</p>
+      <div className="px-6 py-8 border-b border-gold-700/20 flex items-start justify-between">
+        <div>
+          <h1 className="font-display text-xl text-gold-500 leading-tight"
+            style={{ textShadow: '0 0 20px rgba(212,160,23,0.5)' }}>
+            Dungeons<br />& Daggers
+          </h1>
+          <p className="font-body text-xs text-stone-600 mt-1 italic">{SRD_VERSION_LABEL} Solo-Abenteuer</p>
+        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="lg:hidden p-1 text-stone-500 hover:text-gold-500"
+            aria-label="Menü schließen"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
 
       <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
