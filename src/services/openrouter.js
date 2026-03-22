@@ -333,7 +333,7 @@ function normalizeChoiceEnding(text = '') {
   }
 
   const joined = normalized.join('\n')
-  if (!/etwas anderes \(beschreibe\)/i.test(joined)) {
+  if (!/etwas anderes/i.test(joined)) {
     normalized.push('5. **Etwas anderes (beschreibe)**')
   }
 

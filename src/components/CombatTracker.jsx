@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { useGame } from '../context/GameContext'
+import { getClassWeaponDefaults } from '../data/srd'
 
 function rollDie(sides) {
   return Math.floor(Math.random() * sides) + 1
@@ -57,14 +58,32 @@ function TurnBadge({ isPlayerTurn }) {
 export default function CombatTracker({ onCombatAction }) {
   const { character, combat, setCombat, endCombat, updateCharacterHP, getModifier, awardXP } = useGame()
   const [actionLog, setActionLog] = useState([])
-  const [pendingAttackRoll, setPendingAttackRoll] = useState(null)
   const [enemyTurnPending, setEnemyTurnPending] = useState(false)
+
+  // State machine for player turn
+  // null = not player's turn | 'selectTarget' | 'attack' | 'damage' | 'done'
+  const [playerPhase, setPlayerPhase] = useState(null)
+  const [selectedTargetId, setSelectedTargetId] = useState(null)
+  const [pendingAttack, setPendingAttack] = useState(null)
+
+  // Guards and accumulators
+  const enemyTurnRunningRef = useRef(false)
+  const turnActionsRef = useRef([])
+  const initRolledRef = useRef(false)
 
   const addLog = useCallback((text) => {
     setActionLog(prev => [...prev.slice(-30), { id: Date.now() + Math.random(), text }])
   }, [])
 
-  // Initiative roll
+  // Flush accumulated turn actions as a single summary to the AI
+  const flushTurnSummary = useCallback(() => {
+    if (turnActionsRef.current.length === 0) return
+    const summary = turnActionsRef.current.join(' | ')
+    turnActionsRef.current = []
+    if (onCombatAction) onCombatAction(summary)
+  }, [onCombatAction])
+
+  // Auto-roll initiative when combat starts
   const rollInitiative = useCallback(() => {
     const roll = rollDie(20)
     const dexMod = character ? getModifier(character.attributes?.dex || 10) : 0
@@ -76,18 +95,72 @@ export default function CombatTracker({ onCombatAction }) {
     const enemyMaxInit = enemies.length ? Math.max(...enemies.map(e => e.initiative)) : 0
     const playerFirst = playerInit >= enemyMaxInit
     setCombat(prev => ({ ...prev, playerInitiative: playerInit, enemies, phase: 'action', isPlayerTurn: playerFirst, round: 1 }))
-    addLog(`⚄ Initiative: Du ${playerInit} | Gegner: ${enemies.map(e => `${e.name} ${e.initiative}`).join(', ')}`)
-    addLog(playerFirst ? '✅ Du handelst zuerst!' : '⚠️ Gegner handeln zuerst!')
+    addLog(`Initiative: Du ${playerInit} | Gegner: ${enemies.map(e => `${e.name} ${e.initiative}`).join(', ')}`)
+    addLog(playerFirst ? 'Du handelst zuerst!' : 'Gegner handeln zuerst!')
     if (!playerFirst) setTimeout(() => setEnemyTurnPending(true), 600)
   }, [character, combat, getModifier, setCombat, addLog])
 
-  // Enemy auto-attack
+  // Auto-roll initiative on combat start
+  useEffect(() => {
+    if (!combat?.active || combat?.phase !== 'initiative' || !character) return
+    if (combat.playerInitiative > 0 || initRolledRef.current) return
+    initRolledRef.current = true
+    rollInitiative()
+  }, [combat?.active, combat?.phase, character, combat?.playerInitiative, rollInitiative])
+
+  // Reset init ref when combat ends
+  useEffect(() => {
+    if (!combat?.active) initRolledRef.current = false
+  }, [combat?.active])
+
+  // Auto-set player phase when turn changes
+  useEffect(() => {
+    if (!combat?.active || combat?.phase === 'initiative') {
+      setPlayerPhase(null)
+      return
+    }
+    if (combat.isPlayerTurn) {
+      const living = (combat.enemies || []).filter(e => e.currentHP > 0)
+      if (living.length === 0) return
+      setPendingAttack(null)
+      if (living.length === 1) {
+        setSelectedTargetId(living[0].id)
+        setPlayerPhase('attack')
+      } else {
+        setSelectedTargetId(null)
+        setPlayerPhase('selectTarget')
+      }
+    } else {
+      setPlayerPhase(null)
+    }
+  }, [combat?.isPlayerTurn, combat?.active, combat?.phase])
+
+  // Auto-advance from 'done' phase to enemy turn
+  useEffect(() => {
+    if (playerPhase !== 'done') return
+    const timer = setTimeout(() => {
+      flushTurnSummary()
+      setCombat(prev => ({ ...prev, isPlayerTurn: false }))
+      setPlayerPhase(null)
+      setTimeout(() => setEnemyTurnPending(true), 400)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [playerPhase, flushTurnSummary, setCombat])
+
+  // Enemy auto-attack with ref guard
   useEffect(() => {
     if (!enemyTurnPending || !combat?.active || combat?.isPlayerTurn) return
     if (!character) return
+    if (enemyTurnRunningRef.current) return
+    enemyTurnRunningRef.current = true
     setEnemyTurnPending(false)
+
     const livingEnemies = (combat?.enemies || []).filter(e => e.currentHP > 0)
-    if (!livingEnemies.length) return
+    if (!livingEnemies.length) {
+      enemyTurnRunningRef.current = false
+      return
+    }
+
     let newHP = character.currentHP ?? character.maxHP
     const logs = []
     for (const enemy of livingEnemies) {
@@ -95,7 +168,7 @@ export default function CombatTracker({ onCombatAction }) {
       const atkTotal = attackRoll + (enemy.attackBonus || 3)
       const playerAC = character.armorClass || 12
       if (attackRoll === 1) {
-        logs.push(`💨 ${enemy.name}: Patzer! Verfehlt.`)
+        logs.push(`${enemy.name}: Patzer! Verfehlt.`)
       } else if (attackRoll === 20 || atkTotal >= playerAC) {
         const dmgDice = enemy.damageDice || '1d6'
         const bonusDmg = enemy.damageBonus || 0
@@ -103,69 +176,100 @@ export default function CombatTracker({ onCombatAction }) {
         if (attackRoll === 20) dmg += rollDamageStr(dmgDice)
         newHP = Math.max(0, newHP - dmg)
         logs.push(attackRoll === 20
-          ? `💥 ${enemy.name} KRITISCH! ${dmg} Schaden → Du: ${newHP}/${character.maxHP} HP`
-          : `🗡 ${enemy.name} trifft (${atkTotal} vs AC ${playerAC}) → ${dmg} Schaden → Du: ${newHP}/${character.maxHP} HP`)
+          ? `${enemy.name} KRITISCH! ${dmg} Schaden`
+          : `${enemy.name} trifft (${atkTotal} vs AC ${playerAC}) ${dmg} Schaden`)
       } else {
-        logs.push(`🛡 ${enemy.name} verfehlt (${atkTotal} vs AC ${playerAC})`)
+        logs.push(`${enemy.name} verfehlt (${atkTotal} vs AC ${playerAC})`)
       }
     }
     updateCharacterHP(newHP)
     logs.forEach(addLog)
-    if (onCombatAction) onCombatAction(`[Gegner-Angriff] ${logs.join(' | ')}${newHP <= 0 ? ' — Du bist bewusstlos!' : ''}`)
-    setCombat(prev => ({ ...prev, isPlayerTurn: true }))
-    if (newHP <= 0) addLog('☠️ Du bist bewusstlos! (0 HP)')
+    if (newHP <= 0) addLog('Du bist bewusstlos! (0 HP)')
+
+    // Send enemy turn summary to AI
+    const summary = `[Gegner-Angriff] ${logs.join(' | ')} → Du: ${newHP}/${character.maxHP} HP${newHP <= 0 ? ' — Bewusstlos!' : ''}`
+    if (onCombatAction) onCombatAction(summary)
+
+    // Advance round and give turn back to player
+    setCombat(prev => ({ ...prev, isPlayerTurn: true, round: (prev.round || 1) + 1 }))
+    enemyTurnRunningRef.current = false
   }, [enemyTurnPending, combat, character, updateCharacterHP, addLog, onCombatAction, setCombat])
 
+  // Player attack: auto-resolve hit/miss against target AC
   const rollAttack = useCallback(() => {
-    if (!character || !combat?.isPlayerTurn || combat?.phase !== 'action') return
+    if (playerPhase !== 'attack' || !selectedTargetId) return
+    const target = (combat?.enemies || []).find(e => e.id === selectedTargetId)
+    if (!target || target.currentHP <= 0) return
+
     const roll = rollDie(20)
-    const abilityMod = getModifier(character.attributes?.str || 10)
-    const profBonus = character.proficiencyBonus || 2
-    const attackBonus = Number(character.attackBonus ?? (abilityMod + profBonus))
+    const attackBonus = Number(character?.attackBonus ?? 0)
     const total = roll + attackBonus
     const isCrit = roll === 20
     const isFumble = roll === 1
-    setPendingAttackRoll({ roll, total, isCrit, isFumble, attackBonus })
-    const msg = isCrit ? `⚡ KRITISCH! Natürliche 20. Würfle jetzt Schaden!`
-      : isFumble ? `💀 Patzer! Natürliche 1 – kein Schaden.`
-      : `Angriffswurf: ${total} (d20: ${roll} + Bonus: ${attackBonus >= 0 ? '+' : ''}${attackBonus})`
-    addLog(msg)
-    if (onCombatAction) onCombatAction(`[Angriffswurf] ${msg}`)
-  }, [character, combat, getModifier, addLog, onCombatAction])
 
-  const rollDamageAction = useCallback((diceStr = '1d6') => {
-    if (!character || !combat?.isPlayerTurn || combat?.phase !== 'action') return
-    if (pendingAttackRoll?.isFumble) { setPendingAttackRoll(null); return }
+    if (isFumble) {
+      const msg = `Patzer! Nat. 1 gegen ${target.name} – daneben!`
+      addLog(msg)
+      turnActionsRef.current.push(msg)
+      setPendingAttack(null)
+      setPlayerPhase('done')
+    } else if (isCrit || total >= target.ac) {
+      const msg = isCrit
+        ? `KRITISCH! Nat. 20 gegen ${target.name}!`
+        : `Treffer! ${total} (d20: ${roll} + ${attackBonus}) vs AC ${target.ac} gegen ${target.name}`
+      addLog(msg)
+      turnActionsRef.current.push(msg)
+      setPendingAttack({ roll, total, isCrit, targetId: selectedTargetId })
+      setPlayerPhase('damage')
+    } else {
+      const msg = `Verfehlt! ${total} (d20: ${roll} + ${attackBonus}) vs AC ${target.ac} gegen ${target.name}`
+      addLog(msg)
+      turnActionsRef.current.push(msg)
+      setPendingAttack(null)
+      setPlayerPhase('done')
+    }
+  }, [playerPhase, selectedTargetId, combat, character, addLog])
+
+  // Player damage: uses class weapon defaults
+  const rollDamageAction = useCallback(() => {
+    if (playerPhase !== 'damage' || !pendingAttack) return
     const enemies = combat?.enemies || []
-    const livingEnemies = enemies.filter(e => e.currentHP > 0)
-    if (!livingEnemies.length) return
-    const strMod = getModifier(character.attributes?.str || 10)
-    const fullDice = `${diceStr}${strMod >= 0 ? `+${strMod}` : `${strMod}`}`
+    const target = enemies.find(e => e.id === pendingAttack.targetId)
+    if (!target || target.currentHP <= 0) return
+
+    const weaponInfo = getClassWeaponDefaults(character?.class)
+    const abilityMod = getModifier(character?.attributes?.[weaponInfo.abilityMod] || 10)
+    const diceStr = weaponInfo.damageDice
+    const fullDice = `${diceStr}${abilityMod >= 0 ? `+${abilityMod}` : `${abilityMod}`}`
     let dmg = rollDamageStr(fullDice)
-    if (pendingAttackRoll?.isCrit) dmg += rollDamageStr(diceStr)
-    const target = livingEnemies[0]
-    const newEnemyHP = Math.max(0, target.currentHP - dmg)
-    const updatedEnemies = enemies.map(e => e.id === target.id ? { ...e, currentHP: newEnemyHP } : e)
+    if (pendingAttack.isCrit) dmg += rollDamageStr(diceStr)
+
+    const newHP = Math.max(0, target.currentHP - dmg)
+    const updatedEnemies = enemies.map(e => e.id === target.id ? { ...e, currentHP: newHP } : e)
     setCombat(prev => ({ ...prev, enemies: updatedEnemies }))
-    setPendingAttackRoll(null)
-    const msg = newEnemyHP <= 0
-      ? `💀 ${target.name} fällt! ${dmg} Schaden.`
-      : `${target.name} erleidet ${dmg} Schaden (${newEnemyHP}/${target.maxHP} HP verbleibend)`
+
+    const critLabel = pendingAttack.isCrit ? ' (KRIT!)' : ''
+    const msg = newHP <= 0
+      ? `${target.name} faellt! ${dmg} Schaden${critLabel} (${weaponInfo.label}, ${fullDice})`
+      : `${target.name}: ${dmg} Schaden${critLabel} (${weaponInfo.label}, ${fullDice}) → ${newHP}/${target.maxHP} HP`
     addLog(msg)
-    if (onCombatAction) onCombatAction(`[Schaden] ${msg}`)
+    turnActionsRef.current.push(msg)
+
     const allDead = updatedEnemies.every(e => e.currentHP <= 0)
     if (allDead) {
       const totalXP = updatedEnemies.reduce((sum, e) => sum + (e.xp || 0), 0)
-      addLog(`🏆 Alle Gegner besiegt! +${totalXP} XP`)
-      if (onCombatAction) onCombatAction(`[KAMPF VORBEI] Du hast gewonnen! +${totalXP} XP`)
+      const victoryMsg = `Alle Gegner besiegt! +${totalXP} XP`
+      addLog(victoryMsg)
+      turnActionsRef.current.push(victoryMsg)
       if (awardXP) awardXP(totalXP)
+      flushTurnSummary()
       setTimeout(() => endCombat(), 800)
       return
     }
-    setCombat(prev => ({ ...prev, isPlayerTurn: false }))
-    addLog('→ Gegner sind dran...')
-    setTimeout(() => setEnemyTurnPending(true), 600)
-  }, [character, combat, pendingAttackRoll, getModifier, setCombat, addLog, onCombatAction, endCombat, awardXP])
+
+    setPendingAttack(null)
+    setPlayerPhase('done')
+  }, [playerPhase, pendingAttack, combat, character, getModifier, setCombat, addLog, awardXP, endCombat, flushTurnSummary])
 
   const rollSave = useCallback((label, attr) => {
     const roll = rollDie(20)
@@ -175,17 +279,8 @@ export default function CombatTracker({ onCombatAction }) {
     if (onCombatAction) onCombatAction(`[Rettungswurf ${label}] Ergebnis: ${total}`)
   }, [character, getModifier, addLog, onCombatAction])
 
-  const nextRound = useCallback(() => {
-    if (!combat?.isPlayerTurn) return
-    const nextRoundNum = (combat?.round || 1) + 1
-    setCombat(prev => ({ ...prev, round: nextRoundNum, phase: 'action', isPlayerTurn: false }))
-    addLog(`--- Runde ${nextRoundNum} beginnt. Gegner handeln zuerst. ---`)
-    if (onCombatAction) onCombatAction(`Neue Kampfrunde ${nextRoundNum}. Gegner handeln.`)
-    setTimeout(() => setEnemyTurnPending(true), 400)
-  }, [combat, setCombat, addLog, onCombatAction])
-
   const handleEndCombat = useCallback(() => {
-    addLog('⚔️ Kampf beendet.')
+    addLog('Kampf beendet.')
     endCombat()
     if (onCombatAction) onCombatAction('Der Kampf ist beendet.')
   }, [endCombat, addLog, onCombatAction])
@@ -197,7 +292,9 @@ export default function CombatTracker({ onCombatAction }) {
   const enemies = combat.enemies || []
   const playerHP = character?.currentHP ?? character?.maxHP ?? 0
   const playerMaxHP = character?.maxHP ?? 1
-  const actionDisabled = !isPlayerTurn || isInitPhase
+  const selectedTarget = enemies.find(e => e.id === selectedTargetId)
+  const weaponInfo = getClassWeaponDefaults(character?.class)
+  const abilityMod = character ? getModifier(character.attributes?.[weaponInfo.abilityMod] || 10) : 0
 
   return (
     <div className="panel-gold p-4 animate-slide-in space-y-3">
@@ -216,26 +313,46 @@ export default function CombatTracker({ onCombatAction }) {
 
       <div className="divider-gold" />
 
-      {/* Initiative */}
+      {/* Initiative - auto-rolling indicator */}
       {isInitPhase && (
-        <div>
-          <p className="font-body text-xs text-stone-400 mb-2">Wer handelt zuerst? Würfle Initiative!</p>
-          <button onClick={rollInitiative} className="btn-primary w-full">🎲 Initiative würfeln (d20 + DEX)</button>
+        <div className="text-center py-2">
+          <p className="font-body text-xs text-stone-400 animate-pulse">Initiative wird gewuerfelt...</p>
         </div>
       )}
 
-      {/* Enemy HP Bars */}
+      {/* Enemy HP Bars (clickable for target selection) */}
       {enemies.length > 0 && (
         <div>
           <p className="section-subtitle mb-2">Gegner</p>
+          {playerPhase === 'selectTarget' && (
+            <div className="bg-gold-600/10 border border-gold-600/30 rounded p-2 text-xs font-body text-gold-400 text-center mb-2">
+              Waehle ein Ziel fuer deinen Angriff
+            </div>
+          )}
           <div className="space-y-2">
-            {enemies.map(enemy => (
-              <div key={enemy.id} className={`${enemy.currentHP <= 0 ? 'opacity-40' : ''}`}>
-                <HpBar current={enemy.currentHP} max={enemy.maxHP}
-                  label={enemy.currentHP <= 0 ? `${enemy.name} ☠️` : enemy.name} small />
-                <p className="font-body text-xs text-stone-600">AC {enemy.ac} · ATK +{enemy.attackBonus} · {enemy.damageDice} · {enemy.xp} XP</p>
-              </div>
-            ))}
+            {enemies.map(enemy => {
+              const isAlive = enemy.currentHP > 0
+              const isSelected = selectedTargetId === enemy.id
+              const canSelect = playerPhase === 'selectTarget' && isAlive
+              return (
+                <div
+                  key={enemy.id}
+                  className={`rounded transition-all duration-150 ${
+                    !isAlive ? 'opacity-40' : ''
+                  } ${canSelect ? 'cursor-pointer hover:bg-gold-600/10 border border-transparent hover:border-gold-600/30 p-1 -m-1' : ''
+                  } ${isSelected && isAlive ? 'border border-gold-500/50 bg-gold-600/10 p-1 -m-1' : ''}`}
+                  onClick={() => {
+                    if (!canSelect) return
+                    setSelectedTargetId(enemy.id)
+                    setPlayerPhase('attack')
+                  }}
+                >
+                  <HpBar current={enemy.currentHP} max={enemy.maxHP}
+                    label={`${isSelected && isAlive ? '>> ' : ''}${!isAlive ? `${enemy.name} (tot)` : enemy.name}`} small />
+                  <p className="font-body text-xs text-stone-600">AC {enemy.ac} · ATK +{enemy.attackBonus} · {enemy.damageDice} · {enemy.xp} XP</p>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
@@ -259,50 +376,53 @@ export default function CombatTracker({ onCombatAction }) {
 
       <div className="divider-gold" />
 
-      {/* Combat Actions */}
+      {/* Combat Actions - Phase-dependent */}
       {!isInitPhase && (
         <div className="space-y-2">
+          {/* Enemy turn indicator */}
           {!isPlayerTurn && (
             <div className="bg-red-900/20 border border-red-700/30 rounded p-2 text-xs font-body text-red-400 text-center animate-pulse">
               Gegner sind am Zug – warte...
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={rollAttack} disabled={actionDisabled}
-              className={`btn-primary text-sm ${actionDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}>
-              ⚔️ Angriff (d20)
+          {/* Attack phase */}
+          {playerPhase === 'attack' && selectedTarget && (
+            <button onClick={rollAttack} className="btn-primary w-full text-sm">
+              ⚔️ Angriff auf {selectedTarget.name} (d20 {character?.attackBonus >= 0 ? '+' : ''}{character?.attackBonus} vs AC {selectedTarget.ac})
             </button>
-            <button onClick={() => rollDamageAction('1d6')} disabled={actionDisabled}
-              className={`btn-primary text-sm ${actionDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}>
-              💥 Schaden (d6)
-            </button>
-            <button onClick={() => rollDamageAction('1d8')} disabled={actionDisabled}
-              className={`btn-ghost text-xs ${actionDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}>
-              Schaden d8
-            </button>
-            <button onClick={nextRound} disabled={!isPlayerTurn}
-              className={`btn-ghost text-xs ${!isPlayerTurn ? 'opacity-40 cursor-not-allowed' : ''}`}>
-              ⏭ Runde beenden
-            </button>
-          </div>
+          )}
 
-          {pendingAttackRoll && (
-            <div className="bg-gold-600/10 border border-gold-600/30 rounded p-2 text-xs font-body text-gold-400">
-              {pendingAttackRoll.isCrit ? '⚡ KRITISCH! Würfle jetzt Schaden.'
-                : pendingAttackRoll.isFumble ? '💀 Patzer – kein Schaden möglich.'
-                : `Trefferwurf: ${pendingAttackRoll.total}. Vergleiche mit Gegner-AC – dann Schaden würfeln!`}
+          {/* Damage phase */}
+          {playerPhase === 'damage' && (
+            <div className="space-y-2">
+              <div className="bg-gold-600/10 border border-gold-600/30 rounded p-2 text-xs font-body text-gold-400 text-center">
+                {pendingAttack?.isCrit ? 'KRITISCHER TREFFER! Doppelter Schaden!' : 'Treffer! Wuerfle Schaden:'}
+              </div>
+              <button onClick={rollDamageAction} className="btn-primary w-full text-sm">
+                💥 Schaden ({weaponInfo.label}: {weaponInfo.damageDice}{abilityMod >= 0 ? `+${abilityMod}` : abilityMod}){pendingAttack?.isCrit ? ' KRIT!' : ''}
+              </button>
             </div>
           )}
 
-          <div>
-            <p className="section-subtitle mb-1">Rettungswürfe</p>
-            <div className="flex flex-wrap gap-1">
-              {[['STR','str'],['DEX','dex'],['CON','con'],['INT','int'],['WIS','wis'],['CHA','cha']].map(([lbl, attr]) => (
-                <button key={attr} onClick={() => rollSave(lbl, attr)} className="btn-ghost text-xs px-2 py-1">{lbl}</button>
-              ))}
+          {/* Done phase - auto-advancing */}
+          {playerPhase === 'done' && (
+            <div className="text-center text-xs font-body text-stone-400 animate-pulse py-1">
+              Zug wird beendet...
             </div>
-          </div>
+          )}
+
+          {/* Saving throws - always available during player turn */}
+          {isPlayerTurn && (
+            <div>
+              <p className="section-subtitle mb-1">Rettungswuerfe</p>
+              <div className="flex flex-wrap gap-1">
+                {[['STR','str'],['DEX','dex'],['CON','con'],['INT','int'],['WIS','wis'],['CHA','cha']].map(([lbl, attr]) => (
+                  <button key={attr} onClick={() => rollSave(lbl, attr)} className="btn-ghost text-xs px-2 py-1">{lbl}</button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

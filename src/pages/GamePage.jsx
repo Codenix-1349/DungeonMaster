@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
+import { useSound } from '../context/SoundContext'
 import { sendMessage } from '../services/openrouter'
 import CombatTracker from '../components/CombatTracker'
 import { PROJECT_NAME, SRD_QUICK_RULES } from '../data/srd'
@@ -9,16 +10,26 @@ const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
 // Dynamic choices are parsed from AI response - no static quick actions needed
 const QUICK_ACTIONS = []
 
-// Parse numbered choices from AI response text
+// Parse numbered choices from AI response text (deduplicated)
 function parseChoices(text = '') {
   const lines = String(text).split('\n')
   const choices = []
+  const seen = new Set()
+  let hasOther = false
   for (const line of lines) {
     // Match "1. Text", "1) Text", "**1.** Text" etc.
     const m = line.trim().match(/^\**([1-9])[.):]\**\s*(.+)/)
     if (m) {
       const label = m[2].replace(/\*\*/g, '').trim()
-      if (label && label.length < 120) choices.push(label)
+      const key = label.toLowerCase()
+      // Deduplicate "etwas anderes" variants (AI + normalizer can produce two)
+      const isOther = /etwas anderes/i.test(label)
+      if (isOther && hasOther) continue
+      if (isOther) hasOther = true
+      if (label && label.length < 120 && !seen.has(key)) {
+        seen.add(key)
+        choices.push(label)
+      }
     }
   }
   return choices
@@ -167,6 +178,7 @@ export default function GamePage() {
     loadSession,
     deleteSession,
   } = useGame()
+  const { playMusic, playSfx } = useSound()
 
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -325,7 +337,7 @@ export default function GamePage() {
     gameLog,
   ])
 
-  const handleCombatAction = useCallback(text => handleSend(`[Kampfaktion] ${text}`), [handleSend])
+  const handleCombatAction = useCallback(text => handleSend(`[Kampfrunde] ${text}`), [handleSend])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -400,6 +412,16 @@ export default function GamePage() {
   const showNewSessionSetup = mode === 'new' || (!activeSession && gameLog.length === 0 && mode !== 'continue')
   const showContinueSelection = mode === 'continue'
   const showTranscript = !showNewSessionSetup && !showContinueSelection
+
+  // Music: dungeon ambient during game, battle music during combat
+  useEffect(() => {
+    if (!showTranscript) return
+    if (combat?.active) {
+      playMusic('battle')
+    } else {
+      playMusic('dungeon')
+    }
+  }, [combat?.active, showTranscript, playMusic])
 
   return (
     <div className="flex flex-col h-screen max-h-screen -m-6 lg:-m-8">
@@ -652,7 +674,7 @@ export default function GamePage() {
                   const isOther = /etwas anderes|selbst beschreiben/i.test(choice)
                   return (
                     <button
-                      key={i}
+                      key={choice}
                       onClick={() => isOther ? inputRef.current?.focus() : handleSend(choice)}
                       disabled={!showTranscript || gameLog.length === 0 || streaming}
                       className={`text-xs px-3 py-1.5 rounded border transition-all duration-150 font-body ${
