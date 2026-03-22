@@ -25,8 +25,72 @@ export const ATTR_SHORT_LABELS = {
   cha: 'CHA',
 }
 
-export const RACES = ['Mensch', 'Elf', 'Zwerg', 'Halbling', 'Gnom', 'Halbelf', 'Halb-Ork']
-export const CLASSES = ['Kämpfer', 'Zauberer', 'Kleriker', 'Schurke', 'Waldläufer', 'Paladin', 'Druide', 'Barde']
+// ─── Race Configuration (D&D 5e SRD) ────────────────────────────────────────
+export const RACE_CONFIG = {
+  'Mensch':   { abilityBonuses: { str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 }, hint: '+1 auf alle' },
+  'Elf':      { abilityBonuses: { dex: 2 }, hint: '+2 GES' },
+  'Zwerg':    { abilityBonuses: { con: 2 }, hint: '+2 KON' },
+  'Halbling': { abilityBonuses: { dex: 2 }, hint: '+2 GES' },
+  'Gnom':     { abilityBonuses: { int: 2 }, hint: '+2 INT' },
+  'Halbelf':  { abilityBonuses: { cha: 2, dex: 1, con: 1 }, hint: '+2 CHA, +1 GES/KON' },
+  'Halb-Ork': { abilityBonuses: { str: 2, con: 1 }, hint: '+2 STR, +1 KON' },
+}
+export const RACES = Object.keys(RACE_CONFIG)
+
+export function applyRacialBonuses(baseAttributes, race) {
+  const bonuses = RACE_CONFIG[race]?.abilityBonuses || {}
+  return {
+    str: (baseAttributes.str || 10) + (bonuses.str || 0),
+    dex: (baseAttributes.dex || 10) + (bonuses.dex || 0),
+    con: (baseAttributes.con || 10) + (bonuses.con || 0),
+    int: (baseAttributes.int || 10) + (bonuses.int || 0),
+    wis: (baseAttributes.wis || 10) + (bonuses.wis || 0),
+    cha: (baseAttributes.cha || 10) + (bonuses.cha || 0),
+  }
+}
+
+// ─── Skills (D&D 5e SRD) ────────────────────────────────────────────────────
+export const SKILLS = [
+  { key: 'acrobatics',     label: 'Akrobatik',          ability: 'dex' },
+  { key: 'animalHandling', label: 'Umgang mit Tieren',  ability: 'wis' },
+  { key: 'arcana',         label: 'Arkane Kunde',       ability: 'int' },
+  { key: 'athletics',      label: 'Athletik',           ability: 'str' },
+  { key: 'deception',      label: 'Täuschung',          ability: 'cha' },
+  { key: 'history',        label: 'Geschichte',         ability: 'int' },
+  { key: 'insight',        label: 'Motiv erkennen',     ability: 'wis' },
+  { key: 'intimidation',   label: 'Einschüchtern',      ability: 'cha' },
+  { key: 'investigation',  label: 'Nachforschung',      ability: 'int' },
+  { key: 'medicine',       label: 'Heilkunde',          ability: 'wis' },
+  { key: 'nature',         label: 'Naturkunde',         ability: 'int' },
+  { key: 'perception',     label: 'Wahrnehmung',        ability: 'wis' },
+  { key: 'performance',    label: 'Auftreten',          ability: 'cha' },
+  { key: 'persuasion',     label: 'Überredung',         ability: 'cha' },
+  { key: 'religion',       label: 'Religion',           ability: 'int' },
+  { key: 'sleightOfHand',  label: 'Fingerfertigkeit',   ability: 'dex' },
+  { key: 'stealth',        label: 'Heimlichkeit',       ability: 'dex' },
+  { key: 'survival',       label: 'Überleben',          ability: 'wis' },
+]
+
+export const CLASS_SKILL_OPTIONS = {
+  'Kämpfer':       { count: 2, options: ['acrobatics', 'animalHandling', 'athletics', 'history', 'insight', 'intimidation', 'perception', 'survival'] },
+  'Zauberer':      { count: 2, options: ['arcana', 'history', 'insight', 'investigation', 'medicine', 'religion'] },
+  'Kleriker':      { count: 2, options: ['history', 'insight', 'medicine', 'persuasion', 'religion'] },
+  'Schurke':       { count: 4, options: ['acrobatics', 'athletics', 'deception', 'insight', 'intimidation', 'investigation', 'perception', 'performance', 'persuasion', 'sleightOfHand', 'stealth'] },
+  'Waldläufer':    { count: 3, options: ['animalHandling', 'athletics', 'insight', 'investigation', 'nature', 'perception', 'stealth', 'survival'] },
+  'Paladin':       { count: 2, options: ['athletics', 'insight', 'intimidation', 'medicine', 'persuasion', 'religion'] },
+  'Druide':        { count: 2, options: ['arcana', 'animalHandling', 'insight', 'medicine', 'nature', 'perception', 'religion', 'survival'] },
+  'Barde':         { count: 3, options: SKILLS.map(s => s.key) },
+  'Barbar':        { count: 2, options: ['animalHandling', 'athletics', 'intimidation', 'nature', 'perception', 'survival'] },
+  'Mönch':         { count: 2, options: ['acrobatics', 'athletics', 'history', 'insight', 'religion', 'stealth'] },
+  'Hexenmeister':  { count: 2, options: ['arcana', 'deception', 'history', 'intimidation', 'investigation', 'nature', 'religion'] },
+  'Hexer':         { count: 2, options: ['arcana', 'deception', 'insight', 'intimidation', 'persuasion', 'religion'] },
+}
+
+export function calcSkillBonus(abilityScore, level, isProficient) {
+  return getAbilityModifier(abilityScore) + (isProficient ? getProficiencyBonus(level) : 0)
+}
+
+export const CLASSES = ['Kämpfer', 'Zauberer', 'Kleriker', 'Schurke', 'Waldläufer', 'Paladin', 'Druide', 'Barde', 'Barbar', 'Mönch', 'Hexenmeister', 'Hexer']
 
 export const CLASS_CONFIG = {
   'Kämpfer': {
@@ -83,6 +147,34 @@ export const CLASS_CONFIG = {
     starterInventory: ['Rapier', 'Laute', 'Lederrüstung', 'Rucksack', 'Heiltrank'],
     spells: 'Spott, Heilendes Wort, Feenfeuer',
   },
+  'Barbar': {
+    hitDie: 12,
+    primaryAbility: 'str',
+    unarmoredDefense: 'con',
+    starterInventory: ['Großaxt', 'Wurfspeer x4', 'Entdeckerpaket', 'Heiltrank'],
+    spells: '',
+  },
+  'Mönch': {
+    hitDie: 8,
+    primaryAbility: 'dex',
+    unarmoredDefense: 'wis',
+    starterInventory: ['Kurzstock', 'Dolch', 'Entdeckerpaket', 'Wurfpfeile x10'],
+    spells: '',
+  },
+  'Hexenmeister': {
+    hitDie: 8,
+    primaryAbility: 'cha',
+    spellcastingAbility: 'cha',
+    starterInventory: ['Leichte Armbrust', 'Arkaner Fokus', 'Lederrüstung', 'Rucksack', 'Heiltrank'],
+    spells: 'Geisterstrahl, Verhexung',
+  },
+  'Hexer': {
+    hitDie: 6,
+    primaryAbility: 'cha',
+    spellcastingAbility: 'cha',
+    starterInventory: ['Leichte Armbrust', 'Arkaner Fokus', 'Rucksack', 'Heiltrank'],
+    spells: 'Magisches Geschoss, Schlaf, Feuerhände',
+  },
 }
 
 export const CLASS_WEAPON_DEFAULTS = {
@@ -93,7 +185,11 @@ export const CLASS_WEAPON_DEFAULTS = {
   'Waldläufer': { damageDice: '1d8', abilityMod: 'dex', label: 'Langbogen' },
   'Paladin':    { damageDice: '1d8', abilityMod: 'str', label: 'Langschwert' },
   'Druide':     { damageDice: '1d6', abilityMod: 'wis', label: 'Krummsäbel' },
-  'Barde':      { damageDice: '1d8', abilityMod: 'dex', label: 'Rapier' },
+  'Barde':        { damageDice: '1d8', abilityMod: 'dex', label: 'Rapier' },
+  'Barbar':       { damageDice: '1d12', abilityMod: 'str', label: 'Großaxt' },
+  'Mönch':        { damageDice: '1d6', abilityMod: 'dex', label: 'Kurzstock' },
+  'Hexenmeister': { damageDice: '1d10', abilityMod: 'cha', label: 'Geisterstrahl' },
+  'Hexer':        { damageDice: '1d8', abilityMod: 'cha', label: 'Leichte Armbrust' },
 }
 
 export function getClassWeaponDefaults(className) {
@@ -779,7 +875,13 @@ export function calcHitPoints(className, conScore = 10, level = 1) {
   return Math.max(1, base + conMod + extraLevels)
 }
 
-export function calcArmorClass(dexScore = 10, armorBonus = 0) {
+export function calcArmorClass(dexScore = 10, armorBonus = 0, className = '', attributes = {}) {
+  const normalizedClass = legacyClassNameToCurrent(className)
+  const unarmoredAbility = CLASS_CONFIG[normalizedClass]?.unarmoredDefense
+  // Barbar/Mönch: unarmored defense when no armor bonus
+  if (unarmoredAbility && Number(armorBonus || 0) === 0) {
+    return 10 + getAbilityModifier(dexScore) + getAbilityModifier(attributes[unarmoredAbility] || 10)
+  }
   return 10 + getAbilityModifier(dexScore) + Number(armorBonus || 0)
 }
 
@@ -809,18 +911,22 @@ export function calcSpellAttackBonus(className, attributes = {}, level = 1) {
 
 export function createCharacterTemplate() {
   const defaultClass = 'Kämpfer'
-  const defaultAttributes = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
+  const defaultRace = 'Mensch'
+  const defaultBaseAttributes = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
+  const defaultAttributes = applyRacialBonuses(defaultBaseAttributes, defaultRace)
 
   return {
     name: '',
-    race: 'Mensch',
+    race: defaultRace,
     class: defaultClass,
     level: 1,
     xp: 0,
+    baseAttributes: defaultBaseAttributes,
     attributes: defaultAttributes,
+    skillProficiencies: [],
     maxHP: calcHitPoints(defaultClass, defaultAttributes.con, 1),
     currentHP: calcHitPoints(defaultClass, defaultAttributes.con, 1),
-    armorClass: calcArmorClass(defaultAttributes.dex, 2),
+    armorClass: calcArmorClass(defaultAttributes.dex, 2, defaultClass, defaultAttributes),
     armorBonus: 2,
     proficiencyBonus: getProficiencyBonus(1),
     initiativeBonus: calcInitiativeBonus(defaultAttributes.dex),
@@ -836,28 +942,36 @@ export function recalcCharacterStats(character) {
   if (!character) return null
 
   const normalizedClass = legacyClassNameToCurrent(character.class || 'Kämpfer')
+  const race = character.race || 'Mensch'
   const level = Math.max(1, Number(character.level) || 1)
-  const attributes = {
-    str: Number(character.attributes?.str ?? 10),
-    dex: Number(character.attributes?.dex ?? 10),
-    con: Number(character.attributes?.con ?? 10),
-    int: Number(character.attributes?.int ?? 10),
-    wis: Number(character.attributes?.wis ?? 10),
-    cha: Number(character.attributes?.cha ?? 10),
+
+  // Use baseAttributes if available, otherwise treat current attributes as base (legacy migration)
+  const baseAttributes = {
+    str: Number(character.baseAttributes?.str ?? character.attributes?.str ?? 10),
+    dex: Number(character.baseAttributes?.dex ?? character.attributes?.dex ?? 10),
+    con: Number(character.baseAttributes?.con ?? character.attributes?.con ?? 10),
+    int: Number(character.baseAttributes?.int ?? character.attributes?.int ?? 10),
+    wis: Number(character.baseAttributes?.wis ?? character.attributes?.wis ?? 10),
+    cha: Number(character.baseAttributes?.cha ?? character.attributes?.cha ?? 10),
   }
+  const attributes = applyRacialBonuses(baseAttributes, race)
 
   const armorBonus = Number(character.armorBonus ?? 0)
   const maxHP = Math.max(1, Number(character.maxHP) || calcHitPoints(normalizedClass, attributes.con, level))
   const currentHP = Math.max(0, Math.min(Number(character.currentHP ?? maxHP), maxHP))
   const proficiencyBonus = getProficiencyBonus(level)
+  const skillProficiencies = Array.isArray(character.skillProficiencies) ? character.skillProficiencies : []
 
   return {
     ...character,
     class: normalizedClass,
+    race,
     level,
+    baseAttributes,
     attributes,
+    skillProficiencies,
     armorBonus,
-    armorClass: Number(character.armorClass ?? calcArmorClass(attributes.dex, armorBonus)),
+    armorClass: Number(character.armorClass ?? calcArmorClass(attributes.dex, armorBonus, normalizedClass, attributes)),
     maxHP,
     currentHP,
     proficiencyBonus,
@@ -880,10 +994,16 @@ export function normalizeCharacter(character) {
     ...base,
     ...character,
     class: legacyClassNameToCurrent(character.class || base.class),
+    race: character.race || base.race,
+    baseAttributes: {
+      ...base.baseAttributes,
+      ...(character.baseAttributes || character.attributes || {}),
+    },
     attributes: {
       ...base.attributes,
       ...(character.attributes || {}),
     },
+    skillProficiencies: Array.isArray(character.skillProficiencies) ? character.skillProficiencies : [],
     inventory: Array.isArray(character.inventory) ? character.inventory : base.inventory,
   }
 

@@ -6,10 +6,14 @@ import CharacterSheet from '../components/CharacterSheet'
 import {
   ATTR_LABELS,
   CLASS_CONFIG,
+  CLASS_SKILL_OPTIONS,
   CLASSES,
   PROJECT_NAME,
+  RACE_CONFIG,
   RACES,
+  SKILLS,
   SRD_VERSION_LABEL,
+  applyRacialBonuses,
   calcArmorClass,
   calcAttackBonus,
   calcHitPoints,
@@ -25,13 +29,16 @@ import {
 
 function buildCharacterFromForm(form) {
   const level = Math.max(1, Number(form.level) || 1)
-  const attrs = { ...form.attributes }
+  const baseAttrs = form.baseAttributes || form.attributes || {}
+  const attrs = applyRacialBonuses(baseAttrs, form.race || 'Mensch')
   const calculatedMaxHP = calcHitPoints(form.class, attrs.con, level)
 
   const normalized = normalizeCharacter({
     ...form,
     level,
-    armorClass: calcArmorClass(attrs.dex, form.armorBonus),
+    baseAttributes: baseAttrs,
+    attributes: attrs,
+    armorClass: calcArmorClass(attrs.dex, form.armorBonus, form.class, attrs),
     maxHP: calculatedMaxHP,
     currentHP: Math.min(Number(form.currentHP || 0) || calculatedMaxHP, calculatedMaxHP),
     proficiencyBonus: getProficiencyBonus(level),
@@ -119,15 +126,16 @@ export default function CharacterPage() {
 
   const setAttr = (key, val) => {
     const num = Math.min(18, Math.max(3, Number(val) || 10))
-    updateForm({ attributes: { ...form.attributes, [key]: num } })
+    const base = form.baseAttributes || form.attributes
+    updateForm({ baseAttributes: { ...base, [key]: num } })
   }
 
   const rollAllAttrs = () => {
     const attrs = {}
-    Object.keys(form.attributes).forEach(key => {
+    Object.keys(ATTR_LABELS).forEach(key => {
       attrs[key] = roll4d6DropLowest()
     })
-    updateForm({ attributes: attrs })
+    updateForm({ baseAttributes: attrs })
   }
 
   const updateClass = (cls) => {
@@ -135,6 +143,8 @@ export default function CharacterPage() {
       class: cls,
       inventory: [...(CLASS_CONFIG[cls]?.starterInventory || [])],
       spells: CLASS_CONFIG[cls]?.spells || '',
+      skillProficiencies: [],
+      armorBonus: CLASS_CONFIG[cls]?.unarmoredDefense ? 0 : 2,
     })
   }
 
@@ -354,14 +364,14 @@ export default function CharacterPage() {
         <h1 className="section-title text-3xl mb-2">Charakter erschaffen</h1>
         <p className="font-body text-stone-500 italic">{SRD_VERSION_LABEL}</p>
         <div className="flex items-center gap-1 mt-4">
-          {['Intro', 'Basis', 'Attribute', 'Ausrüstung', 'Fertig'].map((label, i) => (
+          {['Intro', 'Basis', 'Attribute', 'Fertigkeiten', 'Ausrüstung', 'Fertig'].map((label, i) => (
             <React.Fragment key={i}>
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-heading transition-colors ${
                 i <= step ? 'bg-gold-600 text-black' : 'bg-stone-800 text-stone-600'
               }`}>
                 {i + 1}
               </div>
-              {i < 4 && <div className={`flex-1 h-px transition-colors ${i < step ? 'bg-gold-600' : 'bg-stone-800'}`} />}
+              {i < 5 && <div className={`flex-1 h-px transition-colors ${i < step ? 'bg-gold-600' : 'bg-stone-800'}`} />}
             </React.Fragment>
           ))}
         </div>
@@ -407,6 +417,7 @@ export default function CharacterPage() {
                     }`}
                   >
                     {race}
+                    <span className="block text-[10px] text-stone-500 font-body mt-0.5">{RACE_CONFIG[race]?.hint}</span>
                   </button>
                 ))}
               </div>
@@ -442,20 +453,28 @@ export default function CharacterPage() {
             <button onClick={rollAllAttrs} className="btn-primary text-xs px-4 py-2">🎲 Alle würfeln</button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {Object.entries(ATTR_LABELS).map(([key, label]) => (
-              <div key={key} className="panel p-3 flex items-center gap-3">
-                <div className="flex-1">
-                  <p className="section-subtitle text-xs">{label}</p>
-                  <p className="font-body text-xs text-stone-600 italic">Mod {getAbilityModifier(form.attributes[key]) >= 0 ? '+' : ''}{getAbilityModifier(form.attributes[key])}</p>
+            {Object.entries(ATTR_LABELS).map(([key, label]) => {
+              const baseVal = (form.baseAttributes || form.attributes)?.[key] || 10
+              const finalVal = form.attributes[key] || 10
+              const bonus = finalVal - baseVal
+              return (
+                <div key={key} className="panel p-3 flex items-center gap-3">
+                  <div className="flex-1">
+                    <p className="section-subtitle text-xs">{label}</p>
+                    <p className="font-body text-xs text-stone-600 italic">
+                      Mod {getAbilityModifier(finalVal) >= 0 ? '+' : ''}{getAbilityModifier(finalVal)}
+                      {bonus > 0 && <span className="text-green-500 ml-1">(+{bonus} Rasse)</span>}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setAttr(key, baseVal - 1)} className="w-6 h-6 rounded border border-stone-700 text-stone-400 hover:border-stone-500">-</button>
+                    <span className="font-display text-2xl text-gold-400 w-8 text-center">{finalVal}</span>
+                    <button onClick={() => setAttr(key, baseVal + 1)} className="w-6 h-6 rounded border border-stone-700 text-stone-400 hover:border-stone-500">+</button>
+                    <button onClick={() => setAttr(key, roll4d6DropLowest())} className="w-6 h-6 rounded border border-stone-700 text-xs ml-1 text-stone-500 hover:border-gold-700">🎲</button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => setAttr(key, form.attributes[key] - 1)} className="w-6 h-6 rounded border border-stone-700 text-stone-400 hover:border-stone-500">-</button>
-                  <span className="font-display text-2xl text-gold-400 w-8 text-center">{form.attributes[key]}</span>
-                  <button onClick={() => setAttr(key, form.attributes[key] + 1)} className="w-6 h-6 rounded border border-stone-700 text-stone-400 hover:border-stone-500">+</button>
-                  <button onClick={() => setAttr(key, roll4d6DropLowest())} className="w-6 h-6 rounded border border-stone-700 text-xs ml-1 text-stone-500 hover:border-gold-700">🎲</button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
           <div className="panel p-3 mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
             <div>
@@ -497,7 +516,60 @@ export default function CharacterPage() {
         </div>
       )}
 
-      {step === 3 && (
+      {step === 3 && (() => {
+        const skillConfig = CLASS_SKILL_OPTIONS[form.class] || { count: 2, options: [] }
+        const selected = form.skillProficiencies || []
+        const toggleSkill = (skillKey) => {
+          const current = form.skillProficiencies || []
+          if (current.includes(skillKey)) {
+            updateForm({ skillProficiencies: current.filter(k => k !== skillKey) })
+          } else if (current.length < skillConfig.count) {
+            updateForm({ skillProficiencies: [...current, skillKey] })
+          }
+        }
+        return (
+          <div className="panel-gold p-6">
+            <h2 className="font-heading text-xl text-gold-400 mb-2">Fertigkeiten</h2>
+            <p className="font-body text-sm text-stone-400 italic mb-4">
+              Wähle {skillConfig.count} Fertigkeiten für deinen {form.class} ({selected.length}/{skillConfig.count} gewählt)
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {skillConfig.options.map(skillKey => {
+                const skill = SKILLS.find(s => s.key === skillKey)
+                if (!skill) return null
+                const isSelected = selected.includes(skillKey)
+                const abilityScore = form.attributes[skill.ability] || 10
+                const mod = getAbilityModifier(abilityScore)
+                const bonus = mod + (isSelected ? getProficiencyBonus(form.level) : 0)
+                return (
+                  <button
+                    key={skillKey}
+                    onClick={() => toggleSkill(skillKey)}
+                    disabled={!isSelected && selected.length >= skillConfig.count}
+                    className={`p-2 rounded border text-left text-sm font-body transition-all ${
+                      isSelected
+                        ? 'border-gold-500 bg-gold-600/15 text-gold-300'
+                        : selected.length >= skillConfig.count
+                          ? 'border-stone-800 text-stone-600 opacity-50'
+                          : 'border-stone-700 text-stone-400 hover:border-stone-500'
+                    }`}
+                  >
+                    <span className="font-heading">{skill.label}</span>
+                    <span className="text-xs text-stone-500 ml-2">({ATTR_LABELS[skill.ability]})</span>
+                    <span className="float-right font-display text-gold-400">{bonus >= 0 ? '+' : ''}{bonus}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex justify-between mt-6">
+              <button onClick={() => setStep(2)} className="btn-ghost">← Zurück</button>
+              <button onClick={() => setStep(4)} disabled={selected.length !== skillConfig.count} className="btn-primary">Weiter →</button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {step === 4 && (
         <div className="panel-gold p-6">
           <h2 className="font-heading text-xl text-gold-400 mb-6">Ausrüstung & Details</h2>
           <div className="space-y-4">
@@ -569,23 +641,24 @@ export default function CharacterPage() {
             )}
           </div>
           <div className="flex justify-between mt-6">
-            <button onClick={() => setStep(2)} className="btn-ghost">← Zurück</button>
-            <button onClick={() => setStep(4)} className="btn-primary">Weiter →</button>
+            <button onClick={() => setStep(3)} className="btn-ghost">← Zurück</button>
+            <button onClick={() => setStep(5)} className="btn-primary">Weiter →</button>
           </div>
         </div>
       )}
 
-      {step === 4 && (
+      {step === 5 && (
         <div className="panel-gold p-6">
           <h2 className="font-heading text-xl text-gold-400 mb-4">Bereit für das Abenteuer</h2>
           <div className="panel p-4 mb-6 space-y-2">
             <p><span className="section-subtitle">Name:</span> <span className="font-body text-parchment">{form.name}</span></p>
             <p><span className="section-subtitle">Rasse/Klasse:</span> <span className="font-body text-parchment">{form.race} {form.class}</span></p>
             <p><span className="section-subtitle">HP / AC:</span> <span className="font-body text-parchment">{form.maxHP} HP · AC {form.armorClass}</span></p>
+            <p><span className="section-subtitle">Fertigkeiten:</span> <span className="font-body text-parchment">{(form.skillProficiencies || []).map(k => SKILLS.find(s => s.key === k)?.label).filter(Boolean).join(', ') || '—'}</span></p>
             <p><span className="section-subtitle">Inventar:</span> <span className="font-body text-parchment">{form.inventory.join(', ') || '—'}</span></p>
           </div>
           <div className="flex justify-between">
-            <button onClick={() => setStep(3)} className="btn-ghost">← Zurück</button>
+            <button onClick={() => setStep(4)} className="btn-ghost">← Zurück</button>
             <div className="flex gap-2">
               <button onClick={() => setEditing(false)} className="btn-ghost">Abbrechen</button>
               <button onClick={saveCurrentCharacter} className="btn-primary">Held speichern</button>

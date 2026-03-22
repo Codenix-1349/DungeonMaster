@@ -1,6 +1,6 @@
 import React from 'react'
 import { useGame } from '../context/GameContext'
-import { ATTR_SHORT_LABELS, PROJECT_NAME } from '../data/srd'
+import { ATTR_SHORT_LABELS, SKILLS, PROJECT_NAME, calcSkillBonus } from '../data/srd'
 
 export default function CharacterSheet({ compact = false }) {
   const { character, getModifier } = useGame()
@@ -105,6 +105,25 @@ export default function CharacterSheet({ compact = false }) {
           <span className="font-heading text-gold-400">{character.spellSaveDC ?? '—'}</span>
         </div>
       </div>
+
+      {character.skillProficiencies?.length > 0 && (
+        <div className="mb-4">
+          <p className="section-subtitle mb-2">Fertigkeiten</p>
+          <div className="panel p-3 grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+            {SKILLS.map(skill => {
+              const isProficient = character.skillProficiencies.includes(skill.key)
+              const bonus = calcSkillBonus(character.attributes?.[skill.ability] || 10, character.level || 1, isProficient)
+              return (
+                <div key={skill.key} className={`flex items-center gap-1.5 text-xs font-body ${isProficient ? 'text-gold-300' : 'text-stone-600'}`}>
+                  <span className={`w-2 h-2 rounded-full ${isProficient ? 'bg-gold-500' : 'bg-stone-700'}`} />
+                  <span className="truncate">{skill.label}</span>
+                  <span className="ml-auto font-heading">{bonus >= 0 ? '+' : ''}{bonus}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {character.inventory && character.inventory.length > 0 && (
         <div className="mb-4">
