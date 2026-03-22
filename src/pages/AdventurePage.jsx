@@ -1,6 +1,7 @@
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
+import { useSound } from '../context/SoundContext'
 
 async function extractTextFromPDF(file) {
   const pdfjsLib = await import('pdfjs-dist')
@@ -35,6 +36,10 @@ async function extractTextFromTXT(file) {
 export default function AdventurePage() {
   const navigate = useNavigate()
   const { adventures, setAdventures, adventure, setAdventure, characters, activeSession, unloadActiveSession } = useGame()
+  const { playMusic } = useSound()
+
+  useEffect(() => { playMusic('landing') }, [playMusic])
+
   const [dragOver, setDragOver] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [processMsg, setProcessMsg] = useState('')

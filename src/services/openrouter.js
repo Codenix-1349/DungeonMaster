@@ -479,11 +479,20 @@ export function buildSystemPrompt(character, adventure, messages = [], combat = 
   [GEGNER:Name|HP:X|AC:Y|ATK:+Z|DMG:WdX+N|XP:N]
   Beispiel: [GEGNER:Goblin|HP:7|AC:15|ATK:+4|DMG:1d6+2|XP:50]
 - Diese Gegner-Zeilen kommen unmittelbar nach KAMPF BEGINNT, vor jeder erzählerischen Beschreibung.
-- Wähle sinnvolle Werte nach D&D 5e SRD: HP, AC, Angriffsbonus, Schadenswürfel, XP.
 - Wenn ein Gegner im Kampf Schaden nimmt oder stirbt, beschreibe es erzählerisch. Das System trackt die HP.
 - Wenn ein Kampf endet, schreibe **KAMPF VORBEI** und dann: [XP:N] (Gesamte Erfahrungspunkte für alle Gegner).
 - Im Kampf fokussiert bleiben: Nenne Trefferwürfe, AC-Vergleiche und Schaden klar und knapp.
 - Du greifst als Spielleiter für die Gegner an wenn es ihr Zug ist und der Spieler dir meldet dass er seinen Angriff beendet hat.
+- Wenn der Spieler besiegt wurde ([SPIELER BESIEGT]), beschreibe narrativ wie der Held fällt. Biete dann Optionen an: Bewusstlosigkeit und Rettung, Flucht in letzter Sekunde, oder Neustart. Töte den Charakter NICHT endgültig ohne Spielerentscheidung.
+
+## Gegner-Skalierung (WICHTIG)
+Passe Gegnerwerte IMMER an die Stufe des Spielercharakters an. Ein Solo-Held hat keine Gruppe — Kämpfe müssen fair und gewinnbar sein.
+- **Stufe 1–2:** Schwache Gegner. HP 4–12, AC 10–13, ATK +2–4, DMG 1d4+1 bis 1d6+1, XP 25–50. Max 1–2 Gegner.
+- **Stufe 3–4:** Normale Gegner. HP 10–25, AC 12–15, ATK +3–5, DMG 1d6+1 bis 1d8+2, XP 50–200. Max 2–3 Gegner.
+- **Stufe 5–6:** Stärkere Gegner. HP 20–45, AC 13–16, ATK +4–6, DMG 1d8+2 bis 1d10+3, XP 200–450. Max 2–3 Gegner.
+- **Stufe 7+:** Gefährliche Gegner. HP 30–60, AC 14–17, ATK +5–8, DMG 1d10+3 bis 2d6+4, XP 450–1000. Max 2–4 Gegner.
+- Bei Gruppen: Verteile die Stärke. Drei Goblins statt eines starken Monsters → jeder Goblin schwächer.
+- Der Kampf soll spannend, aber gewinnbar sein. Vermeide Übermacht.
 
 ${SRD_CORE_PROMPT_RULES.trim()}
 

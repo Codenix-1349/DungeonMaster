@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useGame } from '../context/GameContext'
 import { useSound } from '../context/SoundContext'
+
 import {
   AVAILABLE_MODELS,
   fetchModelCatalog,
@@ -18,7 +19,9 @@ function pricingText(pricing) {
 
 export default function SettingsPage() {
   const { apiKey, setApiKey, selectedModel, setSelectedModel } = useGame()
-  const { musicVolume, sfxVolume, setMusicVolume, setSfxVolume, playSfx } = useSound()
+  const { musicVolume, sfxVolume, setMusicVolume, setSfxVolume, playSfx, playMusic } = useSound()
+
+  useEffect(() => { playMusic('landing') }, [playMusic])
 
   const [keyInput, setKeyInput] = useState(apiKey)
   const [showKey, setShowKey] = useState(false)
