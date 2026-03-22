@@ -582,17 +582,6 @@ export default function CharacterPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="section-subtitle block mb-1">Stufe</label>
-                <input
-                  type="number"
-                  value={form.level}
-                  onChange={e => updateForm({ level: Math.max(1, Number(e.target.value) || 1) })}
-                  className="input-dark"
-                  min="1"
-                  max="20"
-                />
-              </div>
-              <div>
                 <label className="section-subtitle block mb-1">Rüstungsbonus</label>
                 <input
                   type="number"
