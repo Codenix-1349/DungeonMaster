@@ -1,6 +1,6 @@
 import React from 'react'
 import { useGame } from '../context/GameContext'
-import { ATTR_SHORT_LABELS, SKILLS, PROJECT_NAME, calcSkillBonus } from '../data/srd'
+import { ATTR_SHORT_LABELS, SKILLS, SPELL_LIST, PROJECT_NAME, calcSkillBonus } from '../data/srd'
 
 export default function CharacterSheet({ compact = false }) {
   const { character, getModifier } = useGame()
@@ -136,13 +136,53 @@ export default function CharacterSheet({ compact = false }) {
         </div>
       )}
 
-      {character.spells && (
+      {(character.knownCantrips?.length > 0 || character.knownSpells?.length > 0 || character.spells) && (
         <div>
           <p className="section-subtitle mb-2">Zauber & Fähigkeiten</p>
-          <div className="panel p-3">
-            <p className="font-body text-sm text-stone-400">{character.spells}</p>
+          <div className="panel p-3 space-y-2">
+            {character.knownCantrips?.length > 0 && (
+              <div>
+                <p className="font-heading text-xs text-stone-500 mb-1">Cantrips</p>
+                <div className="flex flex-wrap gap-1">
+                  {character.knownCantrips.map(key => {
+                    const spell = SPELL_LIST.find(s => s.key === key)
+                    return spell ? <span key={key} className="badge-gold text-xs">{spell.name}</span> : null
+                  })}
+                </div>
+              </div>
+            )}
+            {character.knownSpells?.length > 0 && (
+              <div>
+                <p className="font-heading text-xs text-stone-500 mb-1">Zaubersprüche</p>
+                <div className="flex flex-wrap gap-1">
+                  {character.knownSpells.map(key => {
+                    const spell = SPELL_LIST.find(s => s.key === key)
+                    return spell ? (
+                      <span key={key} className="badge-gold text-xs">
+                        {spell.name} <span className="text-stone-500">(Lv{spell.level})</span>
+                      </span>
+                    ) : null
+                  })}
+                </div>
+              </div>
+            )}
+            {character.spellSlots && Object.keys(character.spellSlots).length > 0 && (
+              <div>
+                <p className="font-heading text-xs text-stone-500 mb-1">Zauberplätze</p>
+                <div className="flex gap-3">
+                  {Object.entries(character.spellSlots).map(([lvl, count]) => (
+                    <span key={lvl} className="text-xs font-body text-stone-400">
+                      Stufe {lvl}: <span className="text-gold-400 font-heading">{count}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {!character.knownCantrips?.length && !character.knownSpells?.length && character.spells && (
+              <p className="font-body text-sm text-stone-400">{character.spells}</p>
+            )}
             {character.spellAttackBonus !== null && character.spellAttackBonus !== undefined && (
-              <p className="font-body text-xs text-stone-500 mt-2">
+              <p className="font-body text-xs text-stone-500 mt-1">
                 Zauberangriff: {character.spellAttackBonus >= 0 ? '+' : ''}{character.spellAttackBonus}
               </p>
             )}
