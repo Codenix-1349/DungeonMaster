@@ -84,6 +84,7 @@ export const SRD_RULE_BLOCKS = {
 - Nutze Inventar und Ausrüstung aus dem App-Kontext als verbindliche Grundlage.
 - Wenn ein Gegenstand kreativ verwendet wird, bewerte das fair und pragmatisch.
 - Heiltränke, Werkzeuge, Seile, Lichtquellen und ähnliche Gegenstände dürfen klare praktische Effekte haben.
+- Biete Heilung (Heiltränke, Rasten etc.) NIEMALS als Auswahlmöglichkeit an, wenn der Charakter bereits volle HP hat (currentHP == maxHP).
 `,
   },
   conditions: {

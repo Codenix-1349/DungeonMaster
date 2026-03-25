@@ -12,25 +12,25 @@ const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
 const QUICK_ACTIONS = []
 
 // Parse numbered choices from AI response text (deduplicated)
+// Handles both line-separated and inline numbering (e.g. "1. Foo  2. Bar")
 function parseChoices(text = '') {
-  const lines = String(text).split('\n')
+  const clean = String(text).replace(/\*\*/g, '')
+  // Split on numbered pattern boundaries: "1. ", "2) " etc. — keeps the number as part of the match
+  const segments = clean.split(/(?=(?:^|\n|\s{2,})\d[.):])/g)
   const choices = []
   const seen = new Set()
   let hasOther = false
-  for (const line of lines) {
-    // Match "1. Text", "1) Text", "**1.** Text" etc.
-    const m = line.trim().match(/^\**([1-9])[.):]\**\s*(.+)/)
-    if (m) {
-      const label = m[2].replace(/\*\*/g, '').trim()
-      const key = label.toLowerCase()
-      // Deduplicate "etwas anderes" variants (AI + normalizer can produce two)
-      const isOther = /etwas anderes/i.test(label)
-      if (isOther && hasOther) continue
-      if (isOther) hasOther = true
-      if (label && label.length < 120 && !seen.has(key)) {
-        seen.add(key)
-        choices.push(label)
-      }
+  for (const seg of segments) {
+    const m = seg.trim().match(/^([1-9])[.):]\s*(.+)/)
+    if (!m) continue
+    const label = m[2].trim().split('\n')[0].trim()
+    const key = label.toLowerCase()
+    const isOther = /etwas anderes|selbst beschreiben/i.test(label)
+    if (isOther && hasOther) continue
+    if (isOther) hasOther = true
+    if (label && label.length < 200 && !seen.has(key)) {
+      seen.add(key)
+      choices.push(label)
     }
   }
   return choices
@@ -120,7 +120,7 @@ function SessionCard({ session, character, adventure, isActive, onContinue, onDe
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
           <p className="font-heading text-parchment text-base truncate">
-            {adventure?.title || 'Freies Solo-Abenteuer'}
+            {adventure?.title || session.adventureTitle || 'Freies Solo-Abenteuer'}
           </p>
           <p className="font-body text-xs text-stone-500 mt-0.5">
             {character ? `${character.name} · ${character.race} ${character.class}` : 'Held nicht mehr vorhanden'}
@@ -402,7 +402,7 @@ export default function GamePage() {
   }, [loadSession, navigate])
 
   const handleDeleteSession = useCallback((session) => {
-    const adventureTitle = session.adventure?.title || 'Freies Solo-Abenteuer'
+    const adventureTitle = session.adventure?.title || session.adventureTitle || 'Freies Solo-Abenteuer'
     const heroName = session.character?.name || 'unbekannter Held'
     if (!window.confirm(`Session „${adventureTitle}“ mit ${heroName} wirklich löschen?`)) return
     deleteSession(session.id)
@@ -702,7 +702,7 @@ export default function GamePage() {
               </button>
             </div>
             {dynamicChoices.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
+              <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'thin' }}>
                 {dynamicChoices.map((choice, i) => {
                   const isOther = /etwas anderes|selbst beschreiben/i.test(choice)
                   return (
@@ -710,7 +710,7 @@ export default function GamePage() {
                       key={choice}
                       onClick={() => isOther ? inputRef.current?.focus() : handleSend(choice)}
                       disabled={!showTranscript || gameLog.length === 0 || streaming}
-                      className={`text-xs px-3 py-1.5 rounded border transition-all duration-150 font-body ${
+                      className={`text-xs px-3 py-1.5 rounded border transition-all duration-150 font-body whitespace-nowrap flex-shrink-0 ${
                         isOther
                           ? 'border-stone-700 text-stone-500 hover:text-stone-300 hover:border-stone-500'
                           : 'border-gold-700/40 text-gold-400 hover:border-gold-500 hover:bg-gold-600/10'

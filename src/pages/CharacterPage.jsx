@@ -128,6 +128,7 @@ export default function CharacterPage() {
     characters,
     setCharacter,
     saveCharacter,
+    upsertCharacter,
     selectCharacter,
     deleteCharacter,
     activeSession,
@@ -276,18 +277,32 @@ export default function CharacterPage() {
                   type="text"
                   value={newItem}
                   onChange={e => setNewItem(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && addInventoryItem()}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newItem.trim()) {
+                      const updated = { ...character, inventory: [...(character.inventory || []), newItem.trim()] }
+                      upsertCharacter(updated)
+                      setNewItem('')
+                    }
+                  }}
                   placeholder="Gegenstand…"
                   className="input-dark flex-1"
                 />
-                <button onClick={addInventoryItem} className="btn-primary px-4">+</button>
+                <button onClick={() => {
+                  if (!newItem.trim()) return
+                  const updated = { ...character, inventory: [...(character.inventory || []), newItem.trim()] }
+                  upsertCharacter(updated)
+                  setNewItem('')
+                }} className="btn-primary px-4">+</button>
               </div>
               <div className="flex flex-wrap gap-2">
                 {(character.inventory || []).map((item, i) => (
                   <span
                     key={i}
                     className="badge-gold cursor-pointer hover:bg-red-900/30 transition-colors"
-                    onClick={() => setCharacter(prev => ({ ...prev, inventory: prev.inventory.filter((_, idx) => idx !== i) }))}
+                    onClick={() => {
+                      const updated = { ...character, inventory: character.inventory.filter((_, idx) => idx !== i) }
+                      upsertCharacter(updated)
+                    }}
                   >
                     {item} ✕
                   </span>
@@ -295,39 +310,6 @@ export default function CharacterPage() {
               </div>
             </div>
 
-            <div className="panel p-4 mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <p className="section-subtitle mb-1">Aktuelle HP</p>
-                <input
-                  type="number"
-                  value={character.currentHP ?? character.maxHP}
-                  onChange={e => setCharacter(prev => ({ ...prev, currentHP: Math.min(Number(e.target.value), prev.maxHP) }))}
-                  className="input-dark"
-                  min="0"
-                  max={character.maxHP}
-                />
-              </div>
-              <div>
-                <p className="section-subtitle mb-1">Max HP</p>
-                <input
-                  type="number"
-                  value={character.maxHP}
-                  onChange={e => setCharacter(prev => ({ ...prev, maxHP: Number(e.target.value) }))}
-                  className="input-dark"
-                  min="1"
-                />
-              </div>
-              <div>
-                <p className="section-subtitle mb-1">Erfahrung (XP)</p>
-                <input
-                  type="number"
-                  value={character.xp || 0}
-                  onChange={e => setCharacter(prev => ({ ...prev, xp: Number(e.target.value) }))}
-                  className="input-dark"
-                  min="0"
-                />
-              </div>
-            </div>
           </>
         ) : (
           <div className="panel-gold p-8 text-center mb-6">
@@ -435,14 +417,18 @@ export default function CharacterPage() {
             </div>
             <div>
               <label className="section-subtitle block mb-2">Rasse</label>
+              {editingId && (
+                <p className="font-body text-xs text-stone-600 italic mb-2">Rasse kann bei einem bestehenden Helden nicht geändert werden.</p>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {RACES.map(race => (
                   <button
                     key={race}
-                    onClick={() => updateForm({ race })}
+                    onClick={() => !editingId && updateForm({ race })}
+                    disabled={!!editingId}
                     className={`py-2 px-2 rounded border text-xs font-heading tracking-wide transition-all ${
                       form.race === race ? 'border-gold-500 text-gold-300 bg-gold-600/15' : 'border-stone-700 text-stone-400 hover:border-stone-500'
-                    }`}
+                    } ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     {race}
                     <span className="block text-[10px] text-stone-500 font-body mt-0.5">{RACE_CONFIG[race]?.hint}</span>
@@ -452,14 +438,18 @@ export default function CharacterPage() {
             </div>
             <div>
               <label className="section-subtitle block mb-2">Klasse</label>
+              {editingId && (
+                <p className="font-body text-xs text-stone-600 italic mb-2">Klasse kann bei einem bestehenden Helden nicht geändert werden.</p>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {CLASSES.map(cls => (
                   <button
                     key={cls}
-                    onClick={() => updateClass(cls)}
+                    onClick={() => !editingId && updateClass(cls)}
+                    disabled={!!editingId}
                     className={`py-2 px-2 rounded border text-xs font-heading tracking-wide transition-all ${
                       form.class === cls ? 'border-gold-500 text-gold-300 bg-gold-600/15' : 'border-stone-700 text-stone-400 hover:border-stone-500'
-                    }`}
+                    } ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     {cls}
                   </button>
