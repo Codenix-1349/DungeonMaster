@@ -70,6 +70,31 @@ export function logout() {
   setToken(null)
 }
 
+export async function verifyEmail(token) {
+  return apiFetch('/auth/verify-email', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  })
+}
+
+export async function resendVerification() {
+  return apiFetch('/auth/resend-verification', { method: 'POST' })
+}
+
+export async function forgotPassword(email) {
+  return apiFetch('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export async function resetPassword(token, password) {
+  return apiFetch('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
+  })
+}
+
 // ── Characters ──────────────────────────────────────────────────────────────
 
 export async function fetchCharacters() {

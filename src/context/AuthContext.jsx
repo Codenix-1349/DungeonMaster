@@ -1,5 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { getToken, login as apiLogin, register as apiRegister, fetchMe, logout as apiLogout } from '../services/api'
+import {
+  getToken, login as apiLogin, register as apiRegister, fetchMe, logout as apiLogout,
+  verifyEmail as apiVerifyEmail, resendVerification as apiResendVerification,
+} from '../services/api'
 
 const AuthContext = createContext(null)
 
@@ -38,10 +41,25 @@ export function AuthProvider({ children }) {
     setUser(null)
   }, [])
 
+  const verifyEmail = useCallback(async (token) => {
+    const result = await apiVerifyEmail(token)
+    // Update local user state
+    setUser(prev => prev ? { ...prev, emailVerified: true } : prev)
+    return result
+  }, [])
+
+  const resendVerification = useCallback(async () => {
+    return apiResendVerification()
+  }, [])
+
   const isLoggedIn = !!user
 
   return (
-    <AuthContext.Provider value={{ user, isLoggedIn, loading, login, register, logout }}>
+    <AuthContext.Provider value={{
+      user, isLoggedIn, loading,
+      login, register, logout,
+      verifyEmail, resendVerification,
+    }}>
       {children}
     </AuthContext.Provider>
   )
