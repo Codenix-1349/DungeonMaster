@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { forgotPassword, resetPassword } from '../services/api'
+import { forgotPassword, resetPassword, resendVerification } from '../services/api'
 import { PROJECT_NAME } from '../data/srd'
 
 export default function LoginPage() {
   const { login, register, verifyEmail } = useAuth()
 
-  // 'login' | 'register' | 'forgot' | 'reset' | 'verified'
+  // 'login' | 'register' | 'forgot' | 'reset' | 'verified' | 'check-email'
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [username, setUsername] = useState('')
@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resending, setResending] = useState(false)
 
   // Check URL params for ?verify= or ?reset=
   useEffect(() => {
@@ -56,6 +57,10 @@ export default function LoginPage() {
     try {
       if (mode === 'register') {
         await register(email.trim(), username.trim(), password)
+        setMode('check-email')
+        setSuccess('Konto erstellt! Bitte prüfe dein Postfach und bestätige deine E-Mail-Adresse.')
+        setLoading(false)
+        return
       } else if (mode === 'login' || mode === 'verified') {
         await login(email.trim(), password)
       } else if (mode === 'forgot') {
@@ -73,7 +78,13 @@ export default function LoginPage() {
         delete window.__resetToken
       }
     } catch (err) {
-      setError(err.message)
+      // Backend returns code: 'EMAIL_NOT_VERIFIED' when email not confirmed
+      if (err.status === 403) {
+        setMode('check-email')
+        setSuccess('Bitte bestätige zuerst deine E-Mail-Adresse.')
+      } else {
+        setError(err.message)
+      }
     } finally {
       setLoading(false)
     }
@@ -100,7 +111,52 @@ export default function LoginPage() {
         </div>
 
         <div className="panel-gold p-6">
-          {/* Tab bar — hidden during forgot/reset flows */}
+          {/* Check email screen — shown after register or unverified login */}
+          {mode === 'check-email' && (
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div className="text-4xl">📧</div>
+              <h2 className="font-heading text-lg text-gold-400">Bestätigungsmail gesendet</h2>
+              {success && (
+                <div className="p-3 rounded border bg-emerald-500/10 border-emerald-500/50 text-emerald-400 font-body text-sm w-full">
+                  {success}
+                </div>
+              )}
+              {error && (
+                <div className="p-3 rounded border bg-blood-500/10 border-blood-500/50 text-red-400 font-body text-sm w-full">
+                  {error}
+                </div>
+              )}
+              <p className="font-body text-sm text-stone-400">
+                Prüfe dein Postfach und klicke auf den Bestätigungslink.
+              </p>
+              <button
+                disabled={resending}
+                onClick={async () => {
+                  setResending(true)
+                  setError('')
+                  try {
+                    await resendVerification()
+                    setSuccess('Bestätigungsmail erneut gesendet.')
+                  } catch (err) {
+                    setError(err.message)
+                  } finally {
+                    setResending(false)
+                  }
+                }}
+                className="btn-primary w-full py-2 text-sm"
+              >
+                {resending ? 'Wird gesendet...' : 'Erneut senden'}
+              </button>
+              <button
+                onClick={() => switchMode('login')}
+                className="font-body text-xs text-stone-500 hover:text-gold-400 transition-colors"
+              >
+                Zurück zur Anmeldung
+              </button>
+            </div>
+          )}
+
+          {/* Tab bar — hidden during forgot/reset/check-email flows */}
           {(mode === 'login' || mode === 'register' || mode === 'verified') && (
             <div className="flex gap-2 mb-6">
               <button
@@ -146,7 +202,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4" style={{ display: mode === 'check-email' ? 'none' : undefined }}>
             {/* Email — shown for login, register, forgot */}
             {mode !== 'reset' && (
               <div>
@@ -234,8 +290,8 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Forgot password link */}
-          {(mode === 'login' || mode === 'verified') && (
+          {/* Forgot password link — hidden in check-email mode */}
+          {(mode === 'login' || mode === 'verified') && mode !== 'check-email' && (
             <button
               onClick={() => switchMode('forgot')}
               className="mt-4 w-full text-center font-body text-xs text-stone-500 hover:text-gold-400 transition-colors"

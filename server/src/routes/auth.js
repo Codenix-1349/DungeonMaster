@@ -89,6 +89,10 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ error: 'Ungültige Anmeldedaten.' })
     }
 
+    if (!user.email_verified) {
+      return res.status(403).json({ error: 'Bitte bestätige zuerst deine E-Mail-Adresse.', code: 'EMAIL_NOT_VERIFIED' })
+    }
+
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       config.jwtSecret,
@@ -97,7 +101,7 @@ router.post('/login', async (req, res, next) => {
 
     res.json({
       token,
-      user: { id: user.id, email: user.email, username: user.username, emailVerified: !!user.email_verified },
+      user: { id: user.id, email: user.email, username: user.username, emailVerified: true },
     })
   } catch (err) {
     next(err)
