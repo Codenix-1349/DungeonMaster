@@ -32,7 +32,8 @@ export function AuthProvider({ children }) {
 
   const register = useCallback(async (email, username, password) => {
     const u = await apiRegister(email, username, password)
-    setUser(u)
+    // Don't set user — email must be verified before login
+    apiLogout() // clear the token from register response
     return u
   }, [])
 
