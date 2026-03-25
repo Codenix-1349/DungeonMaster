@@ -55,11 +55,15 @@ router.post('/send', async (req, res, next) => {
       signal: controller.signal,
     })
   } catch (err) {
+    console.error('[chat/send]', err.message)
     if (!res.headersSent) {
-      if (err.status) {
-        return res.status(err.status).json({ error: err.message })
-      }
-      next(err)
+      const status = err.status || 500
+      return res.status(status).json({ error: err.message || 'Chat-Proxy Fehler' })
+    }
+    // If headers already sent (SSE started), try to send error via SSE
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`)
+      res.end()
     }
   }
 })

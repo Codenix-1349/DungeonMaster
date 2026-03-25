@@ -26,6 +26,12 @@ import { streamChatProxy, testChatConnection as apiTestChat } from './api'
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 
+// Patterns used in response normalization
+const META_LEAK_PATTERN = /^\s*(\[?(system|hinweis|anmerkung|ooc|out.of.character|meta|antwort.?format|note)\b)/i
+const DECISION_CUE_PATTERN = /was (tust|machst|wirst|willst|antwortest) du\??\s*$/i
+const STRONG_DECISION_TRIGGER_PATTERN = /was (tust|machst|wirst|willst|antwortest) du\?|wie reagierst du\?|wohin gehst du\?/i
+const PLAYER_AUTO_ACTION_PATTERN = /^(du (gehst|nimmst|öffnest|greifst|ziehst|läufst|rennst|springst|kletterst|schwimmst|schleichst))/im
+
 
 function buildFriendlyErrorMessage(status, apiMessage = '') {
   if (status === 401) {
@@ -37,7 +43,10 @@ function buildFriendlyErrorMessage(status, apiMessage = '') {
   }
 
   if (status === 429) {
-    return 'OpenRouter Rate-Limit erreicht (HTTP 429). Bitte kurz warten und erneut versuchen.'
+    if (/rate.?limit/i.test(apiMessage) && /free|:free/i.test(apiMessage)) {
+      return 'Das kostenlose Modell ist gerade überlastet. Wähle in den Einstellungen ein anderes Modell, um den Fehler zu beheben.'
+    }
+    return 'OpenRouter Rate-Limit erreicht. Bitte kurz warten oder ein anderes Modell in den Einstellungen wählen.'
   }
 
   if (status === 503) {
@@ -391,16 +400,25 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
 
   // Route through backend proxy when logged in with server-stored key
   if (useProxy) {
-    const rawText = await streamChatProxy({
-      messages: fullMessages,
-      model: normalizedModel,
-      temperature: 0.6,
-      maxTokens: 1800,
-      onChunk: null,
-    })
-    const normalizedText = normalizeAssistantResponse(rawText)
-    if (normalizedText && onChunk) onChunk(normalizedText)
-    return normalizedText
+    try {
+      const rawText = await streamChatProxy({
+        messages: fullMessages,
+        model: normalizedModel,
+        temperature: 0.6,
+        maxTokens: 1800,
+        onChunk: null,
+      })
+      const normalizedText = normalizeAssistantResponse(rawText)
+      if (normalizedText && onChunk) onChunk(normalizedText)
+      return normalizedText
+    } catch (proxyErr) {
+      // Fallback to direct OpenRouter call if local apiKey is available
+      if (apiKey) {
+        console.warn('Chat-Proxy fehlgeschlagen, Fallback auf direkten API-Call:', proxyErr.message)
+      } else {
+        throw proxyErr
+      }
+    }
   }
 
   const body = {

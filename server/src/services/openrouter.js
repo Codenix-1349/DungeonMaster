@@ -33,7 +33,7 @@ export async function streamChat({ apiKey, model, messages, temperature = 0.8, m
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': 'https://dungeons-daggers.app',
-      'X-Title': 'Dungeons & Daggers – DungeonMaster',
+      'X-Title': 'Dungeons & Daggers - DungeonMaster',
     },
     body: JSON.stringify(body),
     signal,

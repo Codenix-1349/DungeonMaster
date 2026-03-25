@@ -380,6 +380,7 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
     const session = buildSessionRecord({
       characterId,
       adventureId: resolvedAdventure?.id || null,
+      adventureTitle: resolvedAdventure?.title || null,
       gameLog: [],
       combat: null,
       sceneState: initialSceneState,
