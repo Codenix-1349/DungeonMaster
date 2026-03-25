@@ -16,16 +16,40 @@ import {
   persistCharacterStore,
 } from '../utils/characterStore'
 import { useGameSession } from './GameSessionContext'
+import { useAuth } from './AuthContext'
+import {
+  fetchCharacters,
+  createCharacter as apiCreateChar,
+  updateCharacter as apiUpdateChar,
+  deleteCharacterApi,
+  activateCharacter as apiActivateChar,
+} from '../services/api'
 
 const CharacterContext = createContext(null)
 
 export function CharacterProvider({ children }) {
   const { patchSession, persistSessions, _refs } = useGameSession()
   const { sessionsRef, activeSessionIdRef } = _refs
+  const { isLoggedIn } = useAuth()
 
   const [characterStore, setCharacterStore] = useState(getInitialCharacterStore)
   const characters = characterStore.characters
   const activeCharacterId = characterStore.activeCharacterId
+
+  // Load characters from backend on mount when logged in
+  useEffect(() => {
+    if (!isLoggedIn) return
+    fetchCharacters()
+      .then(data => {
+        if (data.characters?.length) {
+          const roster = normalizeCharacterRoster(data.characters)
+          const activeId = data.activeCharacterId || null
+          setCharacterStore({ characters: roster, activeCharacterId: activeId })
+          persistCharacterStore(roster, activeId)
+        }
+      })
+      .catch(() => {})
+  }, [isLoggedIn])
   const character = useMemo(
     () => characters.find(entry => entry.id === activeCharacterId) || null,
     [characters, activeCharacterId]
@@ -65,8 +89,12 @@ export function CharacterProvider({ children }) {
       ? value
       : (value?.id || null)
 
-    return applyCharacterStore(charactersRef.current, nextId)
-  }, [applyCharacterStore])
+    const result = applyCharacterStore(charactersRef.current, nextId)
+    if (isLoggedIn && nextId) {
+      apiActivateChar(nextId).catch(() => {})
+    }
+    return result
+  }, [applyCharacterStore, isLoggedIn])
 
   const saveCharacter = useCallback((value, options = {}) => {
     const currentCharacter = charactersRef.current.find(entry => entry.id === activeCharacterIdRef.current) || null
@@ -92,8 +120,23 @@ export function CharacterProvider({ children }) {
 
     const finalCharacters = didUpdate ? nextCharacters : [...charactersRef.current, normalized]
     const nextActiveId = options.setActive === false ? activeCharacterIdRef.current : normalized.id
-    return applyCharacterStore(finalCharacters, nextActiveId)
-  }, [applyCharacterStore])
+    const result = applyCharacterStore(finalCharacters, nextActiveId)
+
+    // Sync to backend
+    if (isLoggedIn) {
+      const charData = normalized
+      if (didUpdate) {
+        apiUpdateChar(charData.id, charData).catch(() => {})
+      } else {
+        apiCreateChar(charData).catch(() => {})
+      }
+      if (nextActiveId === charData.id) {
+        apiActivateChar(charData.id).catch(() => {})
+      }
+    }
+
+    return result
+  }, [applyCharacterStore, isLoggedIn])
 
   const upsertCharacter = useCallback((value, options = {}) => {
     return saveCharacter(value, options)
@@ -109,8 +152,11 @@ export function CharacterProvider({ children }) {
       : null
 
     persistSessions(nextSessions, nextActiveSessionId)
+    if (isLoggedIn) {
+      deleteCharacterApi(characterId).catch(() => {})
+    }
     return applyCharacterStore(nextCharacters, nextActiveId)
-  }, [applyCharacterStore, persistSessions, sessionsRef, activeSessionIdRef])
+  }, [applyCharacterStore, persistSessions, sessionsRef, activeSessionIdRef, isLoggedIn])
 
   const setCharacter = useCallback((value) => {
     if (value === null) {

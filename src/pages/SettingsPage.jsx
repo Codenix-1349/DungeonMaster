@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useGame } from '../context/GameContext'
+import { useAuth } from '../context/AuthContext'
 import { useSound } from '../context/SoundContext'
 
 import {
@@ -18,7 +19,8 @@ function pricingText(pricing) {
 }
 
 export default function SettingsPage() {
-  const { apiKey, setApiKey, selectedModel, setSelectedModel } = useGame()
+  const { apiKey, setApiKey, selectedModel, setSelectedModel, hasServerKey, serverKeyHint } = useGame()
+  const { isLoggedIn, user, logout } = useAuth()
   const { musicVolume, sfxVolume, setMusicVolume, setSfxVolume, playSfx, playMusic } = useSound()
 
   useEffect(() => { playMusic('landing') }, [playMusic])
@@ -74,7 +76,8 @@ export default function SettingsPage() {
   }
 
   const handleTest = async () => {
-    if (!keyInput.trim()) {
+    const useProxy = isLoggedIn && (hasServerKey || keyInput.trim())
+    if (!useProxy && !keyInput.trim()) {
       setTestResult({ type: 'error', msg: 'Bitte API Key eingeben.' })
       return
     }
@@ -83,8 +86,12 @@ export default function SettingsPage() {
     setTestResult(null)
 
     try {
-      const msg = await testConnection(keyInput.trim(), selectedModel)
-      setApiKey(keyInput.trim())
+      // Save key first when logged in so the backend has it
+      if (isLoggedIn && keyInput.trim()) {
+        setApiKey(keyInput.trim())
+      }
+      const msg = await testConnection(keyInput.trim(), selectedModel, { useProxy })
+      if (!isLoggedIn) setApiKey(keyInput.trim())
       setTestResult({
         type: 'success',
         msg: `✓ Verbindung erfolgreich: „${msg}"`,
@@ -131,7 +138,10 @@ export default function SettingsPage() {
       <div className="panel-gold p-6 mb-6">
         <h2 className="font-heading text-lg text-gold-400 mb-1 tracking-wide">OpenRouter API Key</h2>
         <p className="font-body text-sm text-stone-500 italic mb-4">
-          Dein Key wird ausschließlich im lokalen Browser-Speicher abgelegt.
+          {isLoggedIn
+            ? 'Dein Key wird verschlüsselt auf dem Server gespeichert.'
+            : 'Dein Key wird ausschließlich im lokalen Browser-Speicher abgelegt.'
+          }{' '}
           Hol dir einen Key auf{' '}
           <a
             href="https://openrouter.ai"
@@ -142,6 +152,15 @@ export default function SettingsPage() {
             openrouter.ai
           </a>.
         </p>
+
+        {isLoggedIn && hasServerKey && (
+          <div className="mb-4 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="font-body text-xs text-emerald-500">
+              Server-Key aktiv{serverKeyHint ? ` (${serverKeyHint})` : ''}
+            </span>
+          </div>
+        )}
 
         <div className="flex gap-2 mb-4">
           <div className="relative flex-1">
@@ -356,10 +375,32 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {isLoggedIn && (
+        <div className="panel-gold p-6 mb-6">
+          <h2 className="font-heading text-lg text-gold-400 mb-1 tracking-wide">Konto</h2>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-body text-sm text-parchment">{user?.username || user?.email}</p>
+              <p className="font-body text-xs text-stone-500">{user?.email}</p>
+            </div>
+            <button onClick={logout} className="btn-ghost text-sm">
+              Abmelden
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="panel p-5">
         <h2 className="font-heading text-sm text-gold-600 mb-3 tracking-wide">Hinweise</h2>
         <ul className="font-body text-sm text-stone-500 space-y-2 italic">
-          <li>• Alle Daten (Charakter, Abenteuer, Spielstand) werden lokal im Browser gespeichert.</li>
+          {isLoggedIn ? (
+            <>
+              <li>• Deine Daten werden sicher auf dem Server gespeichert (verschlüsselt).</li>
+              <li>• Der API-Key wird serverseitig verschlüsselt — er verlässt nie den Server.</li>
+            </>
+          ) : (
+            <li>• Alle Daten (Charakter, Abenteuer, Spielstand) werden lokal im Browser gespeichert.</li>
+          )}
           <li>• Die einzige externe Verbindung ist der OpenRouter API-Endpunkt.</li>
           <li>• Die Preisanzeige wird live über den OpenRouter-Modellkatalog geladen.</li>
           <li>• Kostenlos ist gut zum Testen, kann aber qualitativ deutlich schwächer sein.</li>

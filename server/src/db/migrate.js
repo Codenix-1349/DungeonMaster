@@ -30,3 +30,8 @@ export async function runMigrations() {
     console.log(`Migration complete: ${file}`)
   }
 }
+
+// Run when called directly: node src/db/migrate.js
+runMigrations()
+  .then(() => { console.log('All migrations done.'); process.exit(0) })
+  .catch((err) => { console.error('Migration failed:', err); process.exit(1) })

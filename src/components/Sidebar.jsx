@@ -1,6 +1,7 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
+import { useAuth } from '../context/AuthContext'
 import { PROJECT_NAME, SRD_VERSION_LABEL } from '../data/srd'
 
 const SwordIcon = () => (
@@ -52,6 +53,7 @@ const navItems = [
 
 export default function Sidebar({ onClose }) {
   const { character, characters, adventure, adventures, combat, sessions, activeSession } = useGame()
+  const { user, logout } = useAuth()
 
   return (
     <aside className="w-64 min-h-screen flex flex-col border-r border-gold-700/20"
@@ -149,6 +151,19 @@ export default function Sidebar({ onClose }) {
           <p className="font-body text-xs text-stone-400">{PROJECT_NAME}</p>
           <p className="font-body text-[11px] text-stone-500">{SRD_VERSION_LABEL}</p>
         </div>
+
+        {user && (
+          <div className="panel px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="font-body text-xs text-stone-400 truncate">{user.username || user.email}</p>
+              </div>
+              <button onClick={logout} className="font-body text-[11px] text-stone-600 hover:text-red-400 transition-colors">
+                Abmelden
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   )

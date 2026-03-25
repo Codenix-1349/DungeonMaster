@@ -11,6 +11,18 @@ import {
   normalizeSessionList,
   persistSessionsStore,
 } from '../utils/sessionStore'
+import { useAuth } from './AuthContext'
+import {
+  fetchSessions,
+  createSession as apiCreateSession,
+  updateSession as apiUpdateSession,
+  deleteSessionApi,
+  activateSession as apiActivateSession,
+  unloadSession as apiUnloadSession,
+  fetchAdventures,
+  createAdventure as apiCreateAdventure,
+  deleteAdventureApi,
+} from '../services/api'
 
 const GameSessionContext = createContext(null)
 
@@ -80,6 +92,8 @@ function buildInitialSessionState(characterStore) {
 }
 
 export function GameSessionProvider({ children, initialCharacterStore }) {
+  const { isLoggedIn } = useAuth()
+
   const bootstrapRef = useRef(null)
   if (!bootstrapRef.current) {
     bootstrapRef.current = buildInitialSessionState(initialCharacterStore)
@@ -115,6 +129,40 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
   useEffect(() => { sceneStateRef.current = sceneState }, [sceneState])
   useEffect(() => { adventuresRef.current = adventures }, [adventures])
 
+  // Load sessions + adventures from backend on mount when logged in
+  useEffect(() => {
+    if (!isLoggedIn) return
+    Promise.all([fetchSessions(), fetchAdventures()])
+      .then(([sessData, advData]) => {
+        if (advData.adventures?.length) {
+          const advList = advData.adventures.map(normalizeAdventureEntry).filter(Boolean)
+          adventuresRef.current = advList
+          setAdventuresState(advList)
+          saveToStorage('dm_adventures', advList)
+        }
+        if (sessData.sessions?.length) {
+          const sessList = normalizeSessionList(sessData.sessions, adventuresRef.current)
+          const activeId = sessData.activeSessionId || null
+          sessionsRef.current = sessList
+          activeSessionIdRef.current = activeId
+          setSessionsState(sessList)
+          setActiveSessionIdState(activeId)
+          persistSessionsStore(sessList, activeId)
+
+          // Restore live state from active session
+          const active = sessList.find(s => s.id === activeId)
+          if (active) {
+            const adv = adventuresRef.current.find(a => a.id === active.adventureId) || null
+            setAdventureState(adv)
+            setGameLogState(normalizeGameLog(active.gameLog))
+            setCombatState(active.combat || null)
+            setSceneStateState(active.sceneState || (adv ? createInitialSceneState(adv) : null))
+          }
+        }
+      })
+      .catch(() => {})
+  }, [isLoggedIn])
+
   const persistSessions = useCallback((nextSessions, nextActiveSessionId = null) => {
     const persisted = persistSessionsStore(nextSessions, nextActiveSessionId)
     sessionsRef.current = persisted.sessions
@@ -127,9 +175,9 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
   const patchSession = useCallback((sessionId, patch) => {
     if (!sessionId) return null
 
+    const updates = typeof patch === 'function' ? patch(sessionsRef.current.find(e => e.id === sessionId)) : patch
     const nextSessions = sessionsRef.current.map(entry => {
       if (entry.id !== sessionId) return entry
-      const updates = typeof patch === 'function' ? patch(entry) : patch
       return buildSessionRecord({
         ...entry,
         ...updates,
@@ -140,8 +188,14 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
     })
 
     persistSessions(nextSessions, sessionId)
+
+    // Sync to backend (debounced fire-and-forget)
+    if (isLoggedIn && updates) {
+      apiUpdateSession(sessionId, updates).catch(() => {})
+    }
+
     return nextSessions.find(entry => entry.id === sessionId) || null
-  }, [persistSessions])
+  }, [persistSessions, isLoggedIn])
 
   const applyLiveAdventureState = useCallback((nextAdventure, sessionIdOverride = activeSessionIdRef.current) => {
     const normalized = normalizeAdventureEntry(nextAdventure)
@@ -246,7 +300,8 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
   }, [setSceneState])
 
   const setAdventures = useCallback((val) => {
-    const nextValue = typeof val === 'function' ? val(adventuresRef.current) : val
+    const prevAdventures = adventuresRef.current
+    const nextValue = typeof val === 'function' ? val(prevAdventures) : val
     const normalized = Array.isArray(nextValue)
       ? nextValue.map(normalizeAdventureEntry).filter(Boolean)
       : []
@@ -269,7 +324,19 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
       applyLiveAdventureState(null, activeSessionIdRef.current)
       applyLiveSceneState(null, activeSessionIdRef.current)
     }
-  }, [applyLiveAdventureState, applyLiveSceneState, persistSessions])
+
+    // Sync to backend: create new, delete removed
+    if (isLoggedIn) {
+      const prevIds = new Set(prevAdventures.map(a => a.id))
+      const nextIds = new Set(normalized.map(a => a.id))
+      for (const adv of normalized) {
+        if (!prevIds.has(adv.id)) apiCreateAdventure(adv).catch(() => {})
+      }
+      for (const adv of prevAdventures) {
+        if (!nextIds.has(adv.id)) deleteAdventureApi(adv.id).catch(() => {})
+      }
+    }
+  }, [applyLiveAdventureState, applyLiveSceneState, persistSessions, isLoggedIn])
 
   const addMessage = useCallback((role, content, type = 'narrative') => {
     const msg = {
@@ -325,8 +392,14 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
     applyLiveCombat(null, session.id)
     applyLiveSceneState(initialSceneState, session.id)
 
+    // Sync to backend
+    if (isLoggedIn) {
+      apiCreateSession(session).catch(() => {})
+      apiActivateSession(session.id).catch(() => {})
+    }
+
     return session
-  }, [applyLiveAdventureState, applyLiveCombat, applyLiveGameLog, applyLiveSceneState, persistSessions])
+  }, [applyLiveAdventureState, applyLiveCombat, applyLiveGameLog, applyLiveSceneState, persistSessions, isLoggedIn])
 
   const loadSessionRaw = useCallback((sessionId) => {
     const session = sessionsRef.current.find(entry => entry.id === sessionId) || null
@@ -340,8 +413,12 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
     applyLiveCombat(session.combat || null, session.id)
     applyLiveSceneState(session.sceneState || (resolvedAdventure ? createInitialSceneState(resolvedAdventure) : null), session.id)
 
+    if (isLoggedIn) {
+      apiActivateSession(session.id).catch(() => {})
+    }
+
     return session
-  }, [applyLiveAdventureState, applyLiveCombat, applyLiveGameLog, applyLiveSceneState, persistSessions])
+  }, [applyLiveAdventureState, applyLiveCombat, applyLiveGameLog, applyLiveSceneState, persistSessions, isLoggedIn])
 
   const deleteSession = useCallback((sessionId) => {
     const nextSessions = sessionsRef.current.filter(entry => entry.id !== sessionId)
@@ -356,13 +433,18 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
       applyLiveSceneState(null, null)
       applyLiveAdventureState(null, null)
     }
-  }, [applyLiveAdventureState, applyLiveCombat, applyLiveGameLog, applyLiveSceneState, persistSessions])
+
+    if (isLoggedIn) {
+      deleteSessionApi(sessionId).catch(() => {})
+    }
+  }, [applyLiveAdventureState, applyLiveCombat, applyLiveGameLog, applyLiveSceneState, persistSessions, isLoggedIn])
 
   const leaveSessionSelection = useCallback(() => {
     persistSessions(sessionsRef.current, activeSessionIdRef.current)
   }, [persistSessions])
 
   const unloadActiveSession = useCallback(({ clearAdventure = false } = {}) => {
+    const currentActiveId = activeSessionIdRef.current
     const nextAdventure = clearAdventure ? null : adventureRef.current
 
     persistSessions(sessionsRef.current, null)
@@ -371,8 +453,12 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
     applyLiveAdventureState(nextAdventure, null)
     applyLiveSceneState(nextAdventure ? createInitialSceneState(nextAdventure) : null, null)
 
+    if (isLoggedIn && currentActiveId) {
+      apiUnloadSession(currentActiveId).catch(() => {})
+    }
+
     return true
-  }, [applyLiveAdventureState, applyLiveCombat, applyLiveGameLog, applyLiveSceneState, persistSessions])
+  }, [applyLiveAdventureState, applyLiveCombat, applyLiveGameLog, applyLiveSceneState, persistSessions, isLoggedIn])
 
   // Expose internal refs for cross-cutting facade
   const _refs = useRef({

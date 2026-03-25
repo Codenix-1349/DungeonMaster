@@ -22,6 +22,7 @@ export {
 } from './models'
 
 import { normalizeModelId } from './models'
+import { streamChatProxy, testChatConnection as apiTestChat } from './api'
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 
@@ -375,23 +376,39 @@ Erstelle ein kurzes Improvisations-Abenteuer in einer klassischen Fantasy-Welt. 
  * Send a message to OpenRouter with streaming
  * onChunk(text) called once with the final response text
  */
-export async function sendMessage({ messages, model, apiKey, character, adventure, combat, sceneState, onChunk }) {
-  if (!apiKey) {
+export async function sendMessage({ messages, model, apiKey, character, adventure, combat, sceneState, onChunk, useProxy = false }) {
+  if (!useProxy && !apiKey) {
     throw new Error('Kein API Key konfiguriert. Bitte in den Einstellungen eingeben.')
   }
 
   const normalizedModel = normalizeModelId(model)
   const systemPrompt = buildSystemPrompt(character, adventure, messages, combat, sceneState)
 
+  const fullMessages = [
+    { role: 'system', content: systemPrompt },
+    ...messages,
+  ]
+
+  // Route through backend proxy when logged in with server-stored key
+  if (useProxy) {
+    const rawText = await streamChatProxy({
+      messages: fullMessages,
+      model: normalizedModel,
+      temperature: 0.6,
+      maxTokens: 1800,
+      onChunk: null,
+    })
+    const normalizedText = normalizeAssistantResponse(rawText)
+    if (normalizedText && onChunk) onChunk(normalizedText)
+    return normalizedText
+  }
+
   const body = {
     model: normalizedModel,
     max_tokens: 1800,
     stream: true,
     temperature: 0.6,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      ...messages,
-    ],
+    messages: fullMessages,
   }
 
   const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
@@ -462,12 +479,17 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
 /**
  * Test API connection
  */
-export async function testConnection(apiKey, model) {
-  if (!apiKey) {
+export async function testConnection(apiKey, model, { useProxy = false } = {}) {
+  if (!useProxy && !apiKey) {
     throw new Error('Kein API Key konfiguriert.')
   }
 
   const normalizedModel = normalizeModelId(model)
+
+  if (useProxy) {
+    const data = await apiTestChat(normalizedModel)
+    return data?.response?.choices?.[0]?.message?.content || 'OK'
+  }
 
   const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
     method: 'POST',
