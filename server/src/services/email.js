@@ -6,20 +6,23 @@ let transporter = null
 function getTransporter() {
   if (transporter) return transporter
 
-  if (!config.smtp.host || !config.smtp.user) {
+  if (!config.smtp.host) {
     console.warn('SMTP not configured — emails will be logged to console.')
     return null
   }
 
-  transporter = nodemailer.createTransport({
+  const opts = {
     host: config.smtp.host,
     port: config.smtp.port,
     secure: config.smtp.port === 465,
-    auth: {
-      user: config.smtp.user,
-      pass: config.smtp.pass,
-    },
-  })
+  }
+
+  // Only add auth if credentials are provided (Mailpit etc. don't need auth)
+  if (config.smtp.user) {
+    opts.auth = { user: config.smtp.user, pass: config.smtp.pass }
+  }
+
+  transporter = nodemailer.createTransport(opts)
   return transporter
 }
 
