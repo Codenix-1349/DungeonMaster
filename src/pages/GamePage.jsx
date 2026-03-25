@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
+import { useAuth } from '../context/AuthContext'
 import { useSound } from '../context/SoundContext'
 import { sendMessage } from '../services/openrouter'
 import CombatTracker from '../components/CombatTracker'
@@ -167,6 +168,7 @@ export default function GamePage() {
     startCombat,
     awardXP,
     apiKey,
+    hasServerKey,
     selectedModel,
     sceneState,
     syncSceneState,
@@ -177,6 +179,7 @@ export default function GamePage() {
     loadSession,
     deleteSession,
   } = useGame()
+  const { isLoggedIn } = useAuth()
   const { playMusic, playSfx } = useSound()
 
   const navigate = useNavigate()
@@ -268,6 +271,7 @@ export default function GamePage() {
         adventure: activeAdventure,
         combat,
         sceneState: activeSceneState,
+        useProxy: isLoggedIn && hasServerKey,
         onChunk: chunk => {
           full += chunk
           setStreamingText(prev => prev + chunk)

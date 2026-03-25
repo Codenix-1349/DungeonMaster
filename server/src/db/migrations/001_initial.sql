@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS api_configs (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    api_key_encrypted TEXT,
-    selected_model  VARCHAR(255) DEFAULT 'meta-llama/llama-3.3-70b-instruct:free',
+    openrouter_key_enc TEXT,
+    model_id        VARCHAR(255) DEFAULT 'meta-llama/llama-3.3-70b-instruct:free',
     updated_at      TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(user_id)
 );
