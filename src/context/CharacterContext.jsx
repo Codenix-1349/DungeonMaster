@@ -211,11 +211,43 @@ export function CharacterProvider({ children }) {
         updatedChar.spellAttackBonus = calcSpellAttackBonus(current.class, current.attributes, newLevel)
       }
       updatedChar.spellSlots = getSpellSlots(current.class, newLevel)
+      updatedChar.currentSpellSlots = { ...updatedChar.spellSlots }
     }
 
     saveCharacter(updatedChar)
     return { oldLevel, newLevel, didLevelUp, newXP }
   }, [saveCharacter])
+
+  const consumeSpellSlot = useCallback((slotLevel) => {
+    setCharacter(prev => {
+      if (!prev) return prev
+      const current = { ...(prev.currentSpellSlots || prev.spellSlots || {}) }
+      const available = current[slotLevel] || 0
+      if (available <= 0) return prev
+      current[slotLevel] = available - 1
+      return { ...prev, currentSpellSlots: current }
+    })
+  }, [setCharacter])
+
+  const restoreSpellSlots = useCallback(() => {
+    setCharacter(prev => {
+      if (!prev) return prev
+      return { ...prev, currentSpellSlots: { ...(prev.spellSlots || {}) } }
+    })
+  }, [setCharacter])
+
+  const useItem = useCallback((itemName) => {
+    setCharacter(prev => {
+      if (!prev) return prev
+      const inventory = [...(prev.inventory || [])]
+      const idx = inventory.findIndex(item =>
+        item.toLowerCase().includes(itemName.toLowerCase())
+      )
+      if (idx === -1) return prev
+      inventory.splice(idx, 1)
+      return { ...prev, inventory }
+    })
+  }, [setCharacter])
 
   const getModifier = (score) => getAbilityModifier(score)
 
@@ -231,6 +263,9 @@ export function CharacterProvider({ children }) {
       selectCharacter,
       updateCharacterHP,
       awardXP,
+      consumeSpellSlot,
+      restoreSpellSlots,
+      useItem,
       getModifier,
       _applyCharacterStore: applyCharacterStore,
       _charactersRef: charactersRef,

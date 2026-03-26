@@ -56,6 +56,9 @@ function useGameCombined() {
     selectCharacter: char.selectCharacter,
     updateCharacterHP: char.updateCharacterHP,
     awardXP: char.awardXP,
+    consumeSpellSlot: char.consumeSpellSlot,
+    restoreSpellSlots: char.restoreSpellSlots,
+    useItem: char.useItem,
     getModifier: char.getModifier,
 
     // Session / game state
