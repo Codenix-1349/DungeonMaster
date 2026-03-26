@@ -101,9 +101,11 @@ function shouldSuggestChoices(userText = '', combatActive = false) {
 function buildChoiceStyleInstruction(userText = '', combatActive = false) {
   if (combatActive) {
     return `## Ausgabeformat Kampf
-- Im Kampf keine nummerierten Optionslisten generieren.
-- Beschreibe den Kampfzug des Gegners klar und direkt nach dem Spielerzug.
-- Beende deinen Text mit: **Was tust du?**`
+- Im Kampf KEINE nummerierten Optionslisten generieren.
+- Im Kampf NIEMALS "Was tust du?" oder ähnliche Fragen stellen — die App zeigt dem Spieler automatisch Aktions-Buttons.
+- Verwende im Kampf KEINE [WÜRFEL:...]-Tags. Die App würfelt für dich.
+- Du erhältst Kampfrunden-Zusammenfassungen wie "[Kampfrunde] [Zauber] Feuerpfeil trifft! 5 Schaden | [Gegner-Angriff] Goblin verfehlt". Beschreibe diese Ergebnisse rein narrativ und atmosphärisch. Erfinde KEINE zusätzlichen Würfe, Trefferzahlen oder Schadensberechnungen.
+- Halte Kampf-Narration kurz (2-4 Sätze). Die Spannung kommt aus den Würfelergebnissen, nicht aus langen Texten.`
   }
 
   return `## Ausgabeformat für Entscheidungsszenen
@@ -279,21 +281,30 @@ export function buildSystemPrompt(character, adventure, messages = [], combat = 
 
 ## Erzählstil
 - Beschreibe konkret beobachtbare Details statt Meta-Hinweise.
-- Verlange nur dann Würfelwürfe, wenn die Handlung unsicher, riskant oder regelrelevant ist.
-- Wenn Würfe nötig sind, nutze Marker wie [WÜRFEL:d20] oder [WÜRFEL:d6].
+- AUSSERHALB von Kämpfen: Verlange nur dann Würfelwürfe, wenn die Handlung unsicher, riskant oder regelrelevant ist. Nutze dafür Marker wie [WÜRFEL:d20] oder [WÜRFEL:d6].
+- IM KAMPF: Verwende NIEMALS [WÜRFEL:...]-Tags. Die App übernimmt alle Würfe und Mechanik. Du beschreibst nur narrativ, was passiert ist.
 - Behalte Ressourcen, Gefahren, Hinweise und laufende Situationen im Blick.
 - Vermeide unnötig lange Monologe, vor allem in sensiblen Dialog- und Reaktionsmomenten.
 
 ## Kampfstruktur
+### Kampfbeginn
 - Wenn ein Kampf beginnt, schreibe **KAMPF BEGINNT** und dann direkt danach für JEDEN Gegner eine Zeile im Format:
   [GEGNER:Name|HP:X|AC:Y|ATK:+Z|DMG:WdX+N|XP:N]
   Beispiel: [GEGNER:Goblin|HP:7|AC:15|ATK:+4|DMG:1d6+2|XP:50]
 - Diese Gegner-Zeilen kommen unmittelbar nach KAMPF BEGINNT, vor jeder erzählerischen Beschreibung.
-- Wenn ein Gegner im Kampf Schaden nimmt oder stirbt, beschreibe es erzählerisch. Das System trackt die HP.
-- Wenn ein Kampf endet, schreibe **KAMPF VORBEI** und dann: [XP:N] (Gesamte Erfahrungspunkte für alle Gegner).
-- Im Kampf fokussiert bleiben: Nenne Trefferwürfe, AC-Vergleiche und Schaden klar und knapp.
-- Du greifst als Spielleiter für die Gegner an wenn es ihr Zug ist und der Spieler dir meldet dass er seinen Angriff beendet hat.
+- Beschreibe die Szene kurz und dramatisch (2-3 Sätze), dann **STOPP**. Führe KEINEN Angriff aus und würfle NICHTS. Frage NICHT "Was tust du?".
+
+### Während des Kampfes — STRENGE REGELN
+- Die App übernimmt die GESAMTE Kampfmechanik: Initiative, Angriffswürfe, Schadenswürfe, HP-Tracking, Zauberslots.
+- Du würfelst im Kampf NIEMALS selbst. Verwende KEINE [WÜRFEL:...]-Tags im Kampf. KEINE Trefferzahlen, KEINE Schadenszahlen erfinden.
+- Frage im Kampf NIEMALS "Was tust du?" — die App zeigt dem Spieler automatisch Aktions-Buttons.
+- Du erhältst Kampfrunden-Zusammenfassungen vom System (z.B. "[Kampfrunde] [Zauber] Feuerpfeil trifft! 5 Feuer Schaden | [Gegner-Angriff] Goblin verfehlt (8 vs AC 14)").
+- Deine EINZIGE Aufgabe: Beschreibe diese bereits feststehenden Ergebnisse narrativ und atmosphärisch in 2-4 Sätzen. Nichts hinzufügen, nichts weglassen.
+
+### Kampfende
+- Wenn alle Gegner besiegt sind (das System meldet "Alle Gegner besiegt!"), schreibe **KAMPF VORBEI** und dann: [XP:N].
 - Wenn der Spieler besiegt wurde ([SPIELER BESIEGT]), beschreibe narrativ wie der Held fällt. Biete dann Optionen an: Bewusstlosigkeit und Rettung, Flucht in letzter Sekunde, oder Neustart. Töte den Charakter NICHT endgültig ohne Spielerentscheidung.
+- Wenn der Spieler die Wiederbelebung/Heilung wählt und du ihn narrativ heilst, schreibe den Tag **[WIEDERBELEBEN]** in deine Antwort. Die App stellt dann automatisch HP und Zauberslots wieder her. Ohne diesen Tag bleiben die HP bei 0.
 
 ## Gegner-Skalierung (WICHTIG)
 Passe Gegnerwerte IMMER an die Stufe des Spielercharakters an. Ein Solo-Held hat keine Gruppe — Kämpfe müssen fair und gewinnbar sein.
@@ -360,10 +371,13 @@ ${(() => {
   }
 
   if (combat?.active) {
+    const enemyList = (combat.enemies || []).map(e =>
+      `${e.name}: ${e.currentHP}/${e.maxHP} HP${e.currentHP <= 0 ? ' (besiegt)' : ''}`
+    ).join(', ')
     prompt += `\n\n## Kampfsituation
-**Kampfstatus:** aktiv
+**Kampfstatus:** AKTIV — Du beschreibst NUR Ergebnisse, würfelst NICHT, fragst NICHT "Was tust du?"
 **Runde:** ${combat.round || 1}
-**Phase:** ${combat.phase || 'action'}
+**Gegner:** ${enemyList || 'keine'}
 ${combat.playerInitiative ? `**Spieler-Initiative:** ${combat.playerInitiative}` : ''}`
   }
 

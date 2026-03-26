@@ -876,6 +876,7 @@ export function createCharacterTemplate() {
     knownCantrips: [],
     knownSpells: [],
     spellSlots: {},
+    currentSpellSlots: {},
   }
 }
 
@@ -948,6 +949,7 @@ export function normalizeCharacter(character) {
     knownCantrips: Array.isArray(character.knownCantrips) ? character.knownCantrips : [],
     knownSpells: Array.isArray(character.knownSpells) ? character.knownSpells : [],
     spellSlots: character.spellSlots && typeof character.spellSlots === 'object' ? character.spellSlots : {},
+    currentSpellSlots: character.currentSpellSlots && typeof character.currentSpellSlots === 'object' ? character.currentSpellSlots : (character.spellSlots && typeof character.spellSlots === 'object' ? { ...character.spellSlots } : {}),
     inventory: Array.isArray(character.inventory) ? character.inventory : base.inventory,
   }
 

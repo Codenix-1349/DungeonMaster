@@ -166,15 +166,19 @@ export default function CharacterSheet({ compact = false }) {
                 </div>
               </div>
             )}
-            {character.spellSlots && Object.keys(character.spellSlots).length > 0 && (
+            {character.spellSlots && Object.keys(character.spellSlots).some(k => character.spellSlots[k] > 0) && (
               <div>
-                <p className="font-heading text-xs text-stone-500 mb-1">Zauberplätze</p>
-                <div className="flex gap-3">
-                  {Object.entries(character.spellSlots).map(([lvl, count]) => (
-                    <span key={lvl} className="text-xs font-body text-stone-400">
-                      Stufe {lvl}: <span className="text-gold-400 font-heading">{count}</span>
-                    </span>
-                  ))}
+                <p className="font-heading text-xs text-stone-500 mb-1">Zauberplaetze</p>
+                <div className="flex gap-3 flex-wrap">
+                  {Object.entries(character.spellSlots).filter(([, count]) => count > 0).map(([lvl, maxCount]) => {
+                    const cur = character.currentSpellSlots?.[lvl] ?? maxCount
+                    return (
+                      <span key={lvl} className={`text-xs font-body ${cur > 0 ? 'text-stone-400' : 'text-stone-600'}`}>
+                        Grad {lvl}: <span className={`font-heading ${cur > 0 ? 'text-gold-400' : 'text-red-500'}`}>{cur}</span>
+                        <span className="text-stone-600">/{maxCount}</span>
+                      </span>
+                    )
+                  })}
                 </div>
               </div>
             )}

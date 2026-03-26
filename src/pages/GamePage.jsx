@@ -36,10 +36,12 @@ function parseChoices(text = '') {
   return choices
 }
 
-// Parse [GEGNER:Name|HP:X|AC:Y|ATK:+Z|DMG:WdX+N|XP:N] tags from AI text
+// Parse enemy tags from AI text — supports both formats:
+//   [GEGNER:Name|HP:X|AC:Y|ATK:+Z|DMG:WdX+N|XP:N]
+//   [Name|HP:X|AC:Y|ATK:+Z|DMG:WdX+N|XP:N]
 function parseEnemyTags(text = '') {
   const enemies = []
-  const regex = /\[GEGNER:([^|\]]+)\|HP:(\d+)\|AC:(\d+)\|ATK:\+?([-\d]+)\|DMG:([^|\]]+)\|XP:(\d+)\]/g
+  const regex = /\[(?:GEGNER:)?([^|\]]+)\|HP:(\d+)\|AC:(\d+)\|ATK:\+?([-\d]+)\|DMG:([^|\]]+)\|XP:(\d+)\]/gi
   let m
   while ((m = regex.exec(text)) !== null) {
     const maxHP = parseInt(m[2]) || 10
@@ -167,6 +169,8 @@ export default function GamePage() {
     combat,
     startCombat,
     awardXP,
+    updateCharacterHP,
+    restoreSpellSlots,
     apiKey,
     hasServerKey,
     selectedModel,
@@ -284,10 +288,12 @@ export default function GamePage() {
       const choices = parseChoices(full)
       setDynamicChoices(choices)
 
-      // Parse enemies if combat starts
-      if (full.includes('KAMPF BEGINNT') && !combat?.active) {
+      // Parse enemies if combat starts — trigger on KAMPF BEGINNT or enemy tags
+      if (!combat?.active) {
         const parsedEnemies = parseEnemyTags(full)
-        startCombat(parsedEnemies)
+        if (parsedEnemies.length > 0) {
+          startCombat(parsedEnemies)
+        }
       }
 
       // Parse XP rewards when combat ends
@@ -300,6 +306,12 @@ export default function GamePage() {
             setTimeout(() => setLevelUpNotif(null), 5000)
           }
         }
+      }
+
+      // Revival: AI heals player narratively → restore HP + spell slots
+      if (full.includes('[WIEDERBELEBEN]') && character?.maxHP) {
+        updateCharacterHP(character.maxHP)
+        restoreSpellSlots()
       }
 
       const fullTranscript = [
@@ -692,16 +704,20 @@ export default function GamePage() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={streaming ? 'Spielleiter antwortet…' : 'Deine Aktion… (Enter senden, Shift+Enter Zeilenumbruch)'}
-                disabled={streaming || !showTranscript || gameLog.length === 0}
+                placeholder={
+                  streaming ? 'Spielleiter antwortet…'
+                  : combat?.active ? 'Kampf aktiv — nutze die Aktions-Buttons rechts →'
+                  : 'Deine Aktion… (Enter senden, Shift+Enter Zeilenumbruch)'
+                }
+                disabled={streaming || !showTranscript || gameLog.length === 0 || combat?.active}
                 rows={2}
                 className="input-dark flex-1 resize-none leading-relaxed"
               />
-              <button onClick={() => handleSend()} disabled={streaming || !input.trim() || !showTranscript || gameLog.length === 0} className="btn-primary px-5 self-end">
+              <button onClick={() => handleSend()} disabled={streaming || !input.trim() || !showTranscript || gameLog.length === 0 || combat?.active} className="btn-primary px-5 self-end">
                 {streaming ? <span className="spinner" /> : '→'}
               </button>
             </div>
-            {dynamicChoices.length > 0 && (
+            {dynamicChoices.length > 0 && !combat?.active && (
               <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'thin' }}>
                 {dynamicChoices.map((choice, i) => {
                   const isOther = /etwas anderes|selbst beschreiben/i.test(choice)
