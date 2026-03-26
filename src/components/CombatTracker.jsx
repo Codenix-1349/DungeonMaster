@@ -26,6 +26,53 @@ function rollDamageStr(diceStr = '1d6+0') {
   return Math.max(1, total)
 }
 
+// ─── Log entry type styles ───────────────────────────────────────────────────
+
+const LOG_STYLES = {
+  hit:     { icon: '⚔️', color: 'text-gold-400',    bg: 'bg-gold-600/10 border-gold-600/30' },
+  crit:    { icon: '💥', color: 'text-amber-300',    bg: 'bg-amber-600/15 border-amber-500/40' },
+  miss:    { icon: '💨', color: 'text-stone-500',    bg: 'bg-stone-800/30 border-stone-700/30' },
+  spell:   { icon: '✨', color: 'text-blue-400',     bg: 'bg-blue-900/20 border-blue-700/30' },
+  heal:    { icon: '💚', color: 'text-emerald-400',  bg: 'bg-emerald-900/20 border-emerald-700/30' },
+  enemy:   { icon: '💀', color: 'text-red-400',      bg: 'bg-red-900/20 border-red-700/30' },
+  dodge:   { icon: '🛡️', color: 'text-blue-300',     bg: 'bg-blue-900/15 border-blue-700/25' },
+  item:    { icon: '🧪', color: 'text-emerald-400',  bg: 'bg-emerald-900/15 border-emerald-700/25' },
+  kill:    { icon: '☠️', color: 'text-gold-300',     bg: 'bg-gold-600/15 border-gold-500/40' },
+  victory: { icon: '🏆', color: 'text-gold-400',     bg: 'bg-gold-600/20 border-gold-500/50' },
+  defeat:  { icon: '⚰️', color: 'text-red-500',      bg: 'bg-red-900/25 border-red-600/40' },
+  info:    { icon: '📜', color: 'text-stone-400',    bg: '' },
+  free:    { icon: '💬', color: 'text-purple-400',   bg: 'bg-purple-900/15 border-purple-700/25' },
+}
+
+function LogEntry({ entry }) {
+  const style = LOG_STYLES[entry.type] || LOG_STYLES.info
+  const hasBg = Boolean(style.bg)
+  return (
+    <div className={`flex items-start gap-1.5 text-xs leading-5 ${
+      hasBg ? `rounded px-2 py-1 border ${style.bg}` : 'px-1'
+    }`}>
+      <span className="flex-shrink-0 w-4 text-center">{style.icon}</span>
+      <span className={`font-body ${style.color}`}>{entry.text}</span>
+    </div>
+  )
+}
+
+// ─── Result Banner (shown briefly after an action) ───────────────────────────
+
+function ResultBanner({ result }) {
+  if (!result) return null
+  const style = LOG_STYLES[result.type] || LOG_STYLES.info
+  return (
+    <div className={`rounded-lg border-2 p-3 text-center animate-slide-in ${style.bg}`}>
+      <div className="text-2xl mb-1">{style.icon}</div>
+      <p className={`font-heading text-sm ${style.color}`}>{result.title}</p>
+      {result.detail && (
+        <p className="font-body text-xs text-stone-400 mt-0.5">{result.detail}</p>
+      )}
+    </div>
+  )
+}
+
 // ─── UI Sub-Components ────────────────────────────────────────────────────────
 
 function HpBar({ current, max, label, small = false }) {
@@ -87,6 +134,8 @@ export default function CombatTracker({ onCombatAction }) {
   } = useGame()
 
   const [actionLog, setActionLog] = useState([])
+  const [resultBanner, setResultBanner] = useState(null)
+  const bannerTimerRef = useRef(null)
 
   // State machine for player turn
   // null | 'selectAction' | 'selectTarget' | 'attack' | 'damage' |
@@ -105,8 +154,14 @@ export default function CombatTracker({ onCombatAction }) {
   const turnActionsRef = useRef([])
   const initRolledRef = useRef(false)
 
-  const addLog = useCallback((text) => {
-    setActionLog(prev => [...prev.slice(-40), { id: Date.now() + Math.random(), text }])
+  const addLog = useCallback((text, type = 'info') => {
+    setActionLog(prev => [...prev.slice(-40), { id: Date.now() + Math.random(), text, type }])
+  }, [])
+
+  const showBanner = useCallback((title, detail, type = 'hit') => {
+    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current)
+    setResultBanner({ title, detail, type })
+    bannerTimerRef.current = setTimeout(() => setResultBanner(null), 2500)
   }, [])
 
   const flushTurnSummary = useCallback(() => {
@@ -163,8 +218,8 @@ export default function CombatTracker({ onCombatAction }) {
     const enemyMaxInit = enemies.length ? Math.max(...enemies.map(e => e.initiative)) : 0
     const playerFirst = playerInit >= enemyMaxInit
     setCombat(prev => ({ ...prev, playerInitiative: playerInit, enemies, phase: 'action', isPlayerTurn: playerFirst, round: 1 }))
-    addLog(`Initiative: Du ${playerInit} | Gegner: ${enemies.map(e => `${e.name} ${e.initiative}`).join(', ')}`)
-    addLog(playerFirst ? 'Du handelst zuerst!' : 'Gegner handeln zuerst!')
+    addLog(`Initiative: Du ${playerInit} | Gegner: ${enemies.map(e => `${e.name} ${e.initiative}`).join(', ')}`, 'info')
+    addLog(playerFirst ? 'Du handelst zuerst!' : 'Gegner handeln zuerst!', 'info')
     if (!playerFirst) {
       setTimeout(() => {
         if (runEnemyTurnRef.current) runEnemyTurnRef.current()
@@ -238,23 +293,23 @@ export default function CombatTracker({ onCombatAction }) {
         let dmg = rollDamageStr(dmgDice)
         if (attackRoll === 20) dmg += rollDamageStr(dmgDice)
         newHP = Math.max(0, newHP - dmg)
-        logs.push(attackRoll === 20
+        logs.push({ text: attackRoll === 20
           ? `${enemy.name} KRITISCH! ${dmg} Schaden`
-          : `${enemy.name} trifft (${atkTotal} vs AC ${playerAC}) ${dmg} Schaden`)
+          : `${enemy.name} trifft (${atkTotal} vs AC ${playerAC}) ${dmg} Schaden`, type: 'enemy' })
       } else {
-        logs.push(`${enemy.name} verfehlt (${atkTotal} vs AC ${playerAC})${dodgeActive ? ' [Ausweichen]' : ''}`)
+        logs.push({ text: `${enemy.name} verfehlt (${atkTotal} vs AC ${playerAC})${dodgeActive ? ' [Ausweichen]' : ''}`, type: 'miss' })
       }
     }
 
     setDodgeActive(false)
     updateCharacterHP(newHP)
-    logs.forEach(addLog)
+    logs.forEach(l => addLog(l.text, l.type))
 
     // Append enemy actions to the same turn summary
-    turnActionsRef.current.push(`[Gegner-Angriff] ${logs.join(' | ')} → Du: ${newHP}/${character.maxHP} HP`)
+    turnActionsRef.current.push(`[Gegner-Angriff] ${logs.map(l => l.text).join(' | ')} → Du: ${newHP}/${character.maxHP} HP`)
 
     if (newHP <= 0) {
-      addLog('Du bist gefallen! (0 HP)')
+      addLog('Du bist gefallen! (0 HP)', 'defeat')
       turnActionsRef.current.push('[SPIELER BESIEGT] Der Held ist gefallen.')
       flushTurnSummary()
       setTimeout(() => endCombat(), 800)
@@ -312,7 +367,8 @@ export default function CombatTracker({ onCombatAction }) {
 
     if (isFumble) {
       const msg = `Patzer! Nat. 1 gegen ${target.name} — daneben!`
-      addLog(msg)
+      addLog(msg, 'miss')
+      showBanner('Patzer!', `Nat. 1 gegen ${target.name}`, 'miss')
       turnActionsRef.current.push(msg)
       setPendingAttack(null)
       finishPlayerTurn()
@@ -320,13 +376,15 @@ export default function CombatTracker({ onCombatAction }) {
       const msg = isCrit
         ? `KRITISCH! Nat. 20 gegen ${target.name}!`
         : `Treffer! ${total} (d20: ${roll} + ${attackBonus}) vs AC ${target.ac}`
-      addLog(msg)
+      addLog(msg, isCrit ? 'crit' : 'hit')
+      showBanner(isCrit ? 'KRITISCH!' : 'Treffer!', `${roll} + ${attackBonus} = ${total} vs AC ${target.ac}`, isCrit ? 'crit' : 'hit')
       turnActionsRef.current.push(msg)
       setPendingAttack({ roll, total, isCrit, targetId: selectedTargetId })
       setPlayerPhase('damage')
     } else {
       const msg = `Verfehlt! ${total} (d20: ${roll} + ${attackBonus}) vs AC ${target.ac}`
-      addLog(msg)
+      addLog(msg, 'miss')
+      showBanner('Verfehlt!', `${roll} + ${attackBonus} = ${total} vs AC ${target.ac}`, 'miss')
       turnActionsRef.current.push(msg)
       setPendingAttack(null)
       finishPlayerTurn()
@@ -351,10 +409,16 @@ export default function CombatTracker({ onCombatAction }) {
     setCombat(prev => ({ ...prev, enemies: updatedEnemies }))
 
     const critLabel = pendingAttack.isCrit ? ' (KRIT!)' : ''
-    const msg = newHP <= 0
+    const killed = newHP <= 0
+    const msg = killed
       ? `${target.name} faellt! ${dmg} Schaden${critLabel} (${weaponInfo.label}, ${fullDice})`
       : `${target.name}: ${dmg} Schaden${critLabel} (${weaponInfo.label}, ${fullDice}) → ${newHP}/${target.maxHP} HP`
-    addLog(msg)
+    addLog(msg, killed ? 'kill' : 'hit')
+    showBanner(
+      killed ? `${target.name} besiegt!` : `${dmg} Schaden!`,
+      `${weaponInfo.label}: ${fullDice}${critLabel}${killed ? '' : ` → ${newHP}/${target.maxHP} HP`}`,
+      killed ? 'kill' : (pendingAttack.isCrit ? 'crit' : 'hit')
+    )
     turnActionsRef.current.push(msg)
 
     checkAllDead(updatedEnemies)
@@ -404,11 +468,17 @@ export default function CombatTracker({ onCombatAction }) {
       const updatedEnemies = enemies.map(e => e.id === target.id ? { ...e, currentHP: newHP } : e)
       setCombat(prev => ({ ...prev, enemies: updatedEnemies }))
 
-      if (newHP <= 0) {
+      const killed = newHP <= 0
+      if (killed) {
         effect.resultText += ` ${target.name} faellt!`
       }
 
-      addLog(effect.resultText)
+      addLog(effect.resultText, killed ? 'kill' : (effect.success ? 'spell' : 'miss'))
+      showBanner(
+        killed ? `${target.name} besiegt!` : (effect.success ? `${effect.damage} Schaden!` : 'Verfehlt!'),
+        `${spell.name}${killed ? '' : ` → ${newHP}/${target.maxHP} HP`}`,
+        killed ? 'kill' : (effect.success ? 'spell' : 'miss')
+      )
       turnActionsRef.current.push(`[Zauber] ${effect.resultText}`)
       checkAllDead(updatedEnemies)
       return
@@ -418,9 +488,15 @@ export default function CombatTracker({ onCombatAction }) {
     if (effect.healing > 0) {
       const newHP = Math.min((character.currentHP || 0) + effect.healing, character.maxHP)
       updateCharacterHP(newHP)
+      addLog(effect.resultText, 'heal')
+      showBanner(`+${effect.healing} HP!`, `${spell.name} → ${newHP}/${character.maxHP} HP`, 'heal')
+      turnActionsRef.current.push(`[Zauber] ${effect.resultText}`)
+      finishPlayerTurn()
+      return
     }
 
-    addLog(effect.resultText)
+    addLog(effect.resultText, 'spell')
+    showBanner(spell.name, effect.resultText, 'spell')
     turnActionsRef.current.push(`[Zauber] ${effect.resultText}`)
     finishPlayerTurn()
   }
@@ -455,10 +531,12 @@ export default function CombatTracker({ onCombatAction }) {
       const newHP = Math.min((character.currentHP || 0) + result.healing, character.maxHP)
       updateCharacterHP(newHP)
       useItem(itemName)
-      addLog(result.resultText)
+      addLog(result.resultText, 'heal')
+      showBanner(`+${result.healing} HP!`, `${itemName} → ${newHP}/${character.maxHP} HP`, 'heal')
       turnActionsRef.current.push(`[Gegenstand] ${result.resultText}`)
     } else {
-      addLog(`${itemName} eingesetzt.`)
+      addLog(`${itemName} eingesetzt.`, 'item')
+      showBanner(itemName, 'Gegenstand eingesetzt', 'item')
       turnActionsRef.current.push(`[Gegenstand] ${itemName} benutzt`)
       useItem(itemName)
     }
@@ -470,11 +548,11 @@ export default function CombatTracker({ onCombatAction }) {
 
   const doDodge = useCallback(() => {
     setDodgeActive(true)
-    const msg = 'Ausweichen! Gegner haben Nachteil auf Angriffe bis zur naechsten Runde.'
-    addLog(msg)
+    addLog('Ausweichen! Gegner haben Nachteil auf Angriffe.', 'dodge')
+    showBanner('Ausweichen!', 'Nachteil auf alle Gegnerangriffe', 'dodge')
     turnActionsRef.current.push(`[Ausweichen] Nachteil auf alle Gegnerangriffe`)
     finishPlayerTurn()
-  }, [addLog, finishPlayerTurn])
+  }, [addLog, showBanner, finishPlayerTurn])
 
   // ── Action: Free Action (creative input) ───────────────────────────────
 
@@ -486,7 +564,7 @@ export default function CombatTracker({ onCombatAction }) {
   const submitFreeAction = useCallback(() => {
     const text = freeActionText.trim()
     if (!text) return
-    addLog(`Freie Aktion: ${text}`)
+    addLog(`Freie Aktion: ${text}`, 'free')
     turnActionsRef.current.push(`[Freie Aktion] ${text}`)
     setFreeActionText('')
     finishPlayerTurn()
@@ -498,7 +576,7 @@ export default function CombatTracker({ onCombatAction }) {
     const roll = rollDie(20)
     const mod = character ? getModifier(character.attributes?.[attr] || 10) : 0
     const total = roll + mod
-    addLog(`Rettungswurf ${label}: d20 ${roll} + ${mod} = ${total}`)
+    addLog(`Rettungswurf ${label}: d20 ${roll} + ${mod} = ${total}`, 'info')
     if (onCombatAction) onCombatAction(`[Rettungswurf ${label}] Ergebnis: ${total}`)
   }, [character, getModifier, addLog, onCombatAction])
 
@@ -513,7 +591,8 @@ export default function CombatTracker({ onCombatAction }) {
     if (allDead) {
       const totalXP = updatedEnemies.reduce((sum, e) => sum + (e.xp || 0), 0)
       const victoryMsg = `Alle Gegner besiegt! +${totalXP} XP`
-      addLog(victoryMsg)
+      addLog(victoryMsg, 'victory')
+      showBanner('SIEG!', `+${totalXP} XP`, 'victory')
       turnActionsRef.current.push(victoryMsg)
       if (awardXP) awardXP(totalXP)
       flushTurnSummary()
@@ -573,6 +652,9 @@ export default function CombatTracker({ onCombatAction }) {
         </div>
       </div>
 
+      {/* Result Banner — always visible at top */}
+      <ResultBanner result={resultBanner} />
+
       <div className="divider-gold" />
 
       {/* Initiative auto-rolling */}
@@ -619,20 +701,10 @@ export default function CombatTracker({ onCombatAction }) {
         </div>
       )}
 
-      {/* Player HP + manual adjust */}
+      {/* Player HP */}
       {character && (
         <div>
           <HpBar current={playerHP} max={playerMaxHP} label={character.name} />
-          <div className="flex flex-wrap gap-1 mt-1">
-            {[1,2,3,5,8].map(n => (
-              <button key={n} onClick={() => updateCharacterHP(playerHP - n)}
-                className="btn-danger px-1.5 py-0.5 text-xs">-{n}</button>
-            ))}
-            {[1,2,4].map(n => (
-              <button key={n} onClick={() => updateCharacterHP(playerHP + n)}
-                className="btn-ghost px-1.5 py-0.5 text-xs" style={{color:'#34d399'}}>+{n}</button>
-            ))}
-          </div>
         </div>
       )}
 
@@ -824,9 +896,9 @@ export default function CombatTracker({ onCombatAction }) {
 
       {/* Action Log */}
       {actionLog.length > 0 && (
-        <div className="bg-dungeon-300/50 rounded border border-stone-800 p-2 max-h-32 overflow-y-auto">
+        <div className="bg-dungeon-300/50 rounded border border-stone-800 p-2 max-h-36 overflow-y-auto space-y-0.5">
           {actionLog.slice().reverse().map(entry => (
-            <p key={entry.id} className="font-body text-xs text-stone-400 leading-5">{entry.text}</p>
+            <LogEntry key={entry.id} entry={entry} />
           ))}
         </div>
       )}
