@@ -243,6 +243,77 @@ function buildSceneStateContext(sceneState = null) {
   return `## Aktueller Szenenstatus\n${lines.join('\n')}`
 }
 
+// ─── Inventory formatting for AI prompt ──────────────────────────────────────
+
+function formatInventoryForPrompt(character) {
+  const inv = character?.inventory || []
+  if (!inv.length) return 'Leer'
+
+  // Handle legacy string arrays
+  if (typeof inv[0] === 'string') return inv.join(', ')
+
+  const parts = []
+  const weapon = inv.find(i => i.type === 'weapon' && i.equipped)
+  const armor = inv.find(i => i.type === 'armor' && i.equipped)
+  const shield = inv.find(i => i.type === 'shield' && i.equipped)
+
+  if (weapon) parts.push(`Waffe: ${weapon.name} (${weapon.properties?.damageDice || '?'})`)
+  if (armor) parts.push(`Rüstung: ${armor.name}`)
+  if (shield) parts.push(`Schild: ${shield.name}`)
+
+  const otherItems = inv
+    .filter(i => !i.equipped)
+    .map(i => i.quantity > 1 ? `${i.name} x${i.quantity}` : i.name)
+  if (otherItems.length) parts.push(`Sonstiges: ${otherItems.join(', ')}`)
+
+  return parts.join(' | ') || 'Leer'
+}
+
+function formatCurrencyForPrompt(character) {
+  const c = character?.currency
+  if (!c) return '0 GM'
+  const parts = []
+  if (c.pm > 0) parts.push(`${c.pm} PM`)
+  if (c.gm > 0) parts.push(`${c.gm} GM`)
+  if (c.em > 0) parts.push(`${c.em} EM`)
+  if (c.sm > 0) parts.push(`${c.sm} SM`)
+  if (c.km > 0) parts.push(`${c.km} KM`)
+  return parts.join(', ') || '0 GM'
+}
+
+// ─── Loot Tag Parsers ────────────────────────────────────────────────────────
+
+export function parseLootTags(text = '') {
+  const items = []
+  const regex = /\[BEUTE:([^\]]+)\]/gi
+  let m
+  while ((m = regex.exec(text)) !== null) {
+    items.push(m[1].trim())
+  }
+  return items
+}
+
+export function parseCurrencyTags(text = '') {
+  const changes = {}
+  const regex = /\[(KM|SM|EM|GM|PM):\+?(-?\d+)\]/gi
+  let m
+  while ((m = regex.exec(text)) !== null) {
+    const denom = m[1].toLowerCase()
+    changes[denom] = (changes[denom] || 0) + parseInt(m[2])
+  }
+  return changes
+}
+
+export function parseLostItemTags(text = '') {
+  const items = []
+  const regex = /\[VERLOREN:([^\]]+)\]/gi
+  let m
+  while ((m = regex.exec(text)) !== null) {
+    items.push(m[1].trim())
+  }
+  return items
+}
+
 /**
  * Build the system prompt
  */
@@ -306,6 +377,17 @@ export function buildSystemPrompt(character, adventure, messages = [], combat = 
 - Wenn der Spieler besiegt wurde ([SPIELER BESIEGT]), beschreibe narrativ wie der Held fällt. Biete dann Optionen an: Bewusstlosigkeit und Rettung, Flucht in letzter Sekunde, oder Neustart. Töte den Charakter NICHT endgültig ohne Spielerentscheidung.
 - Wenn der Spieler die Wiederbelebung/Heilung wählt und du ihn narrativ heilst, schreibe den Tag **[WIEDERBELEBEN]** in deine Antwort. Die App stellt dann automatisch HP und Zauberslots wieder her. Ohne diesen Tag bleiben die HP bei 0.
 
+## Beute & Inventar-Tags
+- Wenn der Spieler einen Gegenstand findet oder erhält: **[BEUTE:Gegenstandsname]**
+  Beispiel: [BEUTE:Heiltrank] oder [BEUTE:Langschwert]
+- Wenn der Spieler Gold oder Münzen erhält: **[GM:+N]** (auch [SM:+N], [KM:+N] möglich)
+  Beispiel: [GM:+50] oder [SM:+30]
+- Wenn der Spieler einen Gegenstand verliert oder verbraucht wird: **[VERLOREN:Gegenstandsname]**
+  Beispiel: [VERLOREN:Seil (15m)]
+- Setze diese Tags IMMER am Ende des relevanten Absatzes, NICHT mitten im Satz.
+- Nutze den exakten deutschen Gegenstandsnamen aus dem SRD.
+- Vergib Beute NACH gewonnenen Kämpfen und bei Durchsuchung von Räumen, Truhen oder Leichen.
+
 ## Gegner-Skalierung (WICHTIG)
 Passe Gegnerwerte IMMER an die Stufe des Spielercharakters an. Ein Solo-Held hat keine Gruppe — Kämpfe müssen fair und gewinnbar sein.
 - **Stufe 1–2:** Schwache Gegner. HP 4–12, AC 10–13, ATK +2–4, DMG 1d4+1 bis 1d6+1, XP 25–50. Max 1–2 Gegner.
@@ -351,7 +433,8 @@ ${buildChoiceStyleInstruction(userText, Boolean(combat?.active))}`
 **Übungsbonus:** +${character.proficiencyBonus || 2}
 **Attribute:** STR ${attrs.str}, DEX ${attrs.dex}, CON ${attrs.con}, INT ${attrs.int}, WIS ${attrs.wis}, CHA ${attrs.cha}
 **Erfahrung:** ${character.xp || 0} XP
-**Inventar:** ${(character.inventory || []).join(', ') || 'Leer'}${skillLine}
+**Inventar:** ${formatInventoryForPrompt(character)}
+**Geld:** ${formatCurrencyForPrompt(character)}${skillLine}
 ${(() => {
   const parts = []
   if (character.knownCantrips?.length) {

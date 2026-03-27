@@ -1,5 +1,9 @@
 import { SPELL_LIST, getSpellSlots } from './spells'
 import { SRD_RULE_BLOCKS, SRD_CORE_PROMPT_RULES } from './rules'
+import {
+  ITEM_CATALOG, EMPTY_CURRENCY,
+  lookupItem, createInventoryItem, generateInventoryId,
+} from './items'
 
 export const PROJECT_NAME = 'Dungeons & Daggers'
 export const SRD_VERSION_LABEL = 'D&D SRD 5.2.1'
@@ -847,6 +851,135 @@ export function calcSpellAttackBonus(className, attributes = {}, level = 1) {
   return getProficiencyBonus(level) + getAbilityModifier(attributes?.[spellcastingAbility] || 10)
 }
 
+// ─── Inventory Migration (string[] → StructuredItem[]) ───────────────────────
+
+/**
+ * Check whether an inventory array is already structured (objects with type/itemKey).
+ */
+export function isStructuredInventory(inventory) {
+  if (!Array.isArray(inventory) || inventory.length === 0) return true
+  return typeof inventory[0] === 'object' && inventory[0] !== null && ('type' in inventory[0] || 'itemKey' in inventory[0])
+}
+
+/**
+ * Migrate a string[] inventory to StructuredItem[].
+ * If already structured, returns as-is.
+ * Auto-equips the first weapon, armor, and shield matching class defaults.
+ */
+export function migrateInventory(inventory, className = 'Kämpfer') {
+  if (!Array.isArray(inventory)) return []
+  if (isStructuredInventory(inventory)) return inventory
+
+  const normalizedClass = legacyClassNameToCurrent(className)
+  const classWeapon = CLASS_WEAPON_DEFAULTS[normalizedClass]
+  const items = []
+
+  for (const entry of inventory) {
+    if (typeof entry !== 'string') continue
+    const result = lookupItem(entry)
+    if (result) {
+      items.push(createInventoryItem(result.catalogEntry, { quantity: result.quantity }))
+    } else {
+      items.push(createInventoryItem(entry))
+    }
+  }
+
+  // Auto-equip first matching weapon, armor, shield
+  let weaponEquipped = false
+  let armorEquipped = false
+  let shieldEquipped = false
+
+  for (const item of items) {
+    if (!weaponEquipped && item.type === 'weapon') {
+      // Prefer class default weapon
+      if (classWeapon && item.name === classWeapon.label) {
+        item.equipped = true
+        weaponEquipped = true
+      }
+    }
+    if (!armorEquipped && item.type === 'armor') {
+      item.equipped = true
+      armorEquipped = true
+    }
+    if (!shieldEquipped && item.type === 'shield') {
+      item.equipped = true
+      shieldEquipped = true
+    }
+  }
+  // If no weapon matched by class default name, equip first weapon found
+  if (!weaponEquipped) {
+    const firstWeapon = items.find(i => i.type === 'weapon')
+    if (firstWeapon) firstWeapon.equipped = true
+  }
+
+  return items
+}
+
+/**
+ * Create a structured starter inventory for a class.
+ */
+export function migrateStarterInventory(className) {
+  const normalizedClass = legacyClassNameToCurrent(className)
+  const strings = CLASS_CONFIG[normalizedClass]?.starterInventory || []
+  return migrateInventory(strings, normalizedClass)
+}
+
+// ─── Equipment-Based AC Calculation ──────────────────────────────────────────
+
+/**
+ * Find equipped items by type in a structured inventory.
+ */
+export function getEquippedItem(inventory, type) {
+  if (!Array.isArray(inventory)) return null
+  return inventory.find(i => typeof i === 'object' && i.type === type && i.equipped) || null
+}
+
+/**
+ * Compute armorBonus from structured equipped items (for legacy field compat).
+ */
+export function deriveArmorBonusFromEquipment(inventory, dexScore = 10, className = '', attributes = {}) {
+  const ac = calcArmorClassFromEquipment(inventory, dexScore, className, attributes)
+  // armorBonus = ac - (10 + dexMod), clamped ≥ 0
+  const dexMod = getAbilityModifier(dexScore)
+  return Math.max(0, ac - 10 - dexMod)
+}
+
+/**
+ * Calculate AC from equipped armor + shield in a structured inventory.
+ * Falls back to the legacy formula if inventory is not structured.
+ */
+export function calcArmorClassFromEquipment(inventory, dexScore = 10, className = '', attributes = {}) {
+  const normalizedClass = legacyClassNameToCurrent(className)
+  const dexMod = getAbilityModifier(dexScore)
+
+  const equippedArmor = getEquippedItem(inventory, 'armor')
+  const equippedShield = getEquippedItem(inventory, 'shield')
+  const shieldBonus = equippedShield?.properties?.acBonus || 0
+
+  if (equippedArmor) {
+    const props = equippedArmor.properties || {}
+    const acBase = Number(props.acBase) || 10
+    const maxDex = props.maxDexBonus
+    const effectiveDex = (maxDex !== null && maxDex !== undefined) ? Math.min(dexMod, maxDex) : dexMod
+    return acBase + effectiveDex + shieldBonus
+  }
+
+  // No armor equipped → unarmored defense
+  const unarmoredAbility = CLASS_CONFIG[normalizedClass]?.unarmoredDefense
+  if (unarmoredAbility) {
+    return 10 + dexMod + getAbilityModifier(attributes[unarmoredAbility] || 10) + shieldBonus
+  }
+
+  // Base unarmored: 10 + DEX mod (+ shield if any)
+  return 10 + dexMod + shieldBonus
+}
+
+// ─── Re-export items utilities ───────────────────────────────────────────────
+export { ITEM_CATALOG, EMPTY_CURRENCY, lookupItem, createInventoryItem, generateInventoryId } from './items'
+export { CURRENCY_CONFIG, CURRENCY_ORDER, calcCarryingCapacity, calcTotalWeight, calcTotalGoldValue } from './items'
+export { getItemsByType, getWeapons, getArmors, getArmorsForClass, canUseShield } from './items'
+export { ITEM_TYPES, ARMOR_PROFICIENCY, SHIELD_PROFICIENCY } from './items'
+
 export function createCharacterTemplate() {
   const defaultClass = 'Kämpfer'
   const defaultRace = 'Mensch'
@@ -871,7 +1004,8 @@ export function createCharacterTemplate() {
     attackBonus: calcAttackBonus(defaultClass, defaultAttributes, 1),
     spellSaveDC: calcSpellSaveDC(defaultClass, defaultAttributes, 1),
     spellAttackBonus: calcSpellAttackBonus(defaultClass, defaultAttributes, 1),
-    inventory: [...(CLASS_CONFIG[defaultClass]?.starterInventory || [])],
+    inventory: migrateStarterInventory(defaultClass),
+    currency: { ...EMPTY_CURRENCY },
     spells: CLASS_CONFIG[defaultClass]?.spells || '',
     knownCantrips: [],
     knownSpells: [],
@@ -898,7 +1032,24 @@ export function recalcCharacterStats(character) {
   }
   const attributes = applyRacialBonuses(baseAttributes, race)
 
-  const armorBonus = Number(character.armorBonus ?? 0)
+  // Migrate inventory to structured format
+  const rawInventory = Array.isArray(character.inventory) ? character.inventory : [...(CLASS_CONFIG[normalizedClass]?.starterInventory || [])]
+  const inventory = migrateInventory(rawInventory, normalizedClass)
+  const currency = character.currency && typeof character.currency === 'object'
+    ? { ...EMPTY_CURRENCY, ...character.currency }
+    : { ...EMPTY_CURRENCY }
+
+  // Derive AC from equipment if structured, otherwise use legacy armorBonus
+  const hasStructured = isStructuredInventory(inventory)
+  let armorBonus, armorClass
+  if (hasStructured && inventory.length > 0) {
+    armorClass = calcArmorClassFromEquipment(inventory, attributes.dex, normalizedClass, attributes)
+    armorBonus = deriveArmorBonusFromEquipment(inventory, attributes.dex, normalizedClass, attributes)
+  } else {
+    armorBonus = Number(character.armorBonus ?? 0)
+    armorClass = calcArmorClass(attributes.dex, armorBonus, normalizedClass, attributes)
+  }
+
   const maxHP = Math.max(1, Number(character.maxHP) || calcHitPoints(normalizedClass, attributes.con, level))
   const currentHP = Math.max(0, Math.min(Number(character.currentHP ?? maxHP), maxHP))
   const proficiencyBonus = getProficiencyBonus(level)
@@ -913,7 +1064,7 @@ export function recalcCharacterStats(character) {
     attributes,
     skillProficiencies,
     armorBonus,
-    armorClass: Number(character.armorClass ?? calcArmorClass(attributes.dex, armorBonus, normalizedClass, attributes)),
+    armorClass,
     maxHP,
     currentHP,
     proficiencyBonus,
@@ -921,7 +1072,8 @@ export function recalcCharacterStats(character) {
     attackBonus: calcAttackBonus(normalizedClass, attributes, level),
     spellSaveDC: calcSpellSaveDC(normalizedClass, attributes, level),
     spellAttackBonus: calcSpellAttackBonus(normalizedClass, attributes, level),
-    inventory: Array.isArray(character.inventory) ? character.inventory : [...(CLASS_CONFIG[normalizedClass]?.starterInventory || [])],
+    inventory,
+    currency,
     spells: typeof character.spells === 'string'
       ? character.spells
       : (CLASS_CONFIG[normalizedClass]?.spells || ''),
@@ -951,6 +1103,9 @@ export function normalizeCharacter(character) {
     spellSlots: character.spellSlots && typeof character.spellSlots === 'object' ? character.spellSlots : {},
     currentSpellSlots: character.currentSpellSlots && typeof character.currentSpellSlots === 'object' ? character.currentSpellSlots : (character.spellSlots && typeof character.spellSlots === 'object' ? { ...character.spellSlots } : {}),
     inventory: Array.isArray(character.inventory) ? character.inventory : base.inventory,
+    currency: character.currency && typeof character.currency === 'object'
+      ? { ...EMPTY_CURRENCY, ...character.currency }
+      : { ...EMPTY_CURRENCY },
   }
 
   return recalcCharacterStats(merged)

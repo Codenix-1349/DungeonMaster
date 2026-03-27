@@ -200,9 +200,12 @@ export default function CombatTracker({ onCombatAction }) {
 
   const usableItems = useMemo(() => {
     if (!character?.inventory) return []
-    return character.inventory.filter(item =>
-      /heiltrank|trank|potion/i.test(item)
-    )
+    return character.inventory.filter(item => {
+      if (typeof item === 'object') {
+        return item.type === 'consumable' || /heiltrank|trank|potion/i.test(item.name || '')
+      }
+      return /heiltrank|trank|potion/i.test(item)
+    })
   }, [character?.inventory])
 
   // ── Initiative ──────────────────────────────────────────────────────────
@@ -397,7 +400,10 @@ export default function CombatTracker({ onCombatAction }) {
     const target = enemies.find(e => e.id === pendingAttack.targetId)
     if (!target || target.currentHP <= 0) return
 
-    const weaponInfo = getClassWeaponDefaults(character?.class)
+    const equippedWeapon = character?.inventory?.find(i => typeof i === 'object' && i.type === 'weapon' && i.equipped)
+    const weaponInfo = equippedWeapon
+      ? { damageDice: equippedWeapon.properties?.damageDice || '1d6', abilityMod: equippedWeapon.properties?.abilityMod || 'str', label: equippedWeapon.name }
+      : getClassWeaponDefaults(character?.class)
     const abilityMod = getModifier(character?.attributes?.[weaponInfo.abilityMod] || 10)
     const diceStr = weaponInfo.damageDice
     const fullDice = `${diceStr}${abilityMod >= 0 ? `+${abilityMod}` : `${abilityMod}`}`
@@ -523,14 +529,19 @@ export default function CombatTracker({ onCombatAction }) {
     setPlayerPhase('selectItem')
   }, [])
 
-  const pickItem = useCallback((itemName) => {
+  const pickItem = useCallback((item) => {
     if (!character) return
+    const itemName = typeof item === 'object' ? item.name : item
+    const itemId = typeof item === 'object' ? item.id : item
+    const isPotion = typeof item === 'object'
+      ? (item.properties?.effect === 'heal' || /heiltrank|trank|potion/i.test(itemName))
+      : /heiltrank|trank|potion/i.test(itemName)
 
-    if (/heiltrank|trank|potion/i.test(itemName)) {
-      const result = resolveHealingPotion()
+    if (isPotion) {
+      const result = resolveHealingPotion(typeof item === 'object' ? item : undefined)
       const newHP = Math.min((character.currentHP || 0) + result.healing, character.maxHP)
       updateCharacterHP(newHP)
-      useItem(itemName)
+      useItem(itemId)
       addLog(result.resultText, 'heal')
       showBanner(`+${result.healing} HP!`, `${itemName} → ${newHP}/${character.maxHP} HP`, 'heal')
       turnActionsRef.current.push(`[Gegenstand] ${result.resultText}`)
@@ -538,7 +549,7 @@ export default function CombatTracker({ onCombatAction }) {
       addLog(`${itemName} eingesetzt.`, 'item')
       showBanner(itemName, 'Gegenstand eingesetzt', 'item')
       turnActionsRef.current.push(`[Gegenstand] ${itemName} benutzt`)
-      useItem(itemName)
+      useItem(itemId)
     }
 
     finishPlayerTurn()
@@ -619,7 +630,10 @@ export default function CombatTracker({ onCombatAction }) {
   const livingEnemies = enemies.filter(e => e.currentHP > 0)
   const playerHP = character?.currentHP ?? character?.maxHP ?? 0
   const playerMaxHP = character?.maxHP ?? 1
-  const weaponInfo = getClassWeaponDefaults(character?.class)
+  const equippedWeaponRender = character?.inventory?.find(i => typeof i === 'object' && i.type === 'weapon' && i.equipped)
+  const weaponInfo = equippedWeaponRender
+    ? { damageDice: equippedWeaponRender.properties?.damageDice || '1d6', abilityMod: equippedWeaponRender.properties?.abilityMod || 'str', label: equippedWeaponRender.name }
+    : getClassWeaponDefaults(character?.class)
   const abilityMod = character ? getModifier(character.attributes?.[weaponInfo.abilityMod] || 10) : 0
   const isSpellcaster = availableSpells.length > 0
   const hasUsableItems = usableItems.length > 0
@@ -811,15 +825,19 @@ export default function CombatTracker({ onCombatAction }) {
                 <button onClick={() => setPlayerPhase('selectAction')} className="btn-ghost text-xs px-2 py-0.5">Zurueck</button>
               </div>
               <div className="space-y-1">
-                {usableItems.map((item, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => pickItem(item)}
-                    className="w-full text-left px-2 py-1.5 rounded text-xs font-body border border-transparent hover:border-emerald-600/30 hover:bg-emerald-900/20 transition-colors"
-                  >
-                    <span className="font-heading text-emerald-400">🧪 {item}</span>
-                  </button>
-                ))}
+                {usableItems.map((item, idx) => {
+                  const name = typeof item === 'object' ? item.name : item
+                  const qty = typeof item === 'object' && item.quantity > 1 ? ` x${item.quantity}` : ''
+                  return (
+                    <button
+                      key={typeof item === 'object' ? item.id : idx}
+                      onClick={() => pickItem(item)}
+                      className="w-full text-left px-2 py-1.5 rounded text-xs font-body border border-transparent hover:border-emerald-600/30 hover:bg-emerald-900/20 transition-colors"
+                    >
+                      <span className="font-heading text-emerald-400">🧪 {name}{qty}</span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}

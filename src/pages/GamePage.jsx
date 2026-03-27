@@ -3,9 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
 import { useAuth } from '../context/AuthContext'
 import { useSound } from '../context/SoundContext'
-import { sendMessage } from '../services/openrouter'
+import { sendMessage, parseLootTags, parseCurrencyTags, parseLostItemTags } from '../services/openrouter'
 import CombatTracker from '../components/CombatTracker'
 import { PROJECT_NAME, SRD_QUICK_RULES } from '../data/srd'
+import { generateGoldReward, generateItemLoot, ITEM_CATALOG } from '../data/items'
 
 const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
 // Dynamic choices are parsed from AI response - no static quick actions needed
@@ -224,6 +225,9 @@ export default function GamePage() {
     awardXP,
     updateCharacterHP,
     restoreSpellSlots,
+    addItem,
+    useItem,
+    updateCurrency,
     apiKey,
     hasServerKey,
     selectedModel,
@@ -349,7 +353,7 @@ export default function GamePage() {
         }
       }
 
-      // Parse XP rewards when combat ends
+      // Parse XP rewards and auto-generate loot when combat ends
       if (full.includes('KAMPF VORBEI')) {
         const xpReward = parseXPReward(full)
         if (xpReward > 0 && awardXP) {
@@ -358,6 +362,34 @@ export default function GamePage() {
             setLevelUpNotif({ oldLevel: result.oldLevel, newLevel: result.newLevel })
             setTimeout(() => setLevelUpNotif(null), 5000)
           }
+
+          // Auto-generate loot from code (not AI-dependent)
+          const playerLevel = character?.level || 1
+          const goldReward = generateGoldReward(xpReward)
+          if (Object.keys(goldReward).length > 0) {
+            updateCurrency(goldReward)
+          }
+          const itemLoot = generateItemLoot(xpReward, playerLevel)
+          for (const itemKey of itemLoot) {
+            addItem(itemKey)
+          }
+
+          // Show combined reward notification
+          if (!result?.didLevelUp) {
+            const lootParts = []
+            if (goldReward.gm) lootParts.push(`+${goldReward.gm} GM`)
+            if (goldReward.sm) lootParts.push(`+${goldReward.sm} SM`)
+            if (itemLoot.length) {
+              const names = itemLoot.map(k => {
+                return ITEM_CATALOG[k]?.name || k
+              })
+              lootParts.push(names.join(', '))
+            }
+            if (lootParts.length) {
+              setLevelUpNotif({ loot: lootParts.join(' · ') })
+              setTimeout(() => setLevelUpNotif(null), 4000)
+            }
+          }
         }
       }
 
@@ -365,6 +397,35 @@ export default function GamePage() {
       if (full.includes('[WIEDERBELEBEN]') && character?.maxHP) {
         updateCharacterHP(character.maxHP)
         restoreSpellSlots()
+      }
+
+      // Parse loot tags from AI response
+      const lootItems = parseLootTags(full)
+      for (const itemName of lootItems) {
+        addItem(itemName)
+      }
+
+      // Parse currency tags
+      const currencyChanges = parseCurrencyTags(full)
+      if (Object.keys(currencyChanges).length > 0) {
+        updateCurrency(currencyChanges)
+      }
+
+      // Parse lost item tags
+      const lostItems = parseLostItemTags(full)
+      for (const itemName of lostItems) {
+        useItem(itemName)
+      }
+
+      // Show loot notification
+      const lootNotifs = []
+      if (lootItems.length) lootNotifs.push(lootItems.join(', '))
+      if (currencyChanges.gm) lootNotifs.push(`+${currencyChanges.gm} GM`)
+      if (currencyChanges.sm) lootNotifs.push(`+${currencyChanges.sm} SM`)
+      if (currencyChanges.km) lootNotifs.push(`+${currencyChanges.km} KM`)
+      if (lootNotifs.length) {
+        setLevelUpNotif({ loot: lootNotifs.join(' · ') })
+        setTimeout(() => setLevelUpNotif(null), 4000)
       }
 
       const fullTranscript = [
@@ -740,11 +801,16 @@ export default function GamePage() {
               </div>
             )}
 
-            {levelUpNotif && (
+            {levelUpNotif && levelUpNotif.newLevel && (
               <div className="bg-gold-600/20 border border-gold-500/60 rounded p-4 text-center animate-fade-in">
-                <p className="font-display text-2xl text-gold-400 mb-1">⬆️ STUFE AUFGESTIEGEN!</p>
+                <p className="font-display text-2xl text-gold-400 mb-1">STUFE AUFGESTIEGEN!</p>
                 <p className="font-heading text-gold-300">Stufe {levelUpNotif.oldLevel} → Stufe {levelUpNotif.newLevel}</p>
                 <p className="font-body text-sm text-stone-400 mt-1">HP, Übungsbonus und Kampfwerte wurden aktualisiert.</p>
+              </div>
+            )}
+            {levelUpNotif && levelUpNotif.loot && (
+              <div className="bg-emerald-600/20 border border-emerald-500/60 rounded p-3 text-center animate-fade-in">
+                <p className="font-heading text-emerald-300">Beute erhalten: {levelUpNotif.loot}</p>
               </div>
             )}
             <div ref={logEndRef} />

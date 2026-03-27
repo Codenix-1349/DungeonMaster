@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
 import { useSound } from '../context/SoundContext'
 import CharacterSheet from '../components/CharacterSheet'
+import InventoryPanel from '../components/InventoryPanel'
 import {
   ATTR_LABELS,
   CASTER_PROGRESSION,
@@ -32,6 +33,7 @@ import {
   getProficiencyBonus,
   getSpellSlots,
   getSpellsKnownCount,
+  migrateStarterInventory,
   normalizeCharacter,
   roll4d6DropLowest,
 } from '../data/srd'
@@ -131,6 +133,11 @@ export default function CharacterPage() {
     upsertCharacter,
     selectCharacter,
     deleteCharacter,
+    addItem,
+    removeItem,
+    equipItem,
+    unequipItem,
+    updateCurrency,
     activeSession,
     unloadActiveSession,
   } = useGame()
@@ -161,7 +168,7 @@ export default function CharacterPage() {
   const updateClass = (cls) => {
     updateForm({
       class: cls,
-      inventory: [...(CLASS_CONFIG[cls]?.starterInventory || [])],
+      inventory: migrateStarterInventory(cls),
       spells: CLASS_CONFIG[cls]?.spells || '',
       skillProficiencies: [],
       knownCantrips: [],
@@ -189,7 +196,7 @@ export default function CharacterPage() {
     setNewItem('')
   }
 
-  const removeItem = (idx) => {
+  const removeFormItem = (idx) => {
     updateForm({ inventory: form.inventory.filter((_, i) => i !== idx) })
   }
 
@@ -270,44 +277,17 @@ export default function CharacterPage() {
             </div>
             <CharacterSheet />
 
-            <div className="panel p-4 mt-4">
+            <div className="panel-gold p-4 mt-4">
               <p className="section-subtitle mb-3">Inventar des aktiven Helden</p>
-              <div className="flex gap-2 mb-3">
-                <input
-                  type="text"
-                  value={newItem}
-                  onChange={e => setNewItem(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && newItem.trim()) {
-                      const updated = { ...character, inventory: [...(character.inventory || []), newItem.trim()] }
-                      upsertCharacter(updated)
-                      setNewItem('')
-                    }
-                  }}
-                  placeholder="Gegenstand…"
-                  className="input-dark flex-1"
-                />
-                <button onClick={() => {
-                  if (!newItem.trim()) return
-                  const updated = { ...character, inventory: [...(character.inventory || []), newItem.trim()] }
-                  upsertCharacter(updated)
-                  setNewItem('')
-                }} className="btn-primary px-4">+</button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(character.inventory || []).map((item, i) => (
-                  <span
-                    key={i}
-                    className="badge-gold cursor-pointer hover:bg-red-900/30 transition-colors"
-                    onClick={() => {
-                      const updated = { ...character, inventory: character.inventory.filter((_, idx) => idx !== i) }
-                      upsertCharacter(updated)
-                    }}
-                  >
-                    {item} ✕
-                  </span>
-                ))}
-              </div>
+              <InventoryPanel
+                mode="editable"
+                character={character}
+                onEquip={equipItem}
+                onUnequip={unequipItem}
+                onRemove={removeItem}
+                onAdd={addItem}
+                onUpdateCurrency={updateCurrency}
+              />
             </div>
 
           </>
@@ -772,7 +752,7 @@ export default function CharacterPage() {
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {form.inventory.map((item, i) => (
-                  <span key={i} onClick={() => removeItem(i)} className="badge-gold cursor-pointer hover:bg-red-900/30 transition-colors">{item} ✕</span>
+                  <span key={i} onClick={() => removeFormItem(i)} className="badge-gold cursor-pointer hover:bg-red-900/30 transition-colors">{typeof item === 'object' ? item.name : item} ✕</span>
                 ))}
               </div>
             </div>
