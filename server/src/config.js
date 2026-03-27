@@ -15,6 +15,7 @@ export const config = {
     pass: process.env.SMTP_PASS || '',
     from: process.env.SMTP_FROM || 'noreply@dungeons-daggers.app',
   },
+  devAutoLogin: process.env.DEV_AUTO_LOGIN || '',
   tokenExpiryMinutes: {
     emailVerify: 60 * 24,     // 24h
     passwordReset: 30,         // 30min

@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import {
   getToken, login as apiLogin, register as apiRegister, fetchMe, logout as apiLogout,
   verifyEmail as apiVerifyEmail, resendVerification as apiResendVerification,
+  devLogin as apiDevLogin,
 } from '../services/api'
 
 const AuthContext = createContext(null)
@@ -10,17 +11,21 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // On mount: check if we have a valid token
+  // On mount: check if we have a valid token, or try dev auto-login
   useEffect(() => {
     const token = getToken()
-    if (!token) {
-      setLoading(false)
+    if (token) {
+      fetchMe()
+        .then(u => setUser(u))
+        .catch(() => apiLogout())
+        .finally(() => setLoading(false))
       return
     }
 
-    fetchMe()
+    // Try dev auto-login (endpoint only exists when DEV_AUTO_LOGIN is set)
+    apiDevLogin()
       .then(u => setUser(u))
-      .catch(() => apiLogout())
+      .catch(() => { /* dev-login not available — normal login flow */ })
       .finally(() => setLoading(false))
   }, [])
 
