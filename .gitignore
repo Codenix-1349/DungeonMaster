@@ -10,6 +10,7 @@ dist/
 
 .DS_Store
 Thumbs.db
+.claude/
 
 # Large audio files (>100MB, exceeds GitHub limit)
 *.flac
