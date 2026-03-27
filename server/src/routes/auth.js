@@ -9,6 +9,39 @@ import { sendVerificationEmail, sendPasswordResetEmail } from '../services/email
 
 const router = Router()
 
+// ── Dev auto-login (only when DEV_AUTO_LOGIN is set) ────────────────────────
+
+if (config.devAutoLogin) {
+  router.post('/dev-login', async (req, res, next) => {
+    try {
+      const { rows } = await pool.query(
+        'SELECT id, email, username, email_verified FROM users WHERE email = $1',
+        [config.devAutoLogin.toLowerCase().trim()]
+      )
+
+      if (rows.length === 0) {
+        return res.status(404).json({ error: `Dev-User ${config.devAutoLogin} nicht gefunden.` })
+      }
+
+      const user = rows[0]
+      const token = jwt.sign(
+        { userId: user.id, email: user.email },
+        config.jwtSecret,
+        { expiresIn: config.jwtExpiresIn }
+      )
+
+      console.warn(`⚠️  DEV AUTO-LOGIN aktiv als ${user.email} — nicht in Produktion verwenden!`)
+
+      res.json({
+        token,
+        user: { id: user.id, email: user.email, username: user.username, emailVerified: !!user.email_verified },
+      })
+    } catch (err) {
+      next(err)
+    }
+  })
+}
+
 // ── Register ────────────────────────────────────────────────────────────────
 
 router.post('/register', async (req, res, next) => {

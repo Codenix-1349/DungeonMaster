@@ -52,6 +52,12 @@ export async function register(email, username, password) {
   return data.user
 }
 
+export async function devLogin() {
+  const data = await apiFetch('/auth/dev-login', { method: 'POST' })
+  setToken(data.token)
+  return data.user
+}
+
 export async function login(email, password) {
   const data = await apiFetch('/auth/login', {
     method: 'POST',
