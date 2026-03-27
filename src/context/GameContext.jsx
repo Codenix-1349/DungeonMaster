@@ -59,6 +59,11 @@ function useGameCombined() {
     consumeSpellSlot: char.consumeSpellSlot,
     restoreSpellSlots: char.restoreSpellSlots,
     useItem: char.useItem,
+    addItem: char.addItem,
+    removeItem: char.removeItem,
+    equipItem: char.equipItem,
+    unequipItem: char.unequipItem,
+    updateCurrency: char.updateCurrency,
     getModifier: char.getModifier,
 
     // Session / game state

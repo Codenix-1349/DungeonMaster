@@ -8,7 +8,10 @@ import {
   calcSpellSaveDC,
   calcSpellAttackBonus,
   getSpellSlots,
+  recalcCharacterStats,
+  EMPTY_CURRENCY,
 } from '../data/srd'
+import { lookupItem, createInventoryItem } from '../data/items'
 import {
   ensureCharacterRecord,
   normalizeCharacterRoster,
@@ -236,16 +239,147 @@ export function CharacterProvider({ children }) {
     })
   }, [setCharacter])
 
-  const useItem = useCallback((itemName) => {
+  // ── Inventory: use / consume an item ────────────────────────────────────────
+
+  const useItem = useCallback((itemNameOrId) => {
     setCharacter(prev => {
       if (!prev) return prev
       const inventory = [...(prev.inventory || [])]
-      const idx = inventory.findIndex(item =>
-        item.toLowerCase().includes(itemName.toLowerCase())
+      const search = String(itemNameOrId).toLowerCase()
+
+      // Find by id first, then by name
+      let idx = inventory.findIndex(item =>
+        typeof item === 'object' && item.id === itemNameOrId
       )
+      if (idx === -1) {
+        idx = inventory.findIndex(item => {
+          if (typeof item === 'string') return item.toLowerCase().includes(search)
+          return item.name?.toLowerCase().includes(search)
+        })
+      }
       if (idx === -1) return prev
-      inventory.splice(idx, 1)
+
+      const item = inventory[idx]
+      if (typeof item === 'object' && item.quantity > 1) {
+        inventory[idx] = { ...item, quantity: item.quantity - 1 }
+      } else {
+        inventory.splice(idx, 1)
+      }
+      const updated = { ...prev, inventory }
+      // Recalc if equipped item was consumed
+      if (typeof item === 'object' && item.equipped) {
+        return recalcCharacterStats(updated)
+      }
+      return updated
+    })
+  }, [setCharacter])
+
+  // ── Inventory: add item ────────────────────────────────────────────────────
+
+  const addItem = useCallback((itemKeyOrObject, quantity = 1) => {
+    setCharacter(prev => {
+      if (!prev) return prev
+      const inventory = [...(prev.inventory || [])]
+
+      let newItem
+      if (typeof itemKeyOrObject === 'object' && itemKeyOrObject.id) {
+        newItem = { ...itemKeyOrObject }
+      } else {
+        const nameOrKey = typeof itemKeyOrObject === 'string' ? itemKeyOrObject : itemKeyOrObject?.key
+        const lookup = lookupItem(nameOrKey)
+        if (lookup) {
+          newItem = createInventoryItem(lookup.catalogEntry, { quantity: lookup.quantity * quantity })
+        } else {
+          newItem = createInventoryItem(nameOrKey, { quantity })
+        }
+      }
+
+      // Stack if stackable and same itemKey already exists
+      if (newItem.stackable && newItem.itemKey) {
+        const existingIdx = inventory.findIndex(i =>
+          typeof i === 'object' && i.itemKey === newItem.itemKey && !i.equipped
+        )
+        if (existingIdx !== -1) {
+          inventory[existingIdx] = {
+            ...inventory[existingIdx],
+            quantity: (inventory[existingIdx].quantity || 1) + (newItem.quantity || 1),
+          }
+          return { ...prev, inventory }
+        }
+      }
+
+      inventory.push(newItem)
       return { ...prev, inventory }
+    })
+  }, [setCharacter])
+
+  // ── Inventory: remove item by id ───────────────────────────────────────────
+
+  const removeItem = useCallback((inventoryItemId) => {
+    setCharacter(prev => {
+      if (!prev) return prev
+      const item = prev.inventory?.find(i => typeof i === 'object' && i.id === inventoryItemId)
+      if (!item) return prev
+      const inventory = prev.inventory.filter(i => !(typeof i === 'object' && i.id === inventoryItemId))
+      const updated = { ...prev, inventory }
+      if (item.equipped) return recalcCharacterStats(updated)
+      return updated
+    })
+  }, [setCharacter])
+
+  // ── Inventory: equip item ──────────────────────────────────────────────────
+
+  const equipItem = useCallback((inventoryItemId) => {
+    setCharacter(prev => {
+      if (!prev) return prev
+      const inventory = [...(prev.inventory || [])]
+      const item = inventory.find(i => typeof i === 'object' && i.id === inventoryItemId)
+      if (!item) return prev
+
+      // Determine the slot type: weapon, armor, shield
+      const slotType = item.type // 'weapon', 'armor', 'shield'
+      if (!['weapon', 'armor', 'shield'].includes(slotType)) return prev
+
+      // Unequip current item in the same slot
+      for (const other of inventory) {
+        if (typeof other === 'object' && other.type === slotType && other.equipped && other.id !== inventoryItemId) {
+          other.equipped = false
+        }
+      }
+
+      // Equip the new item
+      item.equipped = true
+
+      return recalcCharacterStats({ ...prev, inventory })
+    })
+  }, [setCharacter])
+
+  // ── Inventory: unequip item ────────────────────────────────────────────────
+
+  const unequipItem = useCallback((inventoryItemId) => {
+    setCharacter(prev => {
+      if (!prev) return prev
+      const inventory = [...(prev.inventory || [])]
+      const item = inventory.find(i => typeof i === 'object' && i.id === inventoryItemId)
+      if (!item || !item.equipped) return prev
+
+      item.equipped = false
+      return recalcCharacterStats({ ...prev, inventory })
+    })
+  }, [setCharacter])
+
+  // ── Currency management ────────────────────────────────────────────────────
+
+  const updateCurrency = useCallback((patch) => {
+    setCharacter(prev => {
+      if (!prev) return prev
+      const currency = { ...(prev.currency || EMPTY_CURRENCY) }
+      for (const [denom, delta] of Object.entries(patch)) {
+        if (denom in currency) {
+          currency[denom] = Math.max(0, (currency[denom] || 0) + delta)
+        }
+      }
+      return { ...prev, currency }
     })
   }, [setCharacter])
 
@@ -266,6 +400,11 @@ export function CharacterProvider({ children }) {
       consumeSpellSlot,
       restoreSpellSlots,
       useItem,
+      addItem,
+      removeItem,
+      equipItem,
+      unequipItem,
+      updateCurrency,
       getModifier,
       _applyCharacterStore: applyCharacterStore,
       _charactersRef: charactersRef,

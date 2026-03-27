@@ -287,13 +287,25 @@ export function resolveSpellInCombat({
 
 /**
  * Resolve using a healing potion.
+ * Supports structured items with healDice property (e.g. "4d4+4" for greater).
+ * Falls back to standard 2d4+2 for legacy string items.
+ * @param {object|string} [item] - Structured inventory item or item name
  * Returns { healing, resultText }
  */
-export function resolveHealingPotion() {
-  const roll = rollDice('2d4')
-  const healing = roll.total + 2
+export function resolveHealingPotion(item) {
+  // Determine dice from structured item or fall back to standard
+  const healDice = (typeof item === 'object' && item?.properties?.healDice) || '2d4+2'
+  const match = healDice.match(/(\d+)d(\d+)([+-]\d+)?/)
+  const diceCount = match ? parseInt(match[1]) : 2
+  const diceSides = match ? parseInt(match[2]) : 4
+  const bonus = match ? parseInt(match[3] || '0') : 2
+  const potionName = (typeof item === 'object' && item?.name) || 'Heiltrank'
+
+  const roll = rollDice(`${diceCount}d${diceSides}`)
+  const healing = roll.total + bonus
+  const bonusStr = bonus !== 0 ? (bonus > 0 ? `+${bonus}` : `${bonus}`) : ''
   return {
     healing,
-    resultText: `Heiltrank: ${healing} HP wiederhergestellt (2d4+2 = ${roll.rolls.join('+')}+2)`,
+    resultText: `${potionName}: ${healing} HP wiederhergestellt (${diceCount}d${diceSides}${bonusStr} = ${roll.rolls.join('+')}${bonusStr})`,
   }
 }

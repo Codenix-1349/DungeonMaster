@@ -1,6 +1,7 @@
 import React from 'react'
 import { useGame } from '../context/GameContext'
 import { ATTR_SHORT_LABELS, SKILLS, SPELL_LIST, PROJECT_NAME, calcSkillBonus } from '../data/srd'
+import InventoryPanel from './InventoryPanel'
 
 export default function CharacterSheet({ compact = false }) {
   const { character, getModifier } = useGame()
@@ -125,16 +126,9 @@ export default function CharacterSheet({ compact = false }) {
         </div>
       )}
 
-      {character.inventory && character.inventory.length > 0 && (
-        <div className="mb-4">
-          <p className="section-subtitle mb-2">Inventar</p>
-          <div className="panel p-3 flex flex-wrap gap-1.5">
-            {character.inventory.map((item, i) => (
-              <span key={i} className="badge-gold">{item}</span>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="mb-4">
+        <InventoryPanel mode="readonly" character={character} />
+      </div>
 
       {(character.knownCantrips?.length > 0 || character.knownSpells?.length > 0 || character.spells) && (
         <div>

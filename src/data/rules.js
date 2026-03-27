@@ -81,10 +81,15 @@ export const SRD_RULE_BLOCKS = {
   equipment: {
     title: 'Ausrüstung & Gegenstände',
     text: `
+- Der Charakter hat drei Ausrüstungsplätze: Waffe, Rüstung, Schild. Ausgerüstete Gegenstände beeinflussen AC, Angriff und Schaden mechanisch.
 - Nutze Inventar und Ausrüstung aus dem App-Kontext als verbindliche Grundlage.
+- Wenn der Spieler Beute findet, markiere sie mit [BEUTE:Gegenstandsname].
+- Wenn der Spieler Gold erhält, markiere es mit [GM:+Betrag].
+- Wenn ein Gegenstand verloren geht, markiere ihn mit [VERLOREN:Gegenstandsname].
 - Wenn ein Gegenstand kreativ verwendet wird, bewerte das fair und pragmatisch.
 - Heiltränke, Werkzeuge, Seile, Lichtquellen und ähnliche Gegenstände dürfen klare praktische Effekte haben.
 - Biete Heilung (Heiltränke, Rasten etc.) NIEMALS als Auswahlmöglichkeit an, wenn der Charakter bereits volle HP hat (currentHP == maxHP).
+- Beachte die Tragkraft des Charakters — übermäßig schwere Beute ist unrealistisch.
 `,
   },
   conditions: {
