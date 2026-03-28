@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { SKILLS, ATTR_LABELS, ATTR_SHORT_LABELS, resolveSkillCheck } from '../data/srd'
+import D20Animation from './D20Animation'
 
 export default function SkillCheckPanel({ check, character, onResult, choiceLabel }) {
   const [result, setResult] = useState(null)
@@ -21,9 +22,8 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
   const profBonus = isProficient ? (Math.floor((level - 1) / 4) + 2) : 0
   const totalMod = abilityMod + profBonus
 
-  const handleRoll = useCallback(async () => {
+  const handleRoll = useCallback(() => {
     setRolling(true)
-    await new Promise(r => setTimeout(r, 400))
 
     const res = resolveSkillCheck({
       skillOrAbility: check.skillOrAbility,
@@ -32,26 +32,33 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
       character,
     })
 
+    // D20Animation handles the timing — we just set the result and let it animate
     setResult(res)
+  }, [check, character])
+
+  const handleAnimComplete = useCallback(() => {
     setRolling(false)
+    if (result) {
+      setTimeout(() => onResult(result, choiceLabel), 1500)
+    }
+  }, [result, onResult, choiceLabel])
 
-    setTimeout(() => onResult(res, choiceLabel), 1800)
-  }, [check, character, onResult])
-
-  if (rolling) {
+  // Rolling state: show D20 animation
+  if (rolling && result) {
     return (
       <div className="panel p-4 animate-slide-in">
         <div className="flex items-center gap-2 mb-3">
           <span className="font-heading text-xs tracking-wider text-gold-500">PROBE: {label}</span>
         </div>
-        <div className="flex justify-center py-6">
-          <span className="text-4xl animate-bounce">🎲</span>
+        <div className="flex justify-center py-2">
+          <D20Animation result={result.d20Result} size={220} holdTime={2000} onComplete={handleAnimComplete} />
         </div>
       </div>
     )
   }
 
-  if (result) {
+  // Result state: show outcome with the final d20 frame
+  if (result && !rolling) {
     const successStyle = result.success
       ? 'bg-emerald-600/20 border-emerald-500/60'
       : 'bg-red-900/20 border-red-700/30'
@@ -97,6 +104,7 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
     )
   }
 
+  // Pending state: show stats + roll button
   return (
     <div className="panel p-4 animate-slide-in">
       <div className="flex items-center gap-2 mb-3">
@@ -130,7 +138,7 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
       </div>
 
       <button onClick={handleRoll} className="btn-primary w-full py-3 text-base animate-pulse">
-        🎲 Würfeln
+        Würfeln
       </button>
     </div>
   )

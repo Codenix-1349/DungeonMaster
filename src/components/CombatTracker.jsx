@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useGame } from '../context/GameContext'
 import { getClassWeaponDefaults, SPELL_LIST } from '../data/srd'
 import { resolveSpellInCombat, resolveHealingPotion, rollDice } from '../data/spellEffects'
+import D20Animation from './D20Animation'
 
 // ─── Dice Helpers ─────────────────────────────────────────────────────────────
 
@@ -64,7 +65,13 @@ function ResultBanner({ result }) {
   const style = LOG_STYLES[result.type] || LOG_STYLES.info
   return (
     <div className={`rounded-lg border-2 p-3 text-center animate-slide-in ${style.bg}`}>
-      <div className="text-2xl mb-1">{style.icon}</div>
+      {result.d20Roll ? (
+        <div className="flex justify-center mb-1">
+          <D20Animation result={result.d20Roll} size={220} holdTime={2000} />
+        </div>
+      ) : (
+        <div className="text-2xl mb-1">{style.icon}</div>
+      )}
       <p className={`font-heading text-sm ${style.color}`}>{result.title}</p>
       {result.detail && (
         <p className="font-body text-xs text-stone-400 mt-0.5">{result.detail}</p>
@@ -158,10 +165,10 @@ export default function CombatTracker({ onCombatAction }) {
     setActionLog(prev => [...prev.slice(-40), { id: Date.now() + Math.random(), text, type }])
   }, [])
 
-  const showBanner = useCallback((title, detail, type = 'hit') => {
+  const showBanner = useCallback((title, detail, type = 'hit', opts = {}) => {
     if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current)
-    setResultBanner({ title, detail, type })
-    bannerTimerRef.current = setTimeout(() => setResultBanner(null), 2500)
+    setResultBanner({ title, detail, type, ...opts })
+    bannerTimerRef.current = setTimeout(() => setResultBanner(null), opts.d20Roll ? 4500 : 2500)
   }, [])
 
   const flushTurnSummary = useCallback(() => {
@@ -371,7 +378,7 @@ export default function CombatTracker({ onCombatAction }) {
     if (isFumble) {
       const msg = `Patzer! Nat. 1 gegen ${target.name} — daneben!`
       addLog(msg, 'miss')
-      showBanner('Patzer!', `Nat. 1 gegen ${target.name}`, 'miss')
+      showBanner('Patzer!', `Nat. 1 gegen ${target.name}`, 'miss', { d20Roll: roll })
       turnActionsRef.current.push(msg)
       setPendingAttack(null)
       finishPlayerTurn()
@@ -380,14 +387,14 @@ export default function CombatTracker({ onCombatAction }) {
         ? `KRITISCH! Nat. 20 gegen ${target.name}!`
         : `Treffer! ${total} (d20: ${roll} + ${attackBonus}) vs AC ${target.ac}`
       addLog(msg, isCrit ? 'crit' : 'hit')
-      showBanner(isCrit ? 'KRITISCH!' : 'Treffer!', `${roll} + ${attackBonus} = ${total} vs AC ${target.ac}`, isCrit ? 'crit' : 'hit')
+      showBanner(isCrit ? 'KRITISCH!' : 'Treffer!', `${roll} + ${attackBonus} = ${total} vs AC ${target.ac}`, isCrit ? 'crit' : 'hit', { d20Roll: roll })
       turnActionsRef.current.push(msg)
       setPendingAttack({ roll, total, isCrit, targetId: selectedTargetId })
       setPlayerPhase('damage')
     } else {
       const msg = `Verfehlt! ${total} (d20: ${roll} + ${attackBonus}) vs AC ${target.ac}`
       addLog(msg, 'miss')
-      showBanner('Verfehlt!', `${roll} + ${attackBonus} = ${total} vs AC ${target.ac}`, 'miss')
+      showBanner('Verfehlt!', `${roll} + ${attackBonus} = ${total} vs AC ${target.ac}`, 'miss', { d20Roll: roll })
       turnActionsRef.current.push(msg)
       setPendingAttack(null)
       finishPlayerTurn()
