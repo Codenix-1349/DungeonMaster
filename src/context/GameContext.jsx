@@ -9,6 +9,8 @@ import { getInitialCharacterStore } from '../utils/characterStore'
 import { ApiConfigProvider, useApiConfig } from './ApiConfigContext'
 import { GameSessionProvider, useGameSession } from './GameSessionContext'
 import { CharacterProvider, useCharacter } from './CharacterContext'
+import { useAuth } from './AuthContext'
+import { createCharacter as apiCreateChar } from '../services/api'
 
 // ─── Combined Hook ───────────────────────────────────────────────────────────
 
@@ -16,16 +18,26 @@ function useGameCombined() {
   const apiConfig = useApiConfig()
   const session = useGameSession()
   const char = useCharacter()
+  const { isLoggedIn } = useAuth()
 
   // Cross-cutting: createSession also selects the character
-  const createSession = useCallback((opts = {}) => {
+  // Ensures the character exists in the DB before creating the session (prevents FK errors)
+  const createSession = useCallback(async (opts = {}) => {
     const characterId = opts.characterId || char._charactersRef.current.find(c => c.id === (char.character?.id))?.id || null
+
+    if (isLoggedIn && characterId) {
+      const charData = char._charactersRef.current.find(c => c.id === characterId)
+      if (charData) {
+        try { await apiCreateChar(charData) } catch (_) { /* upsert — 201 on success */ }
+      }
+    }
+
     const result = session.createSessionRaw({ ...opts, characterId })
     if (characterId) {
       char._applyCharacterStore(char._charactersRef.current, characterId)
     }
     return result
-  }, [session, char])
+  }, [session, char, isLoggedIn])
 
   // Cross-cutting: loadSession also selects the session's character
   const loadSession = useCallback((sessionId) => {

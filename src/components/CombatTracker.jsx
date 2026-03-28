@@ -581,16 +581,6 @@ export default function CombatTracker({ onCombatAction }) {
     finishPlayerTurn()
   }, [freeActionText, addLog, finishPlayerTurn])
 
-  // ── Saving throw ────────────────────────────────────────────────────────
-
-  const rollSave = useCallback((label, attr) => {
-    const roll = rollDie(20)
-    const mod = character ? getModifier(character.attributes?.[attr] || 10) : 0
-    const total = roll + mod
-    addLog(`Rettungswurf ${label}: d20 ${roll} + ${mod} = ${total}`, 'info')
-    if (onCombatAction) onCombatAction(`[Rettungswurf ${label}] Ergebnis: ${total}`)
-  }, [character, getModifier, addLog, onCombatAction])
-
   // ── Helpers ─────────────────────────────────────────────────────────────
 
   const getFirstLivingEnemy = useCallback(() => {
@@ -898,17 +888,7 @@ export default function CombatTracker({ onCombatAction }) {
             </div>
           )}
 
-          {/* Saving throws */}
-          {isPlayerTurn && playerPhase !== 'done' && (
-            <div>
-              <p className="section-subtitle mb-1">Rettungswuerfe</p>
-              <div className="flex flex-wrap gap-1">
-                {[['STR','str'],['DEX','dex'],['CON','con'],['INT','int'],['WIS','wis'],['CHA','cha']].map(([lbl, attr]) => (
-                  <button key={attr} onClick={() => rollSave(lbl, attr)} className="btn-ghost text-xs px-2 py-1">{lbl}</button>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Saving throws removed — SRD: saves are reactions triggered by enemy effects, not voluntary player actions */}
         </div>
       )}
 
