@@ -3,20 +3,46 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
 import { useAuth } from '../context/AuthContext'
 import { useSound } from '../context/SoundContext'
-import { sendMessage, parseLootTags, parseCurrencyTags, parseLostItemTags } from '../services/openrouter'
+import { sendMessage, parseLootTags, parseCurrencyTags, parseLostItemTags, parseCheckTags, stripCheckTags, formatProbeHinweisTags, parseHPTags, parseXPTags } from '../services/openrouter'
 import CombatTracker from '../components/CombatTracker'
-import { PROJECT_NAME, SRD_QUICK_RULES } from '../data/srd'
+import SkillCheckPanel from '../components/SkillCheckPanel'
+import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS } from '../data/srd'
 import { generateGoldReward, generateItemLoot, ITEM_CATALOG } from '../data/items'
 
 const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
 // Dynamic choices are parsed from AI response - no static quick actions needed
 const QUICK_ACTIONS = []
 
+// Resolve a skill/ability key to its German display label
+function getCheckLabel(skillOrAbility) {
+  const skillDef = SKILLS.find(s => s.key === skillOrAbility)
+  if (skillDef) return skillDef.label
+  return ATTR_LABELS[skillOrAbility] || skillOrAbility
+}
+
+// Parse [PROBE_HINWEIS:skill|SG:N] from a choice label
+const PROBE_HINWEIS_RE = /\s*\[PROBE_HINWEIS:(\w+)\|SG:(\d+)(?:\|(VORTEIL|NACHTEIL))?\]/i
+
+function parseProbeHinweis(label) {
+  const m = label.match(PROBE_HINWEIS_RE)
+  if (!m) return { label, check: null }
+  return {
+    label: label.replace(PROBE_HINWEIS_RE, '').trim(),
+    check: {
+      skillOrAbility: m[1].toLowerCase(),
+      dc: parseInt(m[2]),
+      advantage: m[3]?.toUpperCase() === 'VORTEIL' ? 'advantage'
+               : m[3]?.toUpperCase() === 'NACHTEIL' ? 'disadvantage'
+               : null,
+    },
+  }
+}
+
 // Parse numbered choices from AI response text (deduplicated)
 // Handles both line-separated and inline numbering (e.g. "1. Foo  2. Bar")
+// Extracts [PROBE_HINWEIS:] tags from choices that require skill checks
 function parseChoices(text = '') {
   const clean = String(text).replace(/\*\*/g, '')
-  // Split on numbered pattern boundaries: "1. ", "2) " etc. — keeps the number as part of the match
   const segments = clean.split(/(?=(?:^|\n|\s{2,})\d[.):])/g)
   const choices = []
   const seen = new Set()
@@ -24,14 +50,15 @@ function parseChoices(text = '') {
   for (const seg of segments) {
     const m = seg.trim().match(/^([1-9])[.):]\s*(.+)/)
     if (!m) continue
-    const label = m[2].trim().split('\n')[0].trim()
+    const rawLabel = m[2].trim().split('\n')[0].trim()
+    const { label, check } = parseProbeHinweis(rawLabel)
     const key = label.toLowerCase()
     const isOther = /etwas anderes|selbst beschreiben/i.test(label)
     if (isOther && hasOther) continue
     if (isOther) hasOther = true
     if (label && label.length < 200 && !seen.has(key)) {
       seen.add(key)
-      choices.push(label)
+      choices.push({ label, check })
     }
   }
   return choices
@@ -59,12 +86,6 @@ function parseEnemyTags(text = '') {
     })
   }
   return enemies
-}
-
-// Parse [XP:N] reward tag
-function parseXPReward(text = '') {
-  const m = text.match(/\[XP:(\d+)\]/)
-  return m ? parseInt(m[1]) : 0
 }
 
 function TypingIndicator() {
@@ -126,12 +147,37 @@ function CombatRoundBubble({ content }) {
   )
 }
 
+function SkillCheckBubble({ content }) {
+  const raw = content.replace(/^\[Probe\]\s*/i, '')
+  const successMatch = /→\s*(Erfolg|Fehlschlag)/i.exec(raw)
+  const isSuccess = successMatch?.[1]?.toLowerCase() === 'erfolg'
+  const style = isSuccess
+    ? { icon: '🎯', color: 'text-emerald-300', bg: 'bg-emerald-600/10 border-emerald-600/25' }
+    : { icon: '💨', color: 'text-red-400', bg: 'bg-red-900/15 border-red-700/25' }
+
+  return (
+    <div className="animate-fade-in">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="font-heading text-xs tracking-wider text-blue-400">🎲 PROBE</span>
+      </div>
+      <div className={`flex items-start gap-2 rounded px-3 py-2 border text-sm ${style.bg}`}>
+        <span className="flex-shrink-0 mt-0.5">{style.icon}</span>
+        <span className={`font-body ${style.color}`}>{raw}</span>
+      </div>
+    </div>
+  )
+}
+
 function MessageBubble({ msg }) {
   const isUser = msg.role === 'user'
   const isCombatRound = isUser && msg.content?.startsWith('[Kampfrunde]')
+  const isCheckResult = isUser && msg.content?.startsWith('[Probe]')
 
   if (isCombatRound) {
     return <CombatRoundBubble content={msg.content} />
+  }
+  if (isCheckResult) {
+    return <SkillCheckBubble content={msg.content} />
   }
 
   return (
@@ -255,6 +301,7 @@ export default function GamePage() {
   const [showRules, setShowRules] = useState(false)
   const [dynamicChoices, setDynamicChoices] = useState([])
   const [levelUpNotif, setLevelUpNotif] = useState(null)
+  const [pendingCheck, setPendingCheck] = useState(null)
   const [selectedCharacterId, setSelectedCharacterId] = useState(character?.id || '')
   const [selectedAdventureId, setSelectedAdventureId] = useState(adventure?.id || '')
   const logEndRef = useRef(null)
@@ -293,7 +340,11 @@ export default function GamePage() {
     const trimmedHistory = sourceMessages.slice(-12)
     return trimmedHistory.map(message => ({
       role: message.role === 'assistant' ? 'assistant' : 'user',
-      content: message.content,
+      // Strip formatted probe hints (🎲 Label, SG N) from history so the AI
+      // doesn't mimic the display format instead of using [PROBE_HINWEIS:] tags
+      content: message.role === 'assistant'
+        ? message.content.replace(/\s*\(🎲\s*[^,]+,\s*SG\s*\d+\)/g, '')
+        : message.content,
     }))
   }, [gameLog])
 
@@ -339,11 +390,23 @@ export default function GamePage() {
         },
       })
 
-      const assistantMsg = addMessage('assistant', full)
+      // Strip [PROBE:] tags from displayed text (hide DC from player)
+      const displayText = formatProbeHinweisTags(stripCheckTags(full), getCheckLabel)
+      const assistantMsg = addMessage('assistant', displayText)
 
-      // Parse dynamic choices from AI response
+      // Parse choices first — choices always take priority over direct [PROBE:] tags
       const choices = parseChoices(full)
-      setDynamicChoices(choices)
+      if (choices.length > 0 && !combat?.active) {
+        setDynamicChoices(choices)
+        setPendingCheck(null)
+      } else {
+        setDynamicChoices([])
+        // Direct [PROBE:] tag only when AI gives no choices (player already chose the action)
+        const checkTag = parseCheckTags(full)
+        if (checkTag && !combat?.active) {
+          setPendingCheck(checkTag)
+        }
+      }
 
       // Parse enemies if combat starts — trigger on KAMPF BEGINNT or enemy tags
       if (!combat?.active) {
@@ -353,17 +416,17 @@ export default function GamePage() {
         }
       }
 
-      // Parse XP rewards and auto-generate loot when combat ends
-      if (full.includes('KAMPF VORBEI')) {
-        const xpReward = parseXPReward(full)
-        if (xpReward > 0 && awardXP) {
-          const result = awardXP(xpReward)
-          if (result?.didLevelUp) {
-            setLevelUpNotif({ oldLevel: result.oldLevel, newLevel: result.newLevel })
-            setTimeout(() => setLevelUpNotif(null), 5000)
-          }
+      // Parse XP rewards — works both in and outside combat
+      const xpReward = parseXPTags(full)
+      if (xpReward > 0 && awardXP) {
+        const result = awardXP(xpReward)
+        if (result?.didLevelUp) {
+          setLevelUpNotif({ oldLevel: result.oldLevel, newLevel: result.newLevel })
+          setTimeout(() => setLevelUpNotif(null), 5000)
+        }
 
-          // Auto-generate loot from code (not AI-dependent)
+        // Auto-generate loot only on combat end
+        if (full.includes('KAMPF VORBEI')) {
           const playerLevel = character?.level || 1
           const goldReward = generateGoldReward(xpReward)
           if (Object.keys(goldReward).length > 0) {
@@ -391,6 +454,22 @@ export default function GamePage() {
             }
           }
         }
+
+        // Show XP notification for non-combat XP (no loot)
+        if (!full.includes('KAMPF VORBEI') && !result?.didLevelUp) {
+          setLevelUpNotif({ loot: `+${xpReward} XP` })
+          setTimeout(() => setLevelUpNotif(null), 3000)
+        }
+      }
+
+      // Parse HP changes (traps, poison, falls, healing outside combat)
+      const hpChanges = parseHPTags(full)
+      if (hpChanges.length > 0 && character) {
+        let newHP = character.currentHP ?? character.maxHP
+        for (const delta of hpChanges) {
+          newHP = Math.max(0, Math.min(newHP + delta, character.maxHP))
+        }
+        updateCharacterHP(newHP)
       }
 
       // Revival: AI heals player narratively → restore HP + spell slots
@@ -468,6 +547,27 @@ export default function GamePage() {
 
   const handleCombatAction = useCallback(text => handleSend(`[Kampfrunde] ${text}`), [handleSend])
 
+  const handleCheckResult = useCallback((result, choiceLabel) => {
+    setPendingCheck(null)
+    setDynamicChoices([])
+
+    let rollStr = `d20(${result.d20Result})`
+    if (result.roll2 !== null) {
+      const advLabel = result.advantage === 'advantage' ? 'Vorteil' : 'Nachteil'
+      rollStr = `d20(${result.roll1}, ${result.roll2}) ${advLabel} → ${result.d20Result}`
+    }
+
+    const modStr = result.modifier >= 0 ? `+ ${result.modifier}` : `- ${Math.abs(result.modifier)}`
+    const successLabel = result.success ? 'Erfolg' : 'Fehlschlag'
+
+    const probeText = `[Probe] ${result.label}: ${rollStr} ${modStr} = ${result.total} vs SG ${result.dc} → ${successLabel}`
+    if (choiceLabel) {
+      handleSend(`${choiceLabel} | ${probeText}`)
+    } else {
+      handleSend(probeText)
+    }
+  }, [handleSend])
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -488,7 +588,7 @@ export default function GamePage() {
     return 'Das Abenteuer beginnt. Führe mich direkt in eine spannende erste Szene eines klassischen Fantasy-Abenteuers nach dem D&D-SRD. Stoppe an klaren Entscheidungspunkten.'
   }, [])
 
-  const handleStartNewSession = useCallback(() => {
+  const handleStartNewSession = useCallback(async () => {
     if (!apiKey) {
       setError('Bitte zuerst einen OpenRouter API Key hinterlegen.')
       return
@@ -499,7 +599,7 @@ export default function GamePage() {
       return
     }
 
-    const session = createSession({
+    const session = await createSession({
       characterId: selectedCharacter.id,
       adventureId: selectedAdventure?.id || null,
     })
@@ -790,7 +890,7 @@ export default function GamePage() {
                   <span className="font-heading text-xs text-gold-600 tracking-wider">🗡️ DUNGEONS & DAGGERS</span>
                 </div>
                 {streamingText
-                  ? <div className="chat-dm"><p className="font-body text-base leading-relaxed whitespace-pre-wrap">{streamingText}<span className="inline-block w-0.5 h-4 bg-gold-500 ml-0.5 animate-pulse" /></p></div>
+                  ? <div className="chat-dm"><p className="font-body text-base leading-relaxed whitespace-pre-wrap">{formatProbeHinweisTags(stripCheckTags(streamingText), getCheckLabel)}<span className="inline-block w-0.5 h-4 bg-gold-500 ml-0.5 animate-pulse" /></p></div>
                   : <TypingIndicator />}
               </div>
             )}
@@ -825,42 +925,79 @@ export default function GamePage() {
                 onKeyDown={handleKeyDown}
                 placeholder={
                   streaming ? 'Spielleiter antwortet…'
+                  : pendingCheck ? 'Probe ausstehend — würfle im Panel rechts →'
                   : combat?.active ? 'Kampf aktiv — nutze die Aktions-Buttons rechts →'
                   : 'Deine Aktion… (Enter senden, Shift+Enter Zeilenumbruch)'
                 }
-                disabled={streaming || !showTranscript || gameLog.length === 0 || combat?.active}
+                disabled={streaming || !showTranscript || gameLog.length === 0 || combat?.active || !!pendingCheck}
                 rows={2}
                 className="input-dark flex-1 resize-none leading-relaxed"
               />
-              <button onClick={() => handleSend()} disabled={streaming || !input.trim() || !showTranscript || gameLog.length === 0 || combat?.active} className="btn-primary px-5 self-end">
+              <button onClick={() => handleSend()} disabled={streaming || !input.trim() || !showTranscript || gameLog.length === 0 || combat?.active || !!pendingCheck} className="btn-primary px-5 self-end">
                 {streaming ? <span className="spinner" /> : '→'}
               </button>
             </div>
             {dynamicChoices.length > 0 && !combat?.active && (
-              <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'thin' }}>
+              <div className="flex flex-col gap-1.5 mt-2 max-h-40 overflow-y-auto pb-1" style={{ scrollbarWidth: 'thin' }}>
                 {dynamicChoices.map((choice, i) => {
-                  const isOther = /etwas anderes|selbst beschreiben/i.test(choice)
+                  const isOther = /etwas anderes|selbst beschreiben/i.test(choice.label)
+                  const hasProbe = Boolean(choice.check)
+                  const isSelected = pendingCheck?.choiceLabel === choice.label
+                  const isDisabled = (!!pendingCheck && !isSelected) || !showTranscript || gameLog.length === 0 || streaming
+                  const handleClick = () => {
+                    if (pendingCheck) return
+                    if (isOther) {
+                      inputRef.current?.focus()
+                    } else if (hasProbe) {
+                      setPendingCheck({ ...choice.check, choiceLabel: choice.label })
+                    } else {
+                      handleSend(choice.label)
+                    }
+                  }
                   return (
                     <button
-                      key={choice}
-                      onClick={() => isOther ? inputRef.current?.focus() : handleSend(choice)}
-                      disabled={!showTranscript || gameLog.length === 0 || streaming}
-                      className={`text-xs px-3 py-1.5 rounded border transition-all duration-150 font-body whitespace-nowrap flex-shrink-0 ${
-                        isOther
+                      key={choice.label}
+                      onClick={handleClick}
+                      disabled={isDisabled}
+                      className={`text-xs px-3 py-1.5 rounded border transition-all duration-150 font-body text-left flex items-center gap-2 ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-600/20 text-blue-200 ring-1 ring-blue-500/50'
+                          : isOther
                           ? 'border-stone-700 text-stone-500 hover:text-stone-300 hover:border-stone-500'
+                          : hasProbe
+                          ? 'border-blue-700/40 text-blue-300 hover:border-blue-500 hover:bg-blue-600/10'
                           : 'border-gold-700/40 text-gold-400 hover:border-gold-500 hover:bg-gold-600/10'
-                      }`}
+                      } ${isDisabled && !isSelected ? 'opacity-40' : ''}`}
                     >
-                      {isOther ? '✏️ ' : `${i + 1}. `}{choice}
+                      <span className="flex-1 min-w-0">{isOther ? '✏️ ' : `${i + 1}. `}{choice.label}</span>
+                      {hasProbe && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-900/40 border border-blue-700/30 text-blue-400 text-[10px] font-heading tracking-wide whitespace-nowrap flex-shrink-0 w-44">
+                          <span className="flex-shrink-0">🎲</span>
+                          <span className="flex-1 text-left">{getCheckLabel(choice.check.skillOrAbility)} SG {choice.check.dc}</span>
+                        </span>
+                      )}
+                      {isSelected && (
+                        <span className="text-[10px] text-blue-300 font-heading tracking-wide whitespace-nowrap flex-shrink-0 animate-pulse">
+                          PROBE AUSSTEHEND →
+                        </span>
+                      )}
                     </button>
                   )
                 })}
+              </div>
+            )}
+            {pendingCheck && !combat?.active && dynamicChoices.length === 0 && (
+              <div className="mt-2 px-3 py-2 rounded border border-blue-500/50 bg-blue-600/10 text-blue-300 text-xs font-heading tracking-wide text-center animate-pulse">
+                PROBE AUSSTEHEND — Würfle im Panel rechts →
               </div>
             )}
           </div>
         </div>
 
         <div className="w-80 border-l border-gold-700/10 overflow-y-auto flex flex-col gap-4 p-4 bg-dungeon-200/30 flex-shrink-0">
+          {showTranscript && pendingCheck && !combat?.active && (
+            <SkillCheckPanel check={pendingCheck} character={character} onResult={handleCheckResult} choiceLabel={pendingCheck?.choiceLabel} />
+          )}
           {showTranscript && combat?.active && <CombatTracker onCombatAction={handleCombatAction} />}
 
           {showTranscript && showDice && (

@@ -57,9 +57,13 @@ export const SRD_RULE_BLOCKS = {
     title: 'Attributsproben & Fertigkeitsartige Situationen',
     text: `
 - Nutze Attributsproben für Schleichen, Wahrnehmung, Nachforschen, Klettern, Einschüchtern, Überreden und ähnliche Aktionen.
-- Nenne bei Bedarf das passende Attribut und den Grund für den Wurf.
+- Wenn eine Probe nötig ist, setze am Ende des Absatzes: [PROBE:fertigkeit|SG:schwierigkeit]
+- Beispiele: [PROBE:stealth|SG:14], [PROBE:athletics|SG:12], [PROBE:str|SG:15]
+- Bei Vorteil/Nachteil: [PROBE:stealth|SG:14|VORTEIL] oder [PROBE:perception|SG:12|NACHTEIL]
+- SG-Richtwerte: leicht 10, mittel 13, schwer 15, sehr schwer 18.
 - Verlange keine Probe für triviale Handlungen ohne Risiko.
 - Gute Ideen dürfen Vorteile, leichtere SG oder automatische Teilerfolge rechtfertigen.
+- Du erfindest KEINE Würfelergebnisse. Setze nur den Tag — die App rollt und meldet das Ergebnis.
 `,
   },
   social: {
@@ -137,9 +141,72 @@ export function resolveRelevantRuleBlockKeys({ character, combat, userText = '' 
   ])
 
   const wantsChecks = containsAny(text, [
-    'untersuche', 'suche', 'schleiche', 'schleich', 'lausche',
-    'klettere', 'kletter', 'erkenne', 'wahrnehm', 'spur', 'falle',
-    'heimlich', 'nachforsch', 'überprüfe', '[würfelwurf]',
+    // Heimlichkeit / Stealth
+    'schleiche', 'schleich', 'heimlich', 'versteck', 'verberg', 'unbemerkt', 'leise',
+    'anpirsch', 'anschleich', 'ducke', 'verborgen', 'unauffällig', 'tarnen', 'tarn',
+    // Wahrnehmung / Perception
+    'lausche', 'wahrnehm', 'höre', 'horch', 'beobachte', 'spähe', 'aufmerksam',
+    'achte auf', 'umschau', 'umseh', 'aufpass', 'wachsam', 'wittere', 'schnüffel',
+    'geräusch', 'umhör', 'blicke', 'schaue genau',
+    // Nachforschung / Investigation
+    'untersuche', 'such', 'nachforsch', 'überprüfe', 'inspizier', 'durchsuche', 'abtast',
+    'durchstöber', 'forsche nach', 'prüfe', 'mustere', 'betrachte genau', 'hinweis',
+    'lese die schrift', 'entziff',
+    // Athletik / Athletics
+    'klettere', 'kletter', 'spring', 'schwimm', 'renne', 'stemm', 'drück', 'aufhebel',
+    'aufbrech', 'eintreten', 'tritt ein', 'kraft', 'wucht', 'zerr', 'schieb', 'hiev',
+    'hochzieh', 'hinaufkletter', 'überwinde', 'festklammer', 'festhalte', 'hang',
+    'ramme', 'trete die tür', 'reiße', 'wuchte', 'springe über',
+    // Akrobatik / Acrobatics
+    'balancier', 'ausweich', 'akrobat', 'sprung', 'abrollen', 'salto',
+    'hinüberspring', 'rolle ab', 'lande sicher', 'falle weich', 'gleichgewicht',
+    'seiltan', 'turne', 'rutsche', 'gleite',
+    // Arkane Kunde / Arcana
+    'identifizier', 'entziffer', 'analysier', 'magische schrift', 'rune',
+    'magisch untersuche', 'erkenne den zauber', 'was für ein zauber', 'magische aura',
+    'arkan', 'verzauber',
+    // Fingerfertigkeit / Sleight of Hand
+    'taschendieb', 'stiehl', 'entwend', 'fingerfert', 'schloss', 'dietrich', 'knack',
+    'öffne', 'aufschließ', 'verschlossen', 'verriegelt', 'abgeschlossen',
+    'schmugg', 'verstecke am körper', 'klau', 'schlossknack', 'picke das schloss',
+    'manipulier', 'fälsche', 'trickse',
+    // Überleben / Survival
+    'spur', 'fährt', 'verfolg', 'orientier', 'navigier', 'wildnis',
+    'jage', 'fische', 'feuer mach', 'lagerfeuer', 'überleb', 'nahrung',
+    'wetter deut', 'weg finde', 'verirr', 'himmelsricht',
+    // Heilkunde / Medicine
+    'verbind', 'stabilisier', 'wunde', 'erstversorg', 'erste hilfe',
+    'heile ohne', 'behandle', 'versorge die wunde', 'blutstill', 'diagnos',
+    'vergiftet', 'krankheit', 'was fehlt',
+    // Naturkunde / Nature
+    'pflanze', 'tier erkenn', 'gift erkenn', 'kräuter',
+    'welches tier', 'was für ein tier', 'essbar', 'giftig', 'naturkund',
+    'pilz', 'beere', 'welche pflanze',
+    // Motiv erkennen / Insight
+    'durchschau', 'lüge', 'absicht', 'motiv', 'aufrichtig', 'vertrau',
+    'ehrlich', 'glaube ihm', 'glaube ihr', 'sagt die wahrheit', 'verschweig',
+    'was verbirg', 'hintergedanke', 'miene deut', 'bluff',
+    // Geschichte / History
+    'erinnere mich', 'weiß ich etwas', 'kenne ich', 'geschichtlich', 'historisch',
+    'habe ich davon gehört', 'ist mir bekannt', 'legendär', 'alte geschichte',
+    // Religion
+    'welcher gott', 'religiös', 'gebet', 'segnung', 'heilig', 'symbol erkenn',
+    'untote erkenn', 'kulti', 'ritual erkenn',
+    // Auftreten / Performance
+    'singe', 'spiele musik', 'tanzen', 'aufführung', 'vortrag', 'musizier',
+    'unterhalte', 'erzähle eine geschichte', 'schauspiel', 'ablenk',
+    // Umgang mit Tieren / Animal Handling
+    'beruhige das tier', 'zähme', 'reite', 'pferd', 'tier beruhig', 'hund',
+    'bändige', 'füttere', 'streichle', 'locke das tier', 'tier kontroll',
+    // Täuschung / Deception (ergänzend zu wantsSocial)
+    'belüge', 'täusch', 'gib mich als', 'verkleid', 'vorgeben', 'vormach',
+    'falsche identität', 'heuchle', 'schauspiel',
+    // Einschüchtern / Intimidation (ergänzend zu wantsSocial)
+    'einschüchter', 'bedrohe', 'flöße angst', 'furchteinflößend',
+    // Überredung / Persuasion (ergänzend zu wantsSocial)
+    'überzeuge', 'berede', 'argumentier', 'appellier', 'flehe',
+    // Allgemein
+    'falle', 'probe', '[würfelwurf]', 'versuche', 'riskier', 'wage',
   ])
 
   const wantsSocial = containsAny(text, [

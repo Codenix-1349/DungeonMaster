@@ -97,6 +97,59 @@ export function calcSkillBonus(abilityScore, level, isProficient) {
   return getAbilityModifier(abilityScore) + (isProficient ? getProficiencyBonus(level) : 0)
 }
 
+const VALID_ABILITY_KEYS = ['str', 'dex', 'con', 'int', 'wis', 'cha']
+
+export function resolveSkillCheck({ skillOrAbility, dc, advantage = null, character }) {
+  const attrs = character?.attributes || {}
+  const level = character?.level || 1
+  const proficiencies = character?.skillProficiencies || []
+
+  const skillDef = SKILLS.find(s => s.key === skillOrAbility)
+  const isSkill = Boolean(skillDef)
+
+  if (!isSkill && !VALID_ABILITY_KEYS.includes(skillOrAbility)) return null
+
+  const abilityKey = isSkill ? skillDef.ability : skillOrAbility
+  const abilityScore = attrs[abilityKey] || 10
+  const isProficient = isSkill && proficiencies.includes(skillOrAbility)
+  const modifier = calcSkillBonus(abilityScore, level, isProficient)
+
+  const roll1 = Math.floor(Math.random() * 20) + 1
+  const roll2 = (advantage === 'advantage' || advantage === 'disadvantage')
+    ? Math.floor(Math.random() * 20) + 1
+    : null
+
+  let d20Result
+  if (advantage === 'advantage') {
+    d20Result = Math.max(roll1, roll2)
+  } else if (advantage === 'disadvantage') {
+    d20Result = Math.min(roll1, roll2)
+  } else {
+    d20Result = roll1
+  }
+
+  const total = d20Result + modifier
+  const success = total >= dc
+
+  const label = isSkill ? skillDef.label : (ATTR_LABELS[abilityKey] || abilityKey.toUpperCase())
+
+  return {
+    label,
+    skillOrAbility,
+    abilityKey,
+    isSkill,
+    isProficient,
+    modifier,
+    d20Result,
+    roll1,
+    roll2,
+    advantage,
+    total,
+    dc,
+    success,
+  }
+}
+
 export const CLASSES = ['Kämpfer', 'Zauberer', 'Kleriker', 'Schurke', 'Waldläufer', 'Paladin', 'Druide', 'Barde', 'Barbar', 'Mönch', 'Hexenmeister', 'Hexer']
 
 export const CLASS_CONFIG = {

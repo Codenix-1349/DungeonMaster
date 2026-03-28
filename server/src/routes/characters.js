@@ -24,7 +24,7 @@ router.get('/', async (req, res, next) => {
   }
 })
 
-// POST /characters — create
+// POST /characters — create or upsert
 router.post('/', async (req, res, next) => {
   try {
     const char = req.body.character
@@ -35,15 +35,17 @@ router.post('/', async (req, res, next) => {
     const { rows } = await pool.query(
       `INSERT INTO characters (id, user_id, name, class, race, level, data)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (id) DO UPDATE
+       SET name = EXCLUDED.name, class = EXCLUDED.class, race = EXCLUDED.race,
+           level = EXCLUDED.level, data = EXCLUDED.data, updated_at = NOW()
+       WHERE characters.user_id = $2
        RETURNING id, data, created_at, updated_at`,
       [char.id, req.user.id, char.name, char.class || '', char.race || '', char.level || 1, JSON.stringify(char)]
     )
 
+    if (rows.length === 0) return res.status(403).json({ error: 'Charakter gehört einem anderen Benutzer.' })
     res.status(201).json({ character: { ...rows[0].data, id: rows[0].id } })
   } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ error: 'Charakter-ID existiert bereits.' })
-    }
     next(err)
   }
 })
