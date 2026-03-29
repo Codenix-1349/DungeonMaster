@@ -593,6 +593,12 @@ ${combat.playerInitiative ? `**Spieler-Initiative:** ${combat.playerInitiative}`
   }
 
   if (adventure) {
+    // Structured adventures: inject global rules from the module
+    const globalRules = adventureContext.module?.globalRules
+    if (globalRules?.length) {
+      prompt += `\n\n## Abenteuer-Regeln (${adventure.title})\n${globalRules.map((r, i) => `${i + 1}. ${r}`).join('\n')}`
+    }
+
     prompt += `\n\n## Relevanter Abenteuerkontext
 **Titel:** ${adventure.title}
 **Aktueller Fokus:** ${adventureContext.sectionTitle || adventure.title}

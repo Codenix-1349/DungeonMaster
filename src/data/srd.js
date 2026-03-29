@@ -496,13 +496,190 @@ function buildAdventureStructure(text = '', title = 'Abenteuer') {
   }
 }
 
+// ─── Structured Adventure Parser ────────────────────────────────────────────
+
+const STRUCTURED_ADVENTURE_VERSION = 3
+
+function isStructuredAdventureText(text = '') {
+  return /\bSECTION_ID:\s*\S+/m.test(text)
+}
+
+function parseStructuredHeader(headerText = '') {
+  const get = key => {
+    const m = new RegExp(`^${key}:\\s*(.+)`, 'mi').exec(headerText)
+    return m ? m[1].trim() : ''
+  }
+  return {
+    moduleId: get('MODULE_ID'),
+    moduleVersion: get('MODULE_VERSION'),
+    system: get('SYSTEM'),
+    startSectionId: get('START_SECTION_ID'),
+    startLocation: get('START_LOCATION'),
+    primaryObjective: get('PRIMARY_OBJECTIVE'),
+    secondaryObjective: get('SECONDARY_OBJECTIVE'),
+    tone: get('TONE'),
+  }
+}
+
+function parseStructuredList(lines, startIdx) {
+  const items = []
+  for (let i = startIdx; i < lines.length; i++) {
+    const line = lines[i]
+    if (/^- /.test(line)) {
+      items.push(line.replace(/^- /, '').trim())
+    } else if (/^\S/.test(line) && !/^##/.test(line)) {
+      break // next key-value field
+    }
+  }
+  return items
+}
+
+function parseStructuredSection(block, index) {
+  const lines = block.split('\n')
+
+  // Title from ## SECTION header
+  const titleLine = lines.find(l => /^## SECTION/.test(l)) || ''
+  const titleMatch = titleLine.match(/^## SECTION\s+\d+:\s*(.+)/)
+  const title = titleMatch ? titleMatch[1].trim() : `Abschnitt ${index + 1}`
+
+  // Key-value extraction
+  const get = key => {
+    const idx = lines.findIndex(l => new RegExp(`^${key}:\\s*`, 'i').test(l))
+    if (idx < 0) return ''
+    return lines[idx].replace(new RegExp(`^${key}:\\s*`, 'i'), '').trim()
+  }
+
+  // List extraction: find key line, collect subsequent `- ` lines
+  const getList = key => {
+    const idx = lines.findIndex(l => new RegExp(`^${key}:`, 'i').test(l))
+    if (idx < 0) return []
+    // Check if value is inline (e.g. "ENEMIES: none")
+    const inline = lines[idx].replace(new RegExp(`^${key}:\\s*`, 'i'), '').trim()
+    if (inline && inline.toLowerCase() !== 'none') return [inline]
+    return parseStructuredList(lines, idx + 1)
+  }
+
+  // Parse EXITS: "Label -> target_id"
+  const rawExits = getList('EXITS')
+  const exits = rawExits.map(e => {
+    const m = e.match(/^(.+?)\s*->\s*(\S+)/)
+    return m ? { label: m[1].trim(), targetId: m[2].trim() } : { label: e, targetId: '' }
+  })
+
+  // SCENE_TEXT: everything after SCENE_TEXT: until end of block
+  const sceneIdx = lines.findIndex(l => /^SCENE_TEXT:/i.test(l))
+  let sceneText = ''
+  if (sceneIdx >= 0) {
+    const firstLine = lines[sceneIdx].replace(/^SCENE_TEXT:\s*/i, '').trim()
+    const rest = lines.slice(sceneIdx + 1).join('\n').replace(/---\s*$/, '').trim()
+    sceneText = firstLine ? `${firstLine}\n${rest}`.trim() : rest
+  }
+
+  const id = get('SECTION_ID')
+  const location = get('LOCATION')
+  const allText = `${title} ${location} ${sceneText} ${getList('VISIBLE_FEATURES').join(' ')} ${getList('NPCS').join(' ')} ${getList('DISCOVERABLE_CLUES').join(' ')}`
+
+  return {
+    id,
+    index,
+    title,
+    location,
+    type: get('SECTION_TYPE'),
+    objective: get('CURRENT_OBJECTIVE'),
+    requiresFlags: getList('REQUIRES_FLAGS'),
+    blocksIfFlags: getList('BLOCKS_IF_FLAGS'),
+    setsOnEntry: getList('SETS_FLAGS_ON_ENTRY'),
+    canSetFlags: getList('CAN_SET_FLAGS'),
+    visibleFeatures: getList('VISIBLE_FEATURES'),
+    interactiveObjects: getList('INTERACTIVE_OBJECTS'),
+    npcs: getList('NPCS'),
+    enemies: getList('ENEMIES'),
+    exits,
+    transitionRules: getList('TRANSITION_RULES'),
+    openThreads: getList('OPEN_THREADS'),
+    clues: getList('DISCOVERABLE_CLUES'),
+    suggestedActions: getList('SUGGESTED_ACTIONS'),
+    sceneText,
+    // Compatibility fields for existing scene state logic
+    summary: firstSentences(sceneText, 220),
+    keywords: extractKeywords(allText, 10),
+    searchText: allText.toLowerCase(),
+    chunkIndexes: [index], // 1 chunk per section for compatibility
+  }
+}
+
+function parseGlobalRules(headerText = '') {
+  const rulesStart = headerText.indexOf('## GLOBAL_RUNTIME_RULES')
+  if (rulesStart < 0) return []
+  const rulesBlock = headerText.slice(rulesStart)
+  const nextSection = rulesBlock.indexOf('\n## ', 1)
+  const rulesText = nextSection > 0 ? rulesBlock.slice(0, nextSection) : rulesBlock
+  return rulesText.split('\n')
+    .filter(l => /^\d+\.\s+/.test(l))
+    .map(l => l.replace(/^\d+\.\s+/, '').trim())
+}
+
+function parseGlobalPlotFlags(headerText = '') {
+  const flagsStart = headerText.indexOf('## GLOBAL_PLOT_FLAGS')
+  if (flagsStart < 0) return []
+  const flagsBlock = headerText.slice(flagsStart)
+  const nextSection = flagsBlock.indexOf('\n## ', 1)
+  const flagsText = nextSection > 0 ? flagsBlock.slice(0, nextSection) : flagsBlock
+  return flagsText.split('\n')
+    .filter(l => /^- /.test(l))
+    .map(l => l.replace(/^- /, '').trim())
+}
+
+function parseStructuredAdventure(text = '', title = 'Abenteuer') {
+  // Split into header (before first ## SECTION) and section blocks
+  const sectionSplitRegex = /(?=^## SECTION\b)/gm
+  const parts = text.split(sectionSplitRegex)
+
+  const headerText = parts[0] || ''
+  const sectionBlocks = parts.slice(1)
+
+  const module = {
+    ...parseStructuredHeader(headerText),
+    globalRules: parseGlobalRules(headerText),
+    plotFlags: parseGlobalPlotFlags(headerText),
+  }
+
+  const sections = sectionBlocks.map((block, i) => parseStructuredSection(block, i))
+
+  // Generate compatibility chunks from sceneText
+  const chunks = sections.map((section, i) => makeChunkBase(
+    i,
+    section.id,
+    section.title,
+    section.sceneText || section.summary,
+  ))
+
+  return {
+    version: STRUCTURED_ADVENTURE_VERSION,
+    format: 'structured',
+    module,
+    sections,
+    chunks,
+  }
+}
+
 function buildAdventureRecord(entry) {
   if (!entry) return null
 
   const text = String(entry.text || '').trim()
-  const structure = entry.structure?.version === ADVENTURE_STRUCTURE_VERSION
-    ? entry.structure
-    : buildAdventureStructure(text, entry.title)
+
+  let structure
+  if (isStructuredAdventureText(text)) {
+    // Structured adventure format (version 3)
+    structure = entry.structure?.version === STRUCTURED_ADVENTURE_VERSION && entry.structure?.format === 'structured'
+      ? entry.structure
+      : parseStructuredAdventure(text, entry.title)
+  } else {
+    // Legacy prose format (version 2)
+    structure = entry.structure?.version === ADVENTURE_STRUCTURE_VERSION
+      ? entry.structure
+      : buildAdventureStructure(text, entry.title)
+  }
 
   return {
     ...entry,
@@ -675,26 +852,37 @@ function detectTransitionReason(previousSection, currentSection, latestUser = ''
 
 export function createInitialSceneState(adventure) {
   const normalizedAdventure = normalizeAdventureEntry(adventure)
-  const firstSection = normalizedAdventure?.structure?.sections?.[0] || null
+  const structure = normalizedAdventure?.structure
+
+  // For structured adventures, use startSectionId from module header
+  let startSection = null
+  if (structure?.format === 'structured' && structure.module?.startSectionId) {
+    startSection = findSectionById(structure, structure.module.startSectionId)
+  }
+  const firstSection = startSection || structure?.sections?.[0] || null
+
   const firstChunks = firstSection
-    ? selectRelevantChunks(normalizedAdventure.structure, firstSection, [], 2).map(chunk => chunk.index)
+    ? selectRelevantChunks(structure, firstSection, [], 2).map(chunk => chunk.index)
     : []
+
+  // Structured adventures provide richer initial data
+  const isStructured = structure?.format === 'structured'
 
   return {
     version: SCENE_STATE_VERSION,
     turnCount: 0,
     currentSectionId: firstSection?.id || null,
     currentSectionTitle: firstSection?.title || normalizedAdventure?.title || 'Abenteuerstart',
-    currentLocation: firstSection?.title || normalizedAdventure?.title || 'Unbekannter Ort',
+    currentLocation: (isStructured ? firstSection?.location : firstSection?.title) || normalizedAdventure?.title || 'Unbekannter Ort',
     relevantChunkIndexes: firstChunks,
     visitedSectionIds: firstSection ? [firstSection.id] : [],
-    currentObjective: 'Die erste Szene betreten und Informationen sammeln.',
-    activeQuest: firstSection?.summary || 'Das Abenteuer beginnen und die Lage erfassen.',
+    currentObjective: (isStructured ? firstSection?.objective : null) || 'Die erste Szene betreten und Informationen sammeln.',
+    activeQuest: (isStructured ? structure.module?.primaryObjective : null) || firstSection?.summary || 'Das Abenteuer beginnen und die Lage erfassen.',
     lastPlayerAction: '',
     lastOutcome: '',
     summary: firstSection?.summary || 'Das Abenteuer beginnt und die erste Szene wird aufgebaut.',
-    discoveredClues: firstSection?.keywords?.slice(0, 3) || [],
-    openThreads: firstSection?.title ? [`Den Abschnitt „${firstSection.title}“ erkunden.`] : [],
+    discoveredClues: (isStructured ? firstSection?.clues?.slice(0, 3) : firstSection?.keywords?.slice(0, 3)) || [],
+    openThreads: (isStructured ? firstSection?.openThreads?.slice(0, 4) : null) || (firstSection?.title ? [`Den Abschnitt „${firstSection.title}” erkunden.`] : []),
     notableElements: firstSection?.keywords?.slice(0, 6) || [],
     recentSceneChanges: [],
     stableSectionTurns: 1,
@@ -737,9 +925,27 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
   const previousScore = (scoredSections.find(entry => entry.section.id === previousSection?.id)?.score) ?? 0
   const explicitMove = /\b(gehe|betrete|betritt|verlasse|folge|öffne|steige|klettere|reise|laufe|renne|krieche)\b/i.test(latestUser)
   const assistantAnchorsNewSection = Boolean(bestSection?.title && latestAssistant.toLowerCase().includes(bestSection.title.toLowerCase()) && bestSection.id !== previousSection?.id)
-  const shouldTransition = bestSection.id !== previousSection?.id && (explicitMove || assistantAnchorsNewSection || bestScore >= previousScore + 4)
 
-  const currentSection = shouldTransition ? bestSection : (previousSection || bestSection)
+  // Structured adventures: match player/AI text against EXIT labels for direct transitions
+  let exitTargetSection = null
+  if (structure.format === 'structured' && previousSection?.exits?.length) {
+    const combined = `${latestUser} ${latestAssistant}`.toLowerCase()
+    for (const exit of previousSection.exits) {
+      if (!exit.targetId || exit.targetId === previousSection.id) continue
+      const labelWords = exit.label.toLowerCase().split(/\s+/).filter(w => w.length >= 4)
+      const matchCount = labelWords.filter(w => combined.includes(w)).length
+      if (matchCount >= Math.max(1, Math.ceil(labelWords.length * 0.5))) {
+        exitTargetSection = findSectionById(structure, exit.targetId)
+        if (exitTargetSection) break
+      }
+    }
+  }
+
+  const shouldTransition = exitTargetSection
+    ? true
+    : (bestSection.id !== previousSection?.id && (explicitMove || assistantAnchorsNewSection || bestScore >= previousScore + 4))
+
+  const currentSection = exitTargetSection || (shouldTransition ? bestSection : (previousSection || bestSection))
   const relevantChunks = selectRelevantChunks(structure, currentSection, searchTokens, combat?.active ? 3 : 2)
   const visited = new Set(previous.visitedSectionIds || [])
   visited.add(currentSection.id)
@@ -750,7 +956,11 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     ? `${summaryBase} Letzte Entwicklung: ${latestOutcome}`
     : summaryBase
 
-  const objective = deriveObjectiveFromUserText(latestUser, previous.currentObjective)
+  // Structured adventures: use section's objective on transition, otherwise derive from user text
+  const isStructured = structure.format === 'structured'
+  const objective = (isStructured && shouldTransition && currentSection.objective)
+    ? currentSection.objective
+    : deriveObjectiveFromUserText(latestUser, isStructured ? (currentSection.objective || previous.currentObjective) : previous.currentObjective)
   const transitionReason = shouldTransition
     ? detectTransitionReason(previousSection, currentSection, latestUser, latestAssistant)
     : (previous.lastTransitionReason || 'Abschnitt bleibt stabil.')
@@ -766,7 +976,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     turnCount: Number(previous.turnCount || 0) + (recentMessages.length ? 1 : 0),
     currentSectionId: currentSection.id,
     currentSectionTitle: currentSection.title,
-    currentLocation: currentSection.title,
+    currentLocation: (isStructured ? currentSection.location : null) || currentSection.title,
     relevantChunkIndexes: relevantChunks.map(chunk => chunk.index),
     visitedSectionIds: [...visited],
     currentObjective: objective,
@@ -777,13 +987,66 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     discoveredClues: normalizeShortList([
       ...(previous.discoveredClues || []),
       ...extractCluesFromMessages(recentMessages, currentSection),
+      ...(isStructured && shouldTransition ? (currentSection.clues || []) : []),
     ], 4),
-    openThreads: extractOpenThreads(recentMessages, objective, currentSection),
+    openThreads: (isStructured && currentSection.openThreads?.length)
+      ? normalizeShortList([...(previous.openThreads || []), ...currentSection.openThreads], 4)
+      : extractOpenThreads(recentMessages, objective, currentSection),
     notableElements: mergeNotableElements(currentSection, `${latestUser} ${latestAssistant}`),
     recentSceneChanges,
     stableSectionTurns: shouldTransition ? 1 : Number(previous.stableSectionTurns || 0) + 1,
     lastTransitionReason: transitionReason,
     lastUpdatedAt: new Date().toISOString(),
+  }
+}
+
+// ─── Structured adventure: compact AI context builder ────────────────────────
+
+function buildStructuredAdventureContext(structure, sceneState) {
+  const section = findSectionById(structure, sceneState?.currentSectionId) || structure.sections[0]
+  if (!section) return { text: 'Kein Abenteuerabschnitt verfügbar.', selectedIndexes: [], sectionTitle: '' }
+
+  const lines = []
+  lines.push(`## Aktuelle Szene: ${section.title}`)
+  if (section.type) lines.push(`TYP: ${section.type}`)
+  if (section.objective) lines.push(`ZIEL: ${section.objective}`)
+
+  // Visible elements — ONLY these may be described to the player
+  if (section.visibleFeatures?.length) lines.push(`SICHTBAR (nur diese Dinge existieren hier): ${section.visibleFeatures.join(' | ')}`)
+  if (section.npcs?.length) lines.push(`ANWESENDE NPCS (nur diese sind hier, keine anderen erfinden): ${section.npcs.join(' | ')}`)
+  if (section.enemies?.length) lines.push(`GEGNER: ${section.enemies.join(' | ')}`)
+  if (section.exits?.length) {
+    lines.push(`AUSGÄNGE: ${section.exits.map(e => e.label).join(' | ')}`)
+  }
+  if (section.interactiveObjects?.length) lines.push(`OBJEKTE: ${section.interactiveObjects.join(' | ')}`)
+  if (section.openThreads?.length) lines.push(`FÄDEN: ${section.openThreads.join(' | ')}`)
+  if (section.suggestedActions?.length) lines.push(`VORGESCHLAGENE AKTIONEN: ${section.suggestedActions.join(' | ')}`)
+
+  // Internal GM instructions — the AI must follow these but NEVER reveal them directly
+  const internal = []
+  if (section.transitionRules?.length) internal.push(`ÜBERGANGSREGELN: ${section.transitionRules.join(' | ')}`)
+  if (section.clues?.length) internal.push(`ENTDECKBARE HINWEISE (NUR enthüllen wenn Spieler aktiv sucht/fragt — NIEMALS vorweg verraten): ${section.clues.join(' | ')}`)
+  if (internal.length) {
+    lines.push(`\n## Interne Spielleiter-Anweisungen (NICHT dem Spieler mitteilen)`)
+    lines.push(...internal)
+  }
+
+  // Scene text as prose for atmosphere
+  if (section.sceneText) lines.push(`\n${section.sceneText}`)
+
+  // Neighboring exits — title only, no objectives (avoids spoilers)
+  const exitSections = section.exits
+    ?.map(e => structure.sections.find(s => s.id === e.targetId))
+    .filter(Boolean) || []
+  if (exitSections.length) {
+    lines.push(`\nNÄCHSTE SZENEN: ${exitSections.map(s => s.title).join(' | ')}`)
+  }
+
+  return {
+    text: lines.join('\n'),
+    selectedIndexes: section.chunkIndexes || [section.index],
+    sectionTitle: section.title,
+    module: structure.module || null,
   }
 }
 
@@ -802,6 +1065,12 @@ export function buildRelevantAdventureContext({ adventure, sceneState = null, me
     ? sceneState
     : deriveSceneState({ adventure: normalizedAdventure, previousSceneState: sceneState, messages, combat })
 
+  // ── Structured adventures: compact key-value format ──
+  if (structure.format === 'structured') {
+    return buildStructuredAdventureContext(structure, effectiveSceneState)
+  }
+
+  // ── Prose adventures: existing chunk-based logic ──
   const currentSection = findSectionById(structure, effectiveSceneState.currentSectionId) || structure.sections[0]
   const selectedChunks = (effectiveSceneState.relevantChunkIndexes || [])
     .map(index => structure.chunks[index])
