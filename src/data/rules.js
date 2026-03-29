@@ -36,11 +36,8 @@ export const SRD_RULE_BLOCKS = {
   combat: {
     title: 'Kampf',
     text: `
-- Initiative: d20 + DEX-Modifikator. Höhere Initiative handelt zuerst.
-- Angriff: d20 + passender Attributsmodifikator + Übungsbonus gegen die AC des Ziels.
-- Nahkampf nutzt meist Stärke, Fernkampf meist Geschicklichkeit.
-- Schaden wird mit dem passenden Schadenswürfel gewürfelt; beschreibe das Ergebnis erzählerisch.
-- Wenn ein Kampf startet, nutze das Format **KAMPF BEGINNT**. Nach dem Ende: **KAMPF VORBEI**.
+- Initiative: d20 + DEX-Modifikator. Nahkampf nutzt Stärke, Fernkampf Geschicklichkeit.
+- Angriff: d20 + Attributsmodifikator + Übungsbonus gegen AC.
 `,
   },
   spellcasting: {
@@ -54,16 +51,10 @@ export const SRD_RULE_BLOCKS = {
 `,
   },
   abilityChecks: {
-    title: 'Attributsproben & Fertigkeitsartige Situationen',
+    title: 'Attributsproben',
     text: `
-- Nutze Attributsproben für Schleichen, Wahrnehmung, Nachforschen, Klettern, Einschüchtern, Überreden und ähnliche Aktionen.
-- Wenn eine Probe nötig ist, setze am Ende des Absatzes: [PROBE:fertigkeit|SG:schwierigkeit]
-- Beispiele: [PROBE:stealth|SG:14], [PROBE:athletics|SG:12], [PROBE:str|SG:15]
-- Bei Vorteil/Nachteil: [PROBE:stealth|SG:14|VORTEIL] oder [PROBE:perception|SG:12|NACHTEIL]
-- SG-Richtwerte: leicht 10, mittel 13, schwer 15, sehr schwer 18.
-- Verlange keine Probe für triviale Handlungen ohne Risiko.
 - Gute Ideen dürfen Vorteile, leichtere SG oder automatische Teilerfolge rechtfertigen.
-- Du erfindest KEINE Würfelergebnisse. Setze nur den Tag — die App rollt und meldet das Ergebnis.
+- Verlange keine Probe für triviale Handlungen ohne Risiko.
 `,
   },
   social: {
@@ -85,15 +76,9 @@ export const SRD_RULE_BLOCKS = {
   equipment: {
     title: 'Ausrüstung & Gegenstände',
     text: `
-- Der Charakter hat drei Ausrüstungsplätze: Waffe, Rüstung, Schild. Ausgerüstete Gegenstände beeinflussen AC, Angriff und Schaden mechanisch.
-- Nutze Inventar und Ausrüstung aus dem App-Kontext als verbindliche Grundlage.
-- Wenn der Spieler Beute findet, markiere sie mit [BEUTE:Gegenstandsname].
-- Wenn der Spieler Gold erhält, markiere es mit [GM:+Betrag].
-- Wenn ein Gegenstand verloren geht, markiere ihn mit [VERLOREN:Gegenstandsname].
-- Wenn ein Gegenstand kreativ verwendet wird, bewerte das fair und pragmatisch.
-- Heiltränke, Werkzeuge, Seile, Lichtquellen und ähnliche Gegenstände dürfen klare praktische Effekte haben.
-- Biete Heilung (Heiltränke, Rasten etc.) NIEMALS als Auswahlmöglichkeit an, wenn der Charakter bereits volle HP hat (currentHP == maxHP).
-- Beachte die Tragkraft des Charakters — übermäßig schwere Beute ist unrealistisch.
+- Drei Ausrüstungsplätze: Waffe, Rüstung, Schild. Nutze Inventar aus dem App-Kontext als verbindlich.
+- Kreative Gegenstandsverwendung fair bewerten. Heiltränke, Werkzeuge etc. haben klare Effekte.
+- Biete Heilung NIEMALS an wenn der Charakter volle HP hat (currentHP == maxHP).
 `,
   },
   conditions: {

@@ -338,14 +338,21 @@ export default function GamePage() {
 
   const buildHistory = useCallback((sourceMessages = gameLog) => {
     const trimmedHistory = sourceMessages.slice(-12)
-    return trimmedHistory.map(message => ({
-      role: message.role === 'assistant' ? 'assistant' : 'user',
+    return trimmedHistory.map((message, index) => {
+      if (message.role !== 'assistant') {
+        return { role: 'user', content: message.content }
+      }
       // Strip formatted probe hints (🎲 Label, SG N) from history so the AI
       // doesn't mimic the display format instead of using [PROBE_HINWEIS:] tags
-      content: message.role === 'assistant'
-        ? message.content.replace(/\s*\(🎲\s*[^,]+,\s*SG\s*\d+\)/g, '')
-        : message.content,
-    }))
+      let content = message.content.replace(/\s*\(🎲\s*[^,]+,\s*SG\s*\d+\)/g, '')
+      // For older assistant messages (not the last 2), strip trailing numbered
+      // choice lists to save tokens — the AI only needs the narrative, not the
+      // options that were already chosen or ignored
+      if (index < trimmedHistory.length - 2) {
+        content = content.replace(/(?:\n\s*\*{0,2}\d+[.)]\s+.+)+\s*$/, '').trimEnd()
+      }
+      return { role: 'assistant', content }
+    })
   }, [gameLog])
 
   const handleSend = useCallback(async (userText, options = {}) => {
