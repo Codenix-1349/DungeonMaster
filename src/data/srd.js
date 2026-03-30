@@ -837,6 +837,120 @@ function extractDiscoveredNpcs(messages = [], sectionNpcs = []) {
   return sectionNpcs.filter(npc => text.toLowerCase().includes(npc.toLowerCase()))
 }
 
+function extractFactsFromMessages(messages = []) {
+  const factHints = ['erfahre', 'erfährt', 'enthüllt', 'offenbart', 'verrät', 'erzählt', 'berichtet', 'gesteht', 'warnt', 'erklärt', 'bestätigt', 'entdeckt', 'stellt fest', 'erkennt']
+  const assistantMsgs = messages.filter(m => m.role === 'assistant')
+  const facts = []
+
+  for (const msg of assistantMsgs) {
+    for (const sentence of splitSentences(msg.content)) {
+      const lower = sentence.toLowerCase()
+      if (factHints.some(hint => lower.includes(hint)) && sentence.length >= 20 && sentence.length <= 200) {
+        facts.push(sentence.trim())
+      }
+    }
+  }
+
+  return normalizeShortList(facts, 4)
+}
+
+function extractFactionsFromMessages(messages = [], sectionData = null) {
+  // Extract from section data first (structured adventures define factions)
+  const sectionFactions = sectionData?.factions || []
+  const text = messages.map(m => m.content).join(' ').toLowerCase()
+  // Return factions that have been mentioned in the conversation
+  const mentioned = sectionFactions.filter(f => text.includes(f.toLowerCase()))
+
+  // Also detect common faction keywords from assistant text
+  const factionHints = ['gilde', 'orden', 'kult', 'bande', 'fraktion', 'clan', 'stamm', 'kirche', 'bruderschaft', 'bund', 'armee', 'legion', 'rat', 'zirkel']
+  const assistantText = messages.filter(m => m.role === 'assistant').map(m => m.content).join(' ')
+  for (const sentence of splitSentences(assistantText)) {
+    const lower = sentence.toLowerCase()
+    if (factionHints.some(hint => lower.includes(hint)) && sentence.length >= 10 && sentence.length <= 120) {
+      mentioned.push(sentence.trim())
+    }
+  }
+
+  return normalizeShortList([...new Set(mentioned)], 4)
+}
+
+// ── NPC Disposition / Suspicion Heuristics ──────────────────────────────────
+
+const DISPOSITION_POSITIVE = /\b(lächelt|freundlich|vertraut|nickt.*zustimmend|hilfsbereit|dankbar|umarmt|lacht|willkommen|herzlich|begeistert|freut sich|segnet|belohnt|offenbart|anvertraut)\b/i
+const DISPOSITION_NEGATIVE = /\b(wütend|verärgert|misstrauisch|abweisend|feindlich|droht|knurrt|verflucht|angreift|zornig|verweigert|wendet.*ab|verschränkt.*Arme|spuckt|beleidigt)\b/i
+const SUSPICION_INCREASE = /\b(lüg|täusch|verdächtig|misstrauen|betrüg|hintergeh|stehlen|einbrech|gift|verrät|falsch|schwindel|durchschaut|ertappt|belausch)\b/i
+const SUSPICION_DECREASE = /\b(vertrau|überzeugt|glaubt|beruhigt|besänftigt|ehrlich|aufrichtig|beweist|wahrheit|offen.*gesprochen|gestanden)\b/i
+
+function inferDispositionShift(assistantText = '') {
+  const lower = assistantText.toLowerCase()
+  const pos = (lower.match(DISPOSITION_POSITIVE) || []).length
+  const neg = (lower.match(DISPOSITION_NEGATIVE) || []).length
+  if (pos > neg) return 1
+  if (neg > pos) return -1
+  return 0
+}
+
+function inferSuspicionShift(assistantText = '', userText = '') {
+  const combined = `${assistantText} ${userText}`.toLowerCase()
+  const up = (combined.match(SUSPICION_INCREASE) || []).length
+  const down = (combined.match(SUSPICION_DECREASE) || []).length
+  if (up > down) return 1
+  if (down > up) return -1
+  return 0
+}
+
+const DISPOSITION_SCALE = ['feindlich', 'misstrauisch', 'neutral', 'freundlich', 'verbündet']
+
+function applyDispositionShift(current = 'neutral', shift = 0) {
+  if (shift === 0) return current
+  const idx = DISPOSITION_SCALE.indexOf(current)
+  const currentIdx = idx >= 0 ? idx : 2 // default to neutral
+  const newIdx = Math.max(0, Math.min(DISPOSITION_SCALE.length - 1, currentIdx + shift))
+  return DISPOSITION_SCALE[newIdx]
+}
+
+// ── Object & NPC State extraction ────────────────────────────────────────────
+
+const NPC_DEAD_PATTERN = /\b(stirbt|tot|getötet|besiegt|fällt.*leblos|niedergestreckt|erschlagen|vernichtet)\b/i
+const NPC_FLED_PATTERN = /\b(flieht|flüchtet|rennt.*davon|verschwindet|entkommt|zieht.*zurück)\b/i
+const OBJ_OPEN_PATTERN = /\b(öffnet|geöffnet|aufgeschlossen|entriegelt|aufgebrochen|aufgestoßen)\b/i
+const OBJ_CLOSED_PATTERN = /\b(schließt|verschlossen|verriegelt|versperrt|zugeschlagen)\b/i
+const OBJ_DESTROYED_PATTERN = /\b(zerstört|zerbrochen|zertrümmert|eingestürzt|vernichtet|zerplatzt|zerfallen)\b/i
+
+function extractNpcStateChanges(assistantText = '', knownNpcs = []) {
+  const changes = {}
+  if (!knownNpcs.length || !assistantText) return changes
+  const lower = assistantText.toLowerCase()
+
+  for (const npc of knownNpcs) {
+    const npcLower = npc.toLowerCase()
+    // Check nearby context: find sentences mentioning this NPC
+    for (const sentence of splitSentences(assistantText)) {
+      if (!sentence.toLowerCase().includes(npcLower)) continue
+      if (NPC_DEAD_PATTERN.test(sentence)) changes[npc] = 'dead'
+      else if (NPC_FLED_PATTERN.test(sentence)) changes[npc] = 'fled'
+    }
+  }
+  return changes
+}
+
+function extractObjectStateChanges(assistantText = '', section = null) {
+  const changes = {}
+  const objects = section?.interactiveObjects || []
+  if (!objects.length || !assistantText) return changes
+
+  for (const obj of objects) {
+    const objLower = obj.toLowerCase()
+    for (const sentence of splitSentences(assistantText)) {
+      if (!sentence.toLowerCase().includes(objLower)) continue
+      if (OBJ_DESTROYED_PATTERN.test(sentence)) changes[obj] = 'destroyed'
+      else if (OBJ_OPEN_PATTERN.test(sentence)) changes[obj] = 'open'
+      else if (OBJ_CLOSED_PATTERN.test(sentence)) changes[obj] = 'closed'
+    }
+  }
+  return changes
+}
+
 // Detect active NPC from recent messages (NPC the player is talking to)
 function detectActiveNpc(messages = [], knownNpcs = []) {
   if (!knownNpcs.length) return null
@@ -854,14 +968,46 @@ function detectActiveNpc(messages = [], knownNpcs = []) {
 }
 
 // Build compact memory summary from key state
-function buildMemorySummary(previous, currentSection, latestOutcome, objective) {
-  const parts = []
-  if (previous.memorySummary) parts.push(previous.memorySummary)
-  if (latestOutcome) parts.push(latestOutcome)
-  // Keep compact: max 300 chars, prioritize recent
-  const raw = parts.join(' ').trim()
-  if (raw.length <= 300) return raw
-  return raw.slice(raw.length - 300).replace(/^\S*\s/, '')
+function buildMemorySummary(previous, currentSection, latestOutcome, objective, isTransition = false) {
+  const MAX_LEN = 400
+  const prev = previous.memorySummary || ''
+
+  // On scene transitions: insert a landmark marker to preserve key story beats
+  const landmark = isTransition && currentSection?.title
+    ? `[→ ${currentSection.title}]`
+    : ''
+
+  // Extract the most meaningful sentence from the latest outcome (not just first N chars)
+  let condensedOutcome = ''
+  if (latestOutcome) {
+    const sentences = splitSentences(latestOutcome)
+    // Prefer sentences with action/discovery keywords over pure description
+    const meaningful = sentences.find(s =>
+      /\b(entdeck|erfahr|erhalt|besieg|öffn|find|flieht|stirbt|warnt|verrät|überzeug|scheitert|gelingt)\b/i.test(s)
+    )
+    condensedOutcome = meaningful || sentences[0] || ''
+    if (condensedOutcome.length > 160) condensedOutcome = condensedOutcome.slice(0, 157) + '...'
+  }
+
+  // Build new summary: landmarks + condensed outcomes
+  const newPart = [landmark, condensedOutcome].filter(Boolean).join(' ')
+  if (!newPart && !prev) return ''
+  if (!newPart) return prev.length <= MAX_LEN ? prev : prev.slice(prev.length - MAX_LEN).replace(/^\S*\s/, '')
+
+  const combined = prev ? `${prev} ${newPart}` : newPart
+  if (combined.length <= MAX_LEN) return combined
+
+  // When truncating, try to preserve landmark markers [→ ...] as story structure
+  const landmarks = []
+  const landmarkRe = /\[→ [^\]]+\]/g
+  let lm
+  while ((lm = landmarkRe.exec(combined)) !== null) landmarks.push(lm[0])
+
+  // Keep last 2 landmarks + recent text
+  const recentLandmarks = landmarks.slice(-2).join(' ')
+  const recentText = combined.slice(combined.length - (MAX_LEN - recentLandmarks.length - 1)).replace(/^\S*\s/, '')
+  const result = recentLandmarks ? `${recentLandmarks} ${recentText}` : recentText
+  return result.slice(0, MAX_LEN)
 }
 
 function detectTransitionReason(previousSection, currentSection, latestUser = '', latestAssistant = '') {
@@ -939,7 +1085,6 @@ export function createInitialSceneState(adventure) {
     memorySummary: '',
 
     // ── Scene State (current narrative frame) ──
-    currentSectionId: firstSection?.id || null,
     currentSectionTitle: firstSection?.title || normalizedAdventure?.title || 'Abenteuerstart',
     currentLocation: (isStructured ? firstSection?.location : firstSection?.title) || normalizedAdventure?.title || 'Unbekannter Ort',
     relevantChunkIndexes: firstChunks,
@@ -949,8 +1094,6 @@ export function createInitialSceneState(adventure) {
     lastPlayerAction: '',
     lastOutcome: '',
     summary: firstSection?.summary || 'Das Abenteuer beginnt und die erste Szene wird aufgebaut.',
-    discoveredClues: [],
-    knownNpcs: [],
     openThreads: (isStructured ? firstSection?.openThreads?.slice(0, 4) : null) || (firstSection?.title ? [`Den Abschnitt „${firstSection.title}” erkunden.`] : []),
     notableElements: firstSection?.keywords?.slice(0, 6) || [],
     recentSceneChanges: [],
@@ -1002,9 +1145,25 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
   const latestAssistant = [...recentMessages].reverse().find(message => message.role === 'assistant')?.content || ''
   const combinedRecentText = recentMessages.map(message => message.content).join(' ')
   const searchTokens = tokenizeText(`${combinedRecentText} ${previous.currentSectionTitle || ''} ${previous.currentObjective || ''} ${previous.activeQuest || ''}`, 4)
-  const previousSection = findSectionById(structure, previous.currentSectionId) || structure.sections[0]
+  const previousSection = findSectionById(structure, previous.gmState?.currentSectionId) || structure.sections[0]
+
+  // Flag-gate check: section accessible only if all requiresFlags are set and no blocksIfFlags are set
+  const currentFlags = previous.gmState?.plotFlags || {}
+  const isSectionAccessible = (section) => {
+    if (section.requiresFlags?.length) {
+      if (!section.requiresFlags.every(f => currentFlags[f])) return false
+    }
+    if (section.blocksIfFlags?.length) {
+      if (section.blocksIfFlags.some(f => currentFlags[f])) return false
+    }
+    return true
+  }
 
   const scoredSections = structure.sections.map(section => {
+    // Flag-gated sections are unreachable (unless it's the current section)
+    if (section.id !== previousSection?.id && !isSectionAccessible(section)) {
+      return { section, score: -Infinity }
+    }
     let score = scoreSectionAgainstTokens(section, searchTokens)
     score += computeSectionTransitionWeight(section, previousSection, latestUser)
     if (combat?.active && /(kampf|gegner|initiative|angriff|schaden|boss)/i.test(section.searchText)) score += 3
@@ -1030,8 +1189,12 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
       const labelWords = exit.label.toLowerCase().split(/\s+/).filter(w => w.length >= 4)
       const matchCount = labelWords.filter(w => combined.includes(w)).length
       if (matchCount >= Math.max(1, Math.ceil(labelWords.length * 0.5))) {
-        exitTargetSection = findSectionById(structure, exit.targetId)
-        if (exitTargetSection) break
+        const candidate = findSectionById(structure, exit.targetId)
+        // Only allow transition if target section's flag-gates are satisfied
+        if (candidate && isSectionAccessible(candidate)) {
+          exitTargetSection = candidate
+          break
+        }
       }
     }
   }
@@ -1078,6 +1241,12 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     for (const flag of currentSection.setsOnEntry) newPlotFlags[flag] = true
   }
 
+  // Object & NPC state changes from AI narrative
+  const npcStateChanges = extractNpcStateChanges(latestAssistant, prevPk.knownNpcs || [])
+  const objectStateChanges = extractObjectStateChanges(latestAssistant, currentSection)
+  const newNpcStates = { ...(prevGm.npcStates || {}), ...npcStateChanges }
+  const newObjectStates = { ...(prevGm.objectStates || {}), ...objectStateChanges }
+
   const visitCounts = { ...(prevGm.sectionVisitCounts || {}) }
   visitCounts[currentSection.id] = (visitCounts[currentSection.id] || 0) + (shouldTransition || !previous.turnCount ? 1 : 0)
 
@@ -1089,33 +1258,46 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
 
   // Player Knowledge: accumulate from messages
   const newKnownNpcs = [...new Set([
-    ...(prevPk.knownNpcs || previous.knownNpcs || []),
+    ...(prevPk.knownNpcs || []),
     ...extractDiscoveredNpcs(recentMessages, currentSection.npcs || []),
   ])]
   const newClues = normalizeShortList([
-    ...(prevPk.discoveredClues || previous.discoveredClues || []),
+    ...(prevPk.discoveredClues || []),
     ...extractCluesFromMessages(recentMessages),
   ], 8)
   const newKnownPlaces = [...new Set([
     ...(prevPk.knownPlaces || []),
     ...(shouldTransition ? [currentSection.title] : []),
   ])]
+  const newFacts = normalizeShortList([
+    ...(prevPk.knownFacts || []),
+    ...extractFactsFromMessages(recentMessages),
+  ], 8)
+  const newFactions = normalizeShortList([
+    ...(prevPk.knownFactions || []),
+    ...extractFactionsFromMessages(recentMessages, currentSection),
+  ], 6)
 
-  // Dialogue State: detect active NPC
+  // Dialogue State: detect active NPC + update disposition/suspicion
   const activeNpc = detectActiveNpc(recentMessages, newKnownNpcs)
   const npcRelations = { ...(prevDlg.npcRelations || {}) }
   if (activeNpc && !npcRelations[activeNpc]) {
     npcRelations[activeNpc] = { disposition: 'neutral', suspicion: 0, lastTopic: '' }
   }
   if (activeNpc && npcRelations[activeNpc]) {
+    const prev = npcRelations[activeNpc]
+    const dispositionShift = inferDispositionShift(latestAssistant)
+    const suspicionShift = inferSuspicionShift(latestAssistant, latestUser)
     npcRelations[activeNpc] = {
-      ...npcRelations[activeNpc],
+      ...prev,
+      disposition: applyDispositionShift(prev.disposition, dispositionShift),
+      suspicion: Math.max(0, Math.min(10, (prev.suspicion || 0) + suspicionShift)),
       lastTopic: truncateText(latestUser, 80),
     }
   }
 
   // Memory Summary
-  const memorySummary = buildMemorySummary(previous, currentSection, latestOutcome, objective)
+  const memorySummary = buildMemorySummary(previous, currentSection, latestOutcome, objective, shouldTransition)
 
   return {
     version: SCENE_STATE_VERSION,
@@ -1125,8 +1307,8 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     gmState: {
       currentSectionId: currentSection.id,
       plotFlags: newPlotFlags,
-      objectStates: { ...(prevGm.objectStates || {}) },
-      npcStates: { ...(prevGm.npcStates || {}) },
+      objectStates: newObjectStates,
+      npcStates: newNpcStates,
       triggeredEvents,
       sectionVisitCounts: visitCounts,
     },
@@ -1136,8 +1318,8 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
       knownNpcs: newKnownNpcs,
       knownPlaces: newKnownPlaces,
       discoveredClues: newClues,
-      knownFactions: [...(prevPk.knownFactions || [])],
-      knownFacts: [...(prevPk.knownFacts || [])],
+      knownFactions: newFactions,
+      knownFacts: newFacts,
     },
 
     // ── Dialogue State ──
@@ -1150,7 +1332,6 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     memorySummary,
 
     // ── Scene State (current narrative frame) ──
-    currentSectionId: currentSection.id,
     currentSectionTitle: currentSection.title,
     currentLocation: (isStructured ? currentSection.location : null) || currentSection.title,
     relevantChunkIndexes: relevantChunks.map(chunk => chunk.index),
@@ -1160,8 +1341,6 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     lastPlayerAction: truncateText(latestUser || previous.lastPlayerAction || '', 160),
     lastOutcome: latestOutcome,
     summary,
-    discoveredClues: newClues,
-    knownNpcs: newKnownNpcs,
     openThreads: (isStructured && currentSection.openThreads?.length)
       ? normalizeShortList([...(previous.openThreads || []), ...currentSection.openThreads], 4)
       : extractOpenThreads(recentMessages, objective, currentSection),
@@ -1176,7 +1355,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
 // ─── Structured adventure: compact AI context builder ────────────────────────
 
 function buildStructuredAdventureContext(structure, sceneState) {
-  const section = findSectionById(structure, sceneState?.currentSectionId) || structure.sections[0]
+  const section = findSectionById(structure, sceneState?.gmState?.currentSectionId) || structure.sections[0]
   if (!section) return { text: 'Kein Abenteuerabschnitt verfügbar.', selectedIndexes: [], sectionTitle: '' }
 
   const lines = []
@@ -1188,7 +1367,7 @@ function buildStructuredAdventureContext(structure, sceneState) {
   if (section.visibleFeatures?.length) lines.push(`SICHTBAR (nur diese Dinge existieren hier): ${section.visibleFeatures.join(' | ')}`)
 
   // NPC visibility: split into known (player has encountered) and hidden
-  const knownNpcs = sceneState?.playerKnowledge?.knownNpcs || sceneState?.knownNpcs || []
+  const knownNpcs = sceneState?.playerKnowledge?.knownNpcs || []
   const sectionNpcs = section.npcs || []
   const visibleNpcs = sectionNpcs.filter(npc => knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
   const hiddenNpcs = sectionNpcs.filter(npc => !knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
@@ -1252,7 +1431,7 @@ export function buildRelevantAdventureContext({ adventure, sceneState = null, me
   }
 
   // ── Prose adventures: existing chunk-based logic ──
-  const currentSection = findSectionById(structure, effectiveSceneState.currentSectionId) || structure.sections[0]
+  const currentSection = findSectionById(structure, effectiveSceneState.gmState?.currentSectionId) || structure.sections[0]
   const selectedChunks = (effectiveSceneState.relevantChunkIndexes || [])
     .map(index => structure.chunks[index])
     .filter(Boolean)

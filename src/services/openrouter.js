@@ -157,9 +157,12 @@ Passe Gegnerwerte an die Stufe des Spielercharakters an. Solo-Held ohne Gruppe �
 5. Prüfe NOCHMAL: Hast du wirklich JEDE riskante Option markiert?
 
 **Typische Aktionen die IMMER einen [PROBE_HINWEIS:] brauchen:**
-- Verstecktes suchen → investigation/perception | Klettern/Springen → athletics/acrobatics
-- Schleichen → stealth | Schlösser knacken → sleightOfHand | Überzeugen/Täuschen → persuasion/deception/intimidation
-- Magisches erkennen → arcana | Spuren lesen → survival | Wissen → history/religion/nature
+- Untersuchen/Durchsuchen/nach Fallen suchen → investigation | Beobachten/Lauschen → perception
+- Klettern/Springen/Schwimmen → athletics | Balancieren/Ausweichen → acrobatics
+- Schleichen/Verstecken → stealth | Schlösser knacken/Taschendiebstahl → sleightOfHand
+- Überzeugen → persuasion | Täuschen/Lügen → deception | Einschüchtern → intimidation
+- Magisches erkennen → arcana | Spuren lesen/Orientierung → survival
+- Wissen → history/religion/nature | Absichten lesen → insight | Heilen → medicine
 
 ### Proben NIEMALS erzwingen — immer Wahlfreiheit
 - Beschreibe die Szene und biete ALLE sinnvollen Optionen an.
@@ -167,10 +170,16 @@ Passe Gegnerwerte an die Stufe des Spielercharakters an. Solo-Held ohne Gruppe �
 - [PROBE_HINWEIS:] Tags NUR innerhalb von nummerierten Auswahlmöglichkeiten. NIEMALS Probe als Teil einer Erkundung erzwingen.
 
 **Beispiel (RICHTIG):**
-1. Den Altar untersuchen [PROBE_HINWEIS:investigation|SG:12]
-2. Das Seil prüfen [PROBE_HINWEIS:perception|SG:11]
-3. Die Kapelle verlassen
-4. Etwas anderes (beschreibe selbst)
+1. Den Raum nach Fallen untersuchen [PROBE_HINWEIS:investigation|SG:12]
+2. Am Seil hinunterklettern [PROBE_HINWEIS:athletics|SG:13]
+3. Den Wächter überzeugen [PROBE_HINWEIS:persuasion|SG:14]
+4. Den Bereich absuchen [PROBE_HINWEIS:perception|SG:11]
+5. Die Kapelle verlassen
+6. Etwas anderes (beschreibe selbst)
+
+**Beispiel (FALSCH — so NIEMALS schreiben):**
+1. Den Raum nach Fallen untersuchen ← FEHLT [PROBE_HINWEIS:]! Untersuchen braucht IMMER eine Probe!
+2. Den Bereich absuchen ← FEHLT [PROBE_HINWEIS:]! Absuchen braucht IMMER eine Probe!
 
 ### Ablauf wenn der Spieler eine riskante Aktion gewählt hat:
 1. Beschreibe die Situation kurz narrativ (1-3 Sätze).
@@ -350,7 +359,7 @@ function buildSceneStateContext(sceneState = null) {
 
   // ── Player knowledge (only what the player has discovered) ──
   const pk = sceneState.playerKnowledge
-  const clues = pk?.discoveredClues || sceneState.discoveredClues
+  const clues = pk?.discoveredClues || []
   if (clues?.length) {
     lines.push(`**Bekannte Hinweise:** ${clues.slice(0, 4).join(' | ')}`)
   }
@@ -358,6 +367,16 @@ function buildSceneStateContext(sceneState = null) {
   const knownPlaces = pk?.knownPlaces
   if (knownPlaces?.length > 1) {
     lines.push(`**Bekannte Orte:** ${knownPlaces.slice(0, 6).join(' | ')}`)
+  }
+
+  const factions = pk?.knownFactions
+  if (factions?.length) {
+    lines.push(`**Bekannte Fraktionen:** ${factions.slice(0, 4).join(' | ')}`)
+  }
+
+  const facts = pk?.knownFacts
+  if (facts?.length) {
+    lines.push(`**Bekannte Fakten:** ${facts.slice(0, 4).join(' | ')}`)
   }
 
   if (sceneState.notableElements?.length) {

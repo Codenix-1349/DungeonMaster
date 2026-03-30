@@ -37,12 +37,45 @@ function parseProbeHinweis(label) {
   }
 }
 
+// ── Code-side skill check detection (fallback when AI omits [PROBE_HINWEIS:]) ──
+// Maps action keywords in choice text to skill + default DC
+const SKILL_KEYWORD_MAP = [
+  { pattern: /\b(untersuch|durchsuch|inspizier|prüf.*sorgfältig|absuch.*hinweis|absuch.*spur|absuch.*fall|nach.*fallen.*such|nach.*hinweis|nach.*spur|forsch|analys)/i, skill: 'investigation', dc: 12 },
+  { pattern: /\b(beobacht|lausch|horch|aufmerksam|spitz.*ohren|umhör|scharf.*aug|wahrnehm)/i, skill: 'perception', dc: 12 },
+  { pattern: /\b(schleich|versteck|unbemerkt|heimlich|leise.*beweg|ungesehen|anschleich|unauffällig)/i, skill: 'stealth', dc: 13 },
+  { pattern: /\b(überzeug|beruhig|überred|besänftig|appellier|bitt.*eindringlich)/i, skill: 'persuasion', dc: 13 },
+  { pattern: /\b(täusch|belüg|vormach|ablenkungsmanöver|bluffen|vorgeb|verheimlich)/i, skill: 'deception', dc: 13 },
+  { pattern: /\b(einschüchter|bedrohe|drohe|Angst.*einjag)/i, skill: 'intimidation', dc: 13 },
+  { pattern: /\b(kletter|hinaufkletter|hinunterklett|schwimm|spring.*über|hochzieh|erklettern|erklimm)/i, skill: 'athletics', dc: 13 },
+  { pattern: /\b(balancier|ausweich|akrobat|herunterspring|abroll)/i, skill: 'acrobatics', dc: 12 },
+  { pattern: /\b(schloss.*knack|schloss.*öffn|dietrich|aufbrech.*schloss|Taschendieb)/i, skill: 'sleightOfHand', dc: 14 },
+  { pattern: /\b(magisch.*erkenn|arkane.*zeichen|Magie.*ident|magische.*Aura|verzaubert|entziffere.*Runen)/i, skill: 'arcana', dc: 13 },
+  { pattern: /\b(spur.*les|spur.*folg|orientier|navigier|wildnis|überleb|fährt.*les)/i, skill: 'survival', dc: 12 },
+  { pattern: /\b(absicht.*erkenn|durchschau|lüge.*erkenn|aufrichtig|motiv|hintergedank)/i, skill: 'insight', dc: 13 },
+  { pattern: /\b(geschichtl|historisch|erinner.*an.*Wissen|alt.*Legende|bekannt.*Geschichte)/i, skill: 'history', dc: 12 },
+  { pattern: /\b(heilig|gebet|götter|religiös|segnung|untote.*erkenn)/i, skill: 'religion', dc: 12 },
+  { pattern: /\b(pflanz|tier.*erkenn|gift.*erkenn|natürlich|natur.*wissen)/i, skill: 'nature', dc: 12 },
+  { pattern: /\b(verbind.*Wunde|stabilisier|erste.*Hilfe|heilen(?!.*zauber))/i, skill: 'medicine', dc: 12 },
+]
+
+function inferCheckFromLabel(label) {
+  const lower = label.toLowerCase()
+  // Skip trivial actions that don't need checks
+  if (/\b(geh|verlasse|zurück|weiter.*geh|etwas anderes|beschreibe selbst|warte|raste|ruh)/i.test(lower)) return null
+  for (const { pattern, skill, dc } of SKILL_KEYWORD_MAP) {
+    if (pattern.test(lower)) return { skillOrAbility: skill, dc, advantage: null }
+  }
+  return null
+}
+
 // Parse numbered choices from AI response text (deduplicated)
 // Handles both line-separated and inline numbering (e.g. "1. Foo  2. Bar")
 // Extracts [PROBE_HINWEIS:] tags from choices that require skill checks
+// Falls back to code-side keyword detection if AI omits tags
 function parseChoices(text = '') {
   const clean = String(text).replace(/\*\*/g, '')
-  const segments = clean.split(/(?=(?:^|\n|\s{2,})\d[.):])/g)
+  // Split on numbered items: newline, 2+ spaces, or sentence-ending punctuation before a digit
+  const segments = clean.split(/(?=(?:^|\n|\s{2,}|[.!?]\s)\d[.):])/g)
   const choices = []
   const seen = new Set()
   let hasOther = false
@@ -51,13 +84,15 @@ function parseChoices(text = '') {
     if (!m) continue
     const rawLabel = m[2].trim().split('\n')[0].trim()
     const { label, check } = parseProbeHinweis(rawLabel)
+    // If AI didn't provide a check tag, try to infer one from the action text
+    const effectiveCheck = check || inferCheckFromLabel(label)
     const key = label.toLowerCase()
     const isOther = /etwas anderes|selbst beschreiben/i.test(label)
     if (isOther && hasOther) continue
     if (isOther) hasOther = true
     if (label && label.length < 200 && !seen.has(key)) {
       seen.add(key)
-      choices.push({ label, check })
+      choices.push({ label, check: effectiveCheck })
     }
   }
   return choices
@@ -167,6 +202,11 @@ function SkillCheckBubble({ content }) {
   )
 }
 
+// Ensure numbered list items each start on a new line (AI sometimes writes them inline)
+function normalizeNumberedList(text = '') {
+  return text.replace(/([.!?])\s+(\d[.):])/g, '$1\n$2')
+}
+
 function MessageBubble({ msg }) {
   const isUser = msg.role === 'user'
   const isCombatRound = isUser && msg.content?.startsWith('[Kampfrunde]')
@@ -179,6 +219,8 @@ function MessageBubble({ msg }) {
     return <SkillCheckBubble content={msg.content} />
   }
 
+  const displayText = isUser ? msg.content : normalizeNumberedList(msg.content || '')
+
   return (
     <div className={`animate-fade-in ${isUser ? 'text-right' : ''}`}>
       <div className="flex items-center gap-2 mb-1 justify-between">
@@ -187,7 +229,7 @@ function MessageBubble({ msg }) {
         </span>
       </div>
       <div className={isUser ? 'chat-player ml-auto' : 'chat-dm'}>
-        <p className="font-body text-base leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+        <p className="font-body text-base leading-relaxed whitespace-pre-wrap">{displayText}</p>
       </div>
     </div>
   )
@@ -869,7 +911,7 @@ export default function GamePage() {
                   <span className="font-heading text-xs text-gold-600 tracking-wider">🗡️ DUNGEONS & DAGGERS</span>
                 </div>
                 {streamingText
-                  ? <div className="chat-dm"><p className="font-body text-base leading-relaxed whitespace-pre-wrap">{formatProbeHinweisTags(stripCheckTags(streamingText), getCheckLabel)}<span className="inline-block w-0.5 h-4 bg-gold-500 ml-0.5 animate-pulse" /></p></div>
+                  ? <div className="chat-dm"><p className="font-body text-base leading-relaxed whitespace-pre-wrap">{normalizeNumberedList(formatProbeHinweisTags(stripCheckTags(streamingText), getCheckLabel))}<span className="inline-block w-0.5 h-4 bg-gold-500 ml-0.5 animate-pulse" /></p></div>
                   : <TypingIndicator />}
               </div>
             )}
@@ -917,7 +959,7 @@ export default function GamePage() {
               </button>
             </div>
             {dynamicChoices.length > 0 && !combat?.active && (
-              <div className="flex flex-col gap-1.5 mt-2 max-h-40 overflow-y-auto pb-1" style={{ scrollbarWidth: 'thin' }}>
+              <div className="flex flex-col gap-1.5 mt-2 max-h-56 overflow-y-auto pb-1" style={{ scrollbarWidth: 'thin' }}>
                 {dynamicChoices.map((choice, i) => {
                   const isOther = /etwas anderes|selbst beschreiben/i.test(choice.label)
                   const hasProbe = Boolean(choice.check)
@@ -938,7 +980,7 @@ export default function GamePage() {
                       key={choice.label}
                       onClick={handleClick}
                       disabled={isDisabled}
-                      className={`text-xs px-3 py-1.5 rounded border transition-all duration-150 font-body text-left flex items-center gap-2 ${
+                      className={`w-full text-xs px-3 py-1.5 rounded border transition-all duration-150 font-body text-left flex items-center gap-2 ${
                         isSelected
                           ? 'border-blue-500 bg-blue-600/20 text-blue-200 ring-1 ring-blue-500/50'
                           : isOther
