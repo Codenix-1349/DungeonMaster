@@ -260,11 +260,17 @@ export function resolveSpellInCombat({
     }
 
     if (effect.delivery === 'save') {
-      // Save-based damage — always hits, half on save
+      // Save-based damage — roll damage, CombatTracker resolves the save mechanically
       const roll = rollDice(dice)
-      result.damage = Math.max(1, roll.total)
+      result.fullDamage = Math.max(1, roll.total)
+      result.damage = result.fullDamage // default full; CombatTracker may halve
       result.success = true
-      result.resultText = `${spellName}: ${result.damage} ${effect.damageType || ''} Schaden (${dice}). ${targetName || 'Ziel'} muss ${effect.save?.toUpperCase()}-RW gegen SG ${spellSaveDC} bestehen (halb bei Erfolg).${effect.extraEffect ? ' ' + effect.extraEffect + '.' : ''}`
+      result.saveRequired = {
+        ability: effect.save,
+        dc: spellSaveDC,
+        halfOnSuccess: true,
+      }
+      result.resultText = `${spellName}: ${result.fullDamage} ${effect.damageType || ''} Schaden (${dice}) — ${effect.save?.toUpperCase()}-RW SG ${spellSaveDC}.${effect.extraEffect ? ' ' + effect.extraEffect + '.' : ''}`
       return result
     }
 

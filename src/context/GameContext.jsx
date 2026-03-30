@@ -56,6 +56,7 @@ function useGameCombined() {
     setSelectedModel: apiConfig.setSelectedModel,
     hasServerKey: apiConfig.hasServerKey,
     serverKeyHint: apiConfig.serverKeyHint,
+    apiReady: apiConfig.apiReady,
 
     // Character
     characters: char.characters,
