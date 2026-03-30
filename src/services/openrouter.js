@@ -329,23 +329,58 @@ function buildSceneStateContext(sceneState = null) {
   if (!sceneState) return ''
 
   const lines = []
+
+  // ── Current scene frame ──
   if (sceneState.currentSectionTitle) lines.push(`**Aktueller Abschnitt:** ${sceneState.currentSectionTitle}`)
   if (sceneState.currentLocation) lines.push(`**Ort:** ${sceneState.currentLocation}`)
   if (sceneState.currentObjective) lines.push(`**Aktuelles Ziel:** ${sceneState.currentObjective}`)
   if (sceneState.activeQuest) lines.push(`**Aktiver Faden:** ${sceneState.activeQuest}`)
   if (sceneState.lastPlayerAction) lines.push(`**Letzte Spieleraktion:** ${sceneState.lastPlayerAction}`)
-  if (sceneState.summary) lines.push(`**Szenenzusammenfassung:** ${sceneState.summary}`)
+
+  // ── Memory summary (compact history instead of raw summary) ──
+  if (sceneState.memorySummary) {
+    lines.push(`**Session-Zusammenfassung:** ${sceneState.memorySummary}`)
+  } else if (sceneState.summary) {
+    lines.push(`**Szenenzusammenfassung:** ${sceneState.summary}`)
+  }
 
   if (sceneState.openThreads?.length) {
     lines.push(`**Offene Fäden:** ${sceneState.openThreads.slice(0, 4).join(' | ')}`)
   }
 
-  if (sceneState.discoveredClues?.length) {
-    lines.push(`**Bekannte Hinweise:** ${sceneState.discoveredClues.slice(0, 4).join(' | ')}`)
+  // ── Player knowledge (only what the player has discovered) ──
+  const pk = sceneState.playerKnowledge
+  const clues = pk?.discoveredClues || sceneState.discoveredClues
+  if (clues?.length) {
+    lines.push(`**Bekannte Hinweise:** ${clues.slice(0, 4).join(' | ')}`)
+  }
+
+  const knownPlaces = pk?.knownPlaces
+  if (knownPlaces?.length > 1) {
+    lines.push(`**Bekannte Orte:** ${knownPlaces.slice(0, 6).join(' | ')}`)
   }
 
   if (sceneState.notableElements?.length) {
     lines.push(`**Wichtige Elemente:** ${sceneState.notableElements.slice(0, 4).join(' | ')}`)
+  }
+
+  // ── Active dialogue context ──
+  const dlg = sceneState.dialogueState
+  if (dlg?.activeNpcId) {
+    const rel = dlg.npcRelations?.[dlg.activeNpcId]
+    const dlgParts = [`Aktiver Gesprächspartner: ${dlg.activeNpcId}`]
+    if (rel?.disposition) dlgParts.push(`Haltung: ${rel.disposition}`)
+    if (rel?.suspicion > 0) dlgParts.push(`Misstrauen: ${rel.suspicion}/10`)
+    lines.push(`**Dialog:** ${dlgParts.join(' · ')}`)
+  }
+
+  // ── Active plot flags (GM info for consistency) ──
+  const flags = sceneState.gmState?.plotFlags
+  if (flags) {
+    const activeFlags = Object.entries(flags).filter(([, v]) => v).map(([k]) => k)
+    if (activeFlags.length) {
+      lines.push(`**Aktive Plot-Flags:** ${activeFlags.join(' | ')}`)
+    }
   }
 
   if (lines.length === 0) return ''
@@ -646,16 +681,24 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
     messages: fullMessages,
   }
 
-  const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': window.location.origin,
-      'X-Title': PROJECT_NAME,
-    },
-    body: JSON.stringify(body),
-  })
+  // Retry on 429 (rate-limit) — openrouter/free may pick a different model on retry
+  const MAX_RETRIES = 3
+  let response
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': window.location.origin,
+        'X-Title': PROJECT_NAME,
+      },
+      body: JSON.stringify(body),
+    })
+    if (response.status !== 429 || attempt === MAX_RETRIES) break
+    console.warn(`[openrouter] 429 rate-limited (attempt ${attempt + 1}/${MAX_RETRIES}), retrying...`)
+    await new Promise(r => setTimeout(r, (attempt + 1) * 1000))
+  }
 
   if (!response.ok) {
     throw new Error(await extractError(response))

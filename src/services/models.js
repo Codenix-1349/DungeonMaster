@@ -2,7 +2,7 @@
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 
-export const DEFAULT_MODEL_ID = 'meta-llama/llama-3.3-70b-instruct:free'
+export const DEFAULT_MODEL_ID = 'openrouter/free'
 
 const LEGACY_MODEL_ID_MAP = {
   'meta-llama/llama-3.3-70b-instruct': 'meta-llama/llama-3.3-70b-instruct:free',
@@ -12,6 +12,16 @@ const LEGACY_MODEL_ID_MAP = {
 }
 
 export const AVAILABLE_MODELS = [
+  {
+    id: 'openrouter/free',
+    name: 'Auto-Free (Empfohlen)',
+    badge: 'Kostenlos',
+    isPaid: false,
+    category: 'free',
+    description:
+      'Routet automatisch zum besten verfügbaren Free-Modell. Vermeidet Rate-Limits auf einzelnen Modellen.',
+    fallbackPricing: { prompt: '$0/M', completion: '$0/M' },
+  },
   {
     id: 'meta-llama/llama-3.3-70b-instruct:free',
     name: 'Llama 3.3 70B (Free)',
@@ -107,6 +117,20 @@ export const AVAILABLE_MODELS = [
 export function normalizeModelId(modelId) {
   if (!modelId) return DEFAULT_MODEL_ID
   return LEGACY_MODEL_ID_MAP[modelId] || modelId
+}
+
+/**
+ * Safeguard: if the resolved model is paid but the user never explicitly
+ * confirmed a paid switch, fall back to the free default.
+ * Call this whenever loading a model from storage or server — NOT when
+ * the user actively picks a model in the UI (that has its own confirm).
+ */
+export function ensureFreeUnlessExplicit(modelId) {
+  const normalized = normalizeModelId(modelId)
+  const meta = AVAILABLE_MODELS.find(m => m.id === normalized)
+  // Known paid model → reject, unknown model → allow (could be a new free model)
+  if (meta?.isPaid) return DEFAULT_MODEL_ID
+  return normalized
 }
 
 export function getModelMeta(modelId) {

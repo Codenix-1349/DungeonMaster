@@ -27,17 +27,27 @@ export async function streamChat({ apiKey, model, messages, temperature = 0.8, m
     stream: true,
   }
 
-  const upstream = await fetch(OPENROUTER_API_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://dungeons-daggers.app',
-      'X-Title': 'Dungeons & Daggers - DungeonMaster',
-    },
-    body: JSON.stringify(body),
-    signal,
-  })
+  const MAX_RETRIES = 3
+  let upstream
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    upstream = await fetch(OPENROUTER_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://dungeons-daggers.app',
+        'X-Title': 'Dungeons & Daggers - DungeonMaster',
+      },
+      body: JSON.stringify(body),
+      signal,
+    })
+
+    if (upstream.status !== 429 || attempt === MAX_RETRIES) break
+    // Wait before retry: 1s, 2s, 3s
+    const text = await upstream.text().catch(() => '')
+    console.warn(`[chat] 429 rate-limited (attempt ${attempt + 1}/${MAX_RETRIES}), retrying...`, text.slice(0, 120))
+    await new Promise(r => setTimeout(r, (attempt + 1) * 1000))
+  }
 
   if (!upstream.ok) {
     const text = await upstream.text().catch(() => 'Unknown error')

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { DEFAULT_MODEL_ID, normalizeModelId } from '../services/models'
+import { DEFAULT_MODEL_ID, normalizeModelId, ensureFreeUnlessExplicit } from '../services/models'
 import { useAuth } from './AuthContext'
 import { fetchApiConfig, updateApiConfig } from '../services/api'
 
@@ -7,9 +7,10 @@ const ApiConfigContext = createContext(null)
 
 function getInitialModel() {
   const stored = localStorage.getItem('dm_model')
-  const normalized = normalizeModelId(stored || DEFAULT_MODEL_ID)
-  localStorage.setItem('dm_model', normalized)
-  return normalized
+  // Safeguard: never auto-load a paid model from storage
+  const safe = ensureFreeUnlessExplicit(stored || DEFAULT_MODEL_ID)
+  localStorage.setItem('dm_model', safe)
+  return safe
 }
 
 export function ApiConfigProvider({ children }) {
@@ -28,9 +29,10 @@ export function ApiConfigProvider({ children }) {
         setHasServerKey(cfg.hasKey)
         setServerKeyHint(cfg.keyHint || null)
         if (cfg.modelId) {
-          const normalized = normalizeModelId(cfg.modelId)
-          setSelectedModelState(normalized)
-          localStorage.setItem('dm_model', normalized)
+          // Safeguard: never auto-switch to a paid model from server config
+          const safe = ensureFreeUnlessExplicit(cfg.modelId)
+          setSelectedModelState(safe)
+          localStorage.setItem('dm_model', safe)
         }
         // When server has the key, clear it from localStorage (avoid plaintext leak)
         if (cfg.hasKey) {
