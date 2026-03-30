@@ -799,7 +799,7 @@ function splitSentences(text = '') {
     .filter(Boolean)
 }
 
-function extractCluesFromMessages(messages = [], section = null) {
+function extractCluesFromMessages(messages = []) {
   const clueHints = ['hinweis', 'spur', 'schlüssel', 'karte', 'brief', 'zeichen', 'symbol', 'notiz', 'gerücht', 'amulett', 'ritual', 'name', 'blut', 'abdruck', 'siegel']
   const text = messages.map(message => message.content).join(' ')
   const clues = []
@@ -809,7 +809,6 @@ function extractCluesFromMessages(messages = [], section = null) {
     if (clueHints.some(hint => lower.includes(hint))) clues.push(sentence)
   }
 
-  if (section?.summary) clues.push(section.summary)
   return normalizeShortList(clues, 4)
 }
 
@@ -830,6 +829,12 @@ function extractOpenThreads(messages = [], previousObjective = '', section = nul
   if (section?.title) threads.unshift(`Aktuell relevant: ${section.title}`)
 
   return normalizeShortList(threads, 4)
+}
+
+function extractDiscoveredNpcs(messages = [], sectionNpcs = []) {
+  if (!sectionNpcs.length) return []
+  const text = messages.map(m => m.content).join(' ').toLowerCase()
+  return sectionNpcs.filter(npc => text.toLowerCase().includes(npc.toLowerCase()))
 }
 
 function detectTransitionReason(previousSection, currentSection, latestUser = '', latestAssistant = '') {
@@ -881,7 +886,8 @@ export function createInitialSceneState(adventure) {
     lastPlayerAction: '',
     lastOutcome: '',
     summary: firstSection?.summary || 'Das Abenteuer beginnt und die erste Szene wird aufgebaut.',
-    discoveredClues: (isStructured ? firstSection?.clues?.slice(0, 3) : firstSection?.keywords?.slice(0, 3)) || [],
+    discoveredClues: [],
+    knownNpcs: [],
     openThreads: (isStructured ? firstSection?.openThreads?.slice(0, 4) : null) || (firstSection?.title ? [`Den Abschnitt „${firstSection.title}” erkunden.`] : []),
     notableElements: firstSection?.keywords?.slice(0, 6) || [],
     recentSceneChanges: [],
@@ -986,9 +992,12 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     summary,
     discoveredClues: normalizeShortList([
       ...(previous.discoveredClues || []),
-      ...extractCluesFromMessages(recentMessages, currentSection),
-      ...(isStructured && shouldTransition ? (currentSection.clues || []) : []),
+      ...extractCluesFromMessages(recentMessages),
     ], 4),
+    knownNpcs: [...new Set([
+      ...(previous.knownNpcs || []),
+      ...extractDiscoveredNpcs(recentMessages, currentSection.npcs || []),
+    ])],
     openThreads: (isStructured && currentSection.openThreads?.length)
       ? normalizeShortList([...(previous.openThreads || []), ...currentSection.openThreads], 4)
       : extractOpenThreads(recentMessages, objective, currentSection),
@@ -1013,7 +1022,14 @@ function buildStructuredAdventureContext(structure, sceneState) {
 
   // Visible elements — ONLY these may be described to the player
   if (section.visibleFeatures?.length) lines.push(`SICHTBAR (nur diese Dinge existieren hier): ${section.visibleFeatures.join(' | ')}`)
-  if (section.npcs?.length) lines.push(`ANWESENDE NPCS (nur diese sind hier, keine anderen erfinden): ${section.npcs.join(' | ')}`)
+
+  // NPC visibility: split into known (player has encountered) and hidden
+  const knownNpcs = sceneState?.knownNpcs || []
+  const sectionNpcs = section.npcs || []
+  const visibleNpcs = sectionNpcs.filter(npc => knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
+  const hiddenNpcs = sectionNpcs.filter(npc => !knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
+  if (visibleNpcs.length) lines.push(`ANWESENDE NPCS (nur diese sind hier, keine anderen erfinden): ${visibleNpcs.join(' | ')}`)
+
   if (section.enemies?.length) lines.push(`GEGNER: ${section.enemies.join(' | ')}`)
   if (section.exits?.length) {
     lines.push(`AUSGÄNGE: ${section.exits.map(e => e.label).join(' | ')}`)
@@ -1024,6 +1040,7 @@ function buildStructuredAdventureContext(structure, sceneState) {
 
   // Internal GM instructions — the AI must follow these but NEVER reveal them directly
   const internal = []
+  if (hiddenNpcs.length) internal.push(`NOCH NICHT SICHTBARE NPCS (erst natürlich einführen wenn Spieler sie entdeckt/anspricht/auf sie trifft): ${hiddenNpcs.join(' | ')}`)
   if (section.transitionRules?.length) internal.push(`ÜBERGANGSREGELN: ${section.transitionRules.join(' | ')}`)
   if (section.clues?.length) internal.push(`ENTDECKBARE HINWEISE (NUR enthüllen wenn Spieler aktiv sucht/fragt — NIEMALS vorweg verraten): ${section.clues.join(' | ')}`)
   if (internal.length) {

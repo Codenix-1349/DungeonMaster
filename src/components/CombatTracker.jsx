@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useGame } from '../context/GameContext'
 import { getClassWeaponDefaults, SPELL_LIST } from '../data/srd'
 import { resolveSpellInCombat, resolveHealingPotion, rollDice } from '../data/spellEffects'
+import { generateGoldReward, generateItemLoot, ITEM_CATALOG } from '../data/items'
 import D20Animation from './D20Animation'
 
 // ─── Dice Helpers ─────────────────────────────────────────────────────────────
@@ -25,6 +26,17 @@ function rollDamageStr(diceStr = '1d6+0') {
   let total = bonus
   for (let i = 0; i < count; i++) total += rollDie(sides)
   return Math.max(1, total)
+}
+
+// Estimate enemy save modifier from XP (rough CR approximation)
+function estimateSaveMod(enemy) {
+  const xp = enemy.xp || 0
+  if (xp <= 25) return 0
+  if (xp <= 100) return 1
+  if (xp <= 200) return 2
+  if (xp <= 450) return 3
+  if (xp <= 1100) return 4
+  return 5
 }
 
 // ─── Log entry type styles ───────────────────────────────────────────────────
@@ -138,6 +150,7 @@ export default function CombatTracker({ onCombatAction }) {
   const {
     character, combat, setCombat, endCombat, updateCharacterHP,
     getModifier, awardXP, consumeSpellSlot, restoreSpellSlots, useItem,
+    addItem, updateCurrency,
   } = useGame()
 
   const [actionLog, setActionLog] = useState([])
@@ -474,25 +487,44 @@ export default function CombatTracker({ onCombatAction }) {
       consumeSpellSlot(castLevel)
     }
 
-    // Apply damage to first living enemy
+    // Apply damage to first living enemy (with save resolution for save-based spells)
     if (effect.damage > 0 && target) {
+      let finalDamage = effect.damage
+      let saveText = ''
+
+      // Resolve saving throw mechanically if required
+      if (effect.saveRequired) {
+        const saveMod = estimateSaveMod(target)
+        const saveRoll = rollDie(20)
+        const saveTotal = saveRoll + saveMod
+        const saved = saveTotal >= effect.saveRequired.dc
+
+        if (saved && effect.saveRequired.halfOnSuccess) {
+          finalDamage = Math.max(1, Math.floor(effect.fullDamage / 2))
+          saveText = ` ${target.name} RW ${saveTotal} (${saveRoll}+${saveMod}) vs SG ${effect.saveRequired.dc} — geschafft, halber Schaden!`
+        } else if (saved) {
+          finalDamage = 0
+          saveText = ` ${target.name} RW ${saveTotal} (${saveRoll}+${saveMod}) vs SG ${effect.saveRequired.dc} — geschafft, kein Schaden!`
+        } else {
+          saveText = ` ${target.name} RW ${saveTotal} (${saveRoll}+${saveMod}) vs SG ${effect.saveRequired.dc} — fehlgeschlagen, voller Schaden!`
+        }
+      }
+
       const enemies = combat?.enemies || []
-      const newHP = Math.max(0, target.currentHP - effect.damage)
+      const newHP = Math.max(0, target.currentHP - finalDamage)
       const updatedEnemies = enemies.map(e => e.id === target.id ? { ...e, currentHP: newHP } : e)
       setCombat(prev => ({ ...prev, enemies: updatedEnemies }))
 
       const killed = newHP <= 0
-      if (killed) {
-        effect.resultText += ` ${target.name} faellt!`
-      }
+      const fullText = `${effect.resultText}${saveText}${killed ? ` ${target.name} faellt!` : ''}`
 
-      addLog(effect.resultText, killed ? 'kill' : (effect.success ? 'spell' : 'miss'))
+      addLog(fullText, killed ? 'kill' : (effect.success ? 'spell' : 'miss'))
       showBanner(
-        killed ? `${target.name} besiegt!` : (effect.success ? `${effect.damage} Schaden!` : 'Verfehlt!'),
-        `${spell.name}${killed ? '' : ` → ${newHP}/${target.maxHP} HP`}`,
+        killed ? `${target.name} besiegt!` : (effect.success ? `${finalDamage} Schaden!` : 'Verfehlt!'),
+        `${spell.name}${saveText ? ' (RW)' : ''}${killed ? '' : ` → ${newHP}/${target.maxHP} HP`}`,
         killed ? 'kill' : (effect.success ? 'spell' : 'miss')
       )
-      turnActionsRef.current.push(`[Zauber] ${effect.resultText}`)
+      turnActionsRef.current.push(`[Zauber] ${fullText}`)
       checkAllDead(updatedEnemies)
       return
     }
@@ -598,18 +630,34 @@ export default function CombatTracker({ onCombatAction }) {
     const allDead = updatedEnemies.every(e => e.currentHP <= 0)
     if (allDead) {
       const totalXP = updatedEnemies.reduce((sum, e) => sum + (e.xp || 0), 0)
-      const victoryMsg = `Alle Gegner besiegt! +${totalXP} XP`
-      addLog(victoryMsg, 'victory')
-      showBanner('SIEG!', `+${totalXP} XP`, 'victory')
-      turnActionsRef.current.push(victoryMsg)
+      const playerLevel = character?.level || 1
+
+      // Engine is sole authority for combat rewards (XP, gold, loot)
       if (awardXP) awardXP(totalXP)
+      const goldReward = generateGoldReward(totalXP)
+      if (Object.keys(goldReward).length > 0 && updateCurrency) updateCurrency(goldReward)
+      const itemLoot = generateItemLoot(totalXP, playerLevel)
+      for (const itemKey of itemLoot) {
+        if (addItem) addItem(itemKey)
+      }
+
+      // Build reward summary
+      const rewardParts = [`+${totalXP} XP`]
+      if (goldReward.gm) rewardParts.push(`+${goldReward.gm} GM`)
+      if (goldReward.sm) rewardParts.push(`+${goldReward.sm} SM`)
+      if (itemLoot.length) rewardParts.push(itemLoot.map(k => ITEM_CATALOG[k]?.name || k).join(', '))
+
+      const victoryMsg = `Alle Gegner besiegt! ${rewardParts.join(' · ')}`
+      addLog(victoryMsg, 'victory')
+      showBanner('SIEG!', rewardParts.join(' · '), 'victory')
+      turnActionsRef.current.push(victoryMsg)
       flushTurnSummary()
       setTimeout(() => endCombat(), 800)
     } else {
       setPendingAttack(null)
       finishPlayerTurn()
     }
-  }, [addLog, awardXP, endCombat, flushTurnSummary, finishPlayerTurn])
+  }, [addLog, awardXP, endCombat, flushTurnSummary, finishPlayerTurn, character, updateCurrency, addItem])
 
   const handleEndCombat = useCallback(() => {
     addLog('Kampf beendet.')

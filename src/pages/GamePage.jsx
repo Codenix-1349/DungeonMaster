@@ -7,7 +7,6 @@ import { sendMessage, parseLootTags, parseCurrencyTags, parseLostItemTags, parse
 import CombatTracker from '../components/CombatTracker'
 import SkillCheckPanel from '../components/SkillCheckPanel'
 import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS } from '../data/srd'
-import { generateGoldReward, generateItemLoot, ITEM_CATALOG } from '../data/items'
 
 const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
 // Dynamic choices are parsed from AI response - no static quick actions needed
@@ -276,6 +275,7 @@ export default function GamePage() {
     updateCurrency,
     apiKey,
     hasServerKey,
+    apiReady,
     selectedModel,
     sceneState,
     syncSceneState,
@@ -358,7 +358,7 @@ export default function GamePage() {
   const handleSend = useCallback(async (userText, options = {}) => {
     const text = userText || input.trim()
     if (!text || streaming) return
-    if (!apiKey) {
+    if (!apiReady) {
       setError('Kein API Key – bitte Einstellungen öffnen.')
       return
     }
@@ -423,49 +423,20 @@ export default function GamePage() {
         }
       }
 
-      // Parse XP rewards — works both in and outside combat
-      const xpReward = parseXPTags(full)
-      if (xpReward > 0 && awardXP) {
-        const result = awardXP(xpReward)
-        if (result?.didLevelUp) {
-          setLevelUpNotif({ oldLevel: result.oldLevel, newLevel: result.newLevel })
-          setTimeout(() => setLevelUpNotif(null), 5000)
-        }
-
-        // Auto-generate loot only on combat end
-        if (full.includes('KAMPF VORBEI')) {
-          const playerLevel = character?.level || 1
-          const goldReward = generateGoldReward(xpReward)
-          if (Object.keys(goldReward).length > 0) {
-            updateCurrency(goldReward)
+      // Parse XP rewards — only for non-combat (quest/exploration rewards).
+      // Combat XP + loot are handled exclusively by CombatTracker engine.
+      const isCombatEnd = full.includes('KAMPF VORBEI')
+      if (!isCombatEnd) {
+        const xpReward = parseXPTags(full)
+        if (xpReward > 0 && awardXP) {
+          const result = awardXP(xpReward)
+          if (result?.didLevelUp) {
+            setLevelUpNotif({ oldLevel: result.oldLevel, newLevel: result.newLevel })
+            setTimeout(() => setLevelUpNotif(null), 5000)
+          } else {
+            setLevelUpNotif({ loot: `+${xpReward} XP` })
+            setTimeout(() => setLevelUpNotif(null), 3000)
           }
-          const itemLoot = generateItemLoot(xpReward, playerLevel)
-          for (const itemKey of itemLoot) {
-            addItem(itemKey)
-          }
-
-          // Show combined reward notification
-          if (!result?.didLevelUp) {
-            const lootParts = []
-            if (goldReward.gm) lootParts.push(`+${goldReward.gm} GM`)
-            if (goldReward.sm) lootParts.push(`+${goldReward.sm} SM`)
-            if (itemLoot.length) {
-              const names = itemLoot.map(k => {
-                return ITEM_CATALOG[k]?.name || k
-              })
-              lootParts.push(names.join(', '))
-            }
-            if (lootParts.length) {
-              setLevelUpNotif({ loot: lootParts.join(' · ') })
-              setTimeout(() => setLevelUpNotif(null), 4000)
-            }
-          }
-        }
-
-        // Show XP notification for non-combat XP (no loot)
-        if (!full.includes('KAMPF VORBEI') && !result?.didLevelUp) {
-          setLevelUpNotif({ loot: `+${xpReward} XP` })
-          setTimeout(() => setLevelUpNotif(null), 3000)
         }
       }
 
@@ -538,6 +509,7 @@ export default function GamePage() {
   }, [
     input,
     streaming,
+    apiReady,
     apiKey,
     character,
     adventure,
@@ -596,7 +568,7 @@ export default function GamePage() {
   }, [])
 
   const handleStartNewSession = useCallback(async () => {
-    if (!apiKey) {
+    if (!apiReady) {
       setError('Bitte zuerst einen OpenRouter API Key hinterlegen.')
       return
     }
@@ -621,7 +593,7 @@ export default function GamePage() {
       historyOverride: [],
       rawHistoryOverride: [],
     })
-  }, [apiKey, selectedAdventure, selectedCharacter, createSession, navigate, handleSend, startAdventurePrompt, resetSceneState])
+  }, [apiReady, selectedAdventure, selectedCharacter, createSession, navigate, handleSend, startAdventurePrompt, resetSceneState])
 
   const handleContinueSession = useCallback((sessionId) => {
     const session = loadSession(sessionId)
@@ -740,7 +712,7 @@ export default function GamePage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {!apiKey && <button onClick={() => navigate('/settings')} className="btn-primary">⚙️ API Key eingeben</button>}
+                      {!apiReady && <button onClick={() => navigate('/settings')} className="btn-primary">⚙️ API Key eingeben</button>}
                       <button onClick={() => navigate('/character')} className="btn-ghost">🛡️ Helden auswählen oder neu erstellen</button>
                       <button onClick={() => navigate('/adventure')} className="btn-ghost">📜 Abenteuer verwalten</button>
                     </div>
@@ -843,12 +815,12 @@ export default function GamePage() {
 
                     <button
                       onClick={handleStartNewSession}
-                      disabled={!apiKey || !selectedCharacter}
+                      disabled={!apiReady || !selectedCharacter}
                       className="btn-primary text-base px-8 py-3"
                     >
                       ⚔️ Neues Abenteuer starten
                     </button>
-                    {apiKey && !selectedCharacter && (
+                    {apiReady && !selectedCharacter && (
                       <p className="font-body text-xs text-stone-600 italic mt-3">Du brauchst mindestens einen gespeicherten Helden für den gezielten Start.</p>
                     )}
                   </div>

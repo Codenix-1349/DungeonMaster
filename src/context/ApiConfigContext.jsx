@@ -32,14 +32,19 @@ export function ApiConfigProvider({ children }) {
           setSelectedModelState(normalized)
           localStorage.setItem('dm_model', normalized)
         }
+        // When server has the key, clear it from localStorage (avoid plaintext leak)
+        if (cfg.hasKey) {
+          localStorage.removeItem('dm_apiKey')
+          setApiKeyState('')
+        }
       })
       .catch(() => {})
   }, [isLoggedIn])
 
   const setApiKey = useCallback((key) => {
-    setApiKeyState(key)
-    localStorage.setItem('dm_apiKey', key)
     if (isLoggedIn) {
+      // Logged-in users: send to server only, don't persist locally
+      setApiKeyState('')
       updateApiConfig({ apiKey: key }).then(() => {
         setHasServerKey(!!key)
         if (key && key.length > 8) {
@@ -47,7 +52,12 @@ export function ApiConfigProvider({ children }) {
         } else {
           setServerKeyHint(null)
         }
+        localStorage.removeItem('dm_apiKey')
       }).catch(() => {})
+    } else {
+      // Not logged in: localStorage is the only storage
+      setApiKeyState(key)
+      localStorage.setItem('dm_apiKey', key)
     }
   }, [isLoggedIn])
 
@@ -60,6 +70,9 @@ export function ApiConfigProvider({ children }) {
     }
   }, [isLoggedIn])
 
+  // True when API calls can be made (either direct key or server proxy)
+  const apiReady = !!(apiKey || hasServerKey)
+
   return (
     <ApiConfigContext.Provider value={{
       apiKey,
@@ -68,6 +81,7 @@ export function ApiConfigProvider({ children }) {
       setSelectedModel,
       hasServerKey,
       serverKeyHint,
+      apiReady,
     }}>
       {children}
     </ApiConfigContext.Provider>
