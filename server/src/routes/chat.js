@@ -39,7 +39,7 @@ router.post('/send', async (req, res, next) => {
       return res.status(400).json({ error: 'messages Array erforderlich.' })
     }
 
-    const useModel = model || config.modelId || 'google/gemini-2.0-flash-001'
+    const useModel = model || config.modelId || 'openrouter/free'
 
     // Client can close connection
     const controller = new AbortController()
@@ -76,7 +76,7 @@ router.post('/test', async (req, res, next) => {
       return res.status(400).json({ error: 'Kein API-Key konfiguriert.' })
     }
 
-    const useModel = req.body.model || config.modelId || 'google/gemini-2.0-flash-001'
+    const useModel = req.body.model || config.modelId || 'openrouter/free'
     const data = await testConnection(config.apiKey, useModel)
 
     res.json({ success: true, response: data })

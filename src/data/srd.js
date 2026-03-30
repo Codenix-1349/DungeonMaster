@@ -8,7 +8,7 @@ import {
 export const PROJECT_NAME = 'Dungeons & Daggers'
 export const SRD_VERSION_LABEL = 'D&D SRD 5.2.1'
 const ADVENTURE_STRUCTURE_VERSION = 2
-const SCENE_STATE_VERSION = 2
+const SCENE_STATE_VERSION = 3
 
 const GERMAN_STOPWORDS = new Set([
   'aber','alle','allen','aller','alles','auch','auf','aus','bei','bin','bis','bist','da','dadurch','daher','darum','das','dass','dein','deine','dem','den','der','des','dessen','deshalb','die','dies','diese','diesem','diesen','dieser','dieses','doch','dort','du','durch','ein','eine','einem','einen','einer','eines','er','es','euer','eure','für','hat','hattest','hatte','hatten','hier','hinter','ich','ihr','ihre','im','in','ist','ja','jede','jedem','jeden','jeder','jedes','jetzt','kann','kannst','kein','keine','keinem','keinen','keiner','keines','mit','muss','nach','nicht','noch','nun','oder','seid','sein','seine','sich','sie','sind','so','solche','solchem','solchen','solcher','solches','soll','sollen','sollte','sondern','sonst','über','um','und','uns','unser','unsere','unter','vom','von','vor','war','waren','warst','was','weg','weil','weiter','welche','welchem','welchen','welcher','welches','wenn','werde','werden','wie','wieder','will','wir','wird','wirst','wo','wollen','wollte','würde','würden','zu','zum','zur','zurück'
@@ -837,6 +837,33 @@ function extractDiscoveredNpcs(messages = [], sectionNpcs = []) {
   return sectionNpcs.filter(npc => text.toLowerCase().includes(npc.toLowerCase()))
 }
 
+// Detect active NPC from recent messages (NPC the player is talking to)
+function detectActiveNpc(messages = [], knownNpcs = []) {
+  if (!knownNpcs.length) return null
+  const recent = messages.slice(-4)
+  const text = recent.map(m => m.content).join(' ').toLowerCase()
+  // NPC mentioned most often in recent context is likely active
+  let best = null
+  let bestCount = 0
+  for (const npc of knownNpcs) {
+    const re = new RegExp(npc.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    const count = (text.match(re) || []).length
+    if (count > bestCount) { bestCount = count; best = npc }
+  }
+  return bestCount >= 2 ? best : null
+}
+
+// Build compact memory summary from key state
+function buildMemorySummary(previous, currentSection, latestOutcome, objective) {
+  const parts = []
+  if (previous.memorySummary) parts.push(previous.memorySummary)
+  if (latestOutcome) parts.push(latestOutcome)
+  // Keep compact: max 300 chars, prioritize recent
+  const raw = parts.join(' ').trim()
+  if (raw.length <= 300) return raw
+  return raw.slice(raw.length - 300).replace(/^\S*\s/, '')
+}
+
 function detectTransitionReason(previousSection, currentSection, latestUser = '', latestAssistant = '') {
   if (!previousSection || !currentSection) return ''
   if (previousSection.id === currentSection.id) return 'Abschnitt bleibt stabil.'
@@ -873,9 +900,45 @@ export function createInitialSceneState(adventure) {
   // Structured adventures provide richer initial data
   const isStructured = structure?.format === 'structured'
 
+  // Build initial plotFlags from setsOnEntry of the start section
+  const initialFlags = {}
+  if (isStructured && firstSection?.setsOnEntry?.length) {
+    for (const flag of firstSection.setsOnEntry) initialFlags[flag] = true
+  }
+
   return {
     version: SCENE_STATE_VERSION,
     turnCount: 0,
+
+    // ── GM State (engine truth) ──
+    gmState: {
+      currentSectionId: firstSection?.id || null,
+      plotFlags: initialFlags,
+      objectStates: {},
+      npcStates: {},
+      triggeredEvents: [],
+      sectionVisitCounts: firstSection ? { [firstSection.id]: 1 } : {},
+    },
+
+    // ── Player Knowledge (what the player knows) ──
+    playerKnowledge: {
+      knownNpcs: [],
+      knownPlaces: firstSection ? [firstSection.title] : [],
+      discoveredClues: [],
+      knownFactions: [],
+      knownFacts: [],
+    },
+
+    // ── Dialogue State (NPC interaction tracking) ──
+    dialogueState: {
+      activeNpcId: null,
+      npcRelations: {},
+    },
+
+    // ── Memory Summary (compact session history) ──
+    memorySummary: '',
+
+    // ── Scene State (current narrative frame) ──
     currentSectionId: firstSection?.id || null,
     currentSectionTitle: firstSection?.title || normalizedAdventure?.title || 'Abenteuerstart',
     currentLocation: (isStructured ? firstSection?.location : firstSection?.title) || normalizedAdventure?.title || 'Unbekannter Ort',
@@ -904,9 +967,35 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     return createInitialSceneState(normalizedAdventure)
   }
 
-  const previous = previousSceneState?.version === SCENE_STATE_VERSION
-    ? previousSceneState
-    : createInitialSceneState(normalizedAdventure)
+  // Migrate v2 → v3: keep existing flat fields, add empty sub-objects
+  let previous
+  if (previousSceneState?.version === SCENE_STATE_VERSION) {
+    previous = previousSceneState
+  } else if (previousSceneState?.version === 2) {
+    previous = {
+      ...previousSceneState,
+      version: SCENE_STATE_VERSION,
+      gmState: {
+        currentSectionId: previousSceneState.currentSectionId,
+        plotFlags: {},
+        objectStates: {},
+        npcStates: {},
+        triggeredEvents: [],
+        sectionVisitCounts: Object.fromEntries((previousSceneState.visitedSectionIds || []).map(id => [id, 1])),
+      },
+      playerKnowledge: {
+        knownNpcs: previousSceneState.knownNpcs || [],
+        knownPlaces: [],
+        discoveredClues: previousSceneState.discoveredClues || [],
+        knownFactions: [],
+        knownFacts: [],
+      },
+      dialogueState: { activeNpcId: null, npcRelations: {} },
+      memorySummary: previousSceneState.summary || '',
+    }
+  } else {
+    previous = createInitialSceneState(normalizedAdventure)
+  }
 
   const recentMessages = messages.slice(-8)
   const latestUser = [...recentMessages].reverse().find(message => message.role === 'user')?.content || fallbackUserText || ''
@@ -977,9 +1066,90 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     transitionReason,
   ], 3)
 
+  // ── Build sub-objects ──
+
+  const prevGm = previous.gmState || {}
+  const prevPk = previous.playerKnowledge || {}
+  const prevDlg = previous.dialogueState || {}
+
+  // GM State: plotFlags, objectStates, npcStates, events, visit counts
+  const newPlotFlags = { ...(prevGm.plotFlags || {}) }
+  if (isStructured && shouldTransition && currentSection.setsOnEntry?.length) {
+    for (const flag of currentSection.setsOnEntry) newPlotFlags[flag] = true
+  }
+
+  const visitCounts = { ...(prevGm.sectionVisitCounts || {}) }
+  visitCounts[currentSection.id] = (visitCounts[currentSection.id] || 0) + (shouldTransition || !previous.turnCount ? 1 : 0)
+
+  const triggeredEvents = [...(prevGm.triggeredEvents || [])]
+  if (shouldTransition) {
+    triggeredEvents.push(`T${previous.turnCount || 0}: → ${currentSection.title}`)
+    if (triggeredEvents.length > 10) triggeredEvents.splice(0, triggeredEvents.length - 10)
+  }
+
+  // Player Knowledge: accumulate from messages
+  const newKnownNpcs = [...new Set([
+    ...(prevPk.knownNpcs || previous.knownNpcs || []),
+    ...extractDiscoveredNpcs(recentMessages, currentSection.npcs || []),
+  ])]
+  const newClues = normalizeShortList([
+    ...(prevPk.discoveredClues || previous.discoveredClues || []),
+    ...extractCluesFromMessages(recentMessages),
+  ], 8)
+  const newKnownPlaces = [...new Set([
+    ...(prevPk.knownPlaces || []),
+    ...(shouldTransition ? [currentSection.title] : []),
+  ])]
+
+  // Dialogue State: detect active NPC
+  const activeNpc = detectActiveNpc(recentMessages, newKnownNpcs)
+  const npcRelations = { ...(prevDlg.npcRelations || {}) }
+  if (activeNpc && !npcRelations[activeNpc]) {
+    npcRelations[activeNpc] = { disposition: 'neutral', suspicion: 0, lastTopic: '' }
+  }
+  if (activeNpc && npcRelations[activeNpc]) {
+    npcRelations[activeNpc] = {
+      ...npcRelations[activeNpc],
+      lastTopic: truncateText(latestUser, 80),
+    }
+  }
+
+  // Memory Summary
+  const memorySummary = buildMemorySummary(previous, currentSection, latestOutcome, objective)
+
   return {
     version: SCENE_STATE_VERSION,
     turnCount: Number(previous.turnCount || 0) + (recentMessages.length ? 1 : 0),
+
+    // ── GM State ──
+    gmState: {
+      currentSectionId: currentSection.id,
+      plotFlags: newPlotFlags,
+      objectStates: { ...(prevGm.objectStates || {}) },
+      npcStates: { ...(prevGm.npcStates || {}) },
+      triggeredEvents,
+      sectionVisitCounts: visitCounts,
+    },
+
+    // ── Player Knowledge ──
+    playerKnowledge: {
+      knownNpcs: newKnownNpcs,
+      knownPlaces: newKnownPlaces,
+      discoveredClues: newClues,
+      knownFactions: [...(prevPk.knownFactions || [])],
+      knownFacts: [...(prevPk.knownFacts || [])],
+    },
+
+    // ── Dialogue State ──
+    dialogueState: {
+      activeNpcId: activeNpc,
+      npcRelations,
+    },
+
+    // ── Memory Summary ──
+    memorySummary,
+
+    // ── Scene State (current narrative frame) ──
     currentSectionId: currentSection.id,
     currentSectionTitle: currentSection.title,
     currentLocation: (isStructured ? currentSection.location : null) || currentSection.title,
@@ -990,14 +1160,8 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     lastPlayerAction: truncateText(latestUser || previous.lastPlayerAction || '', 160),
     lastOutcome: latestOutcome,
     summary,
-    discoveredClues: normalizeShortList([
-      ...(previous.discoveredClues || []),
-      ...extractCluesFromMessages(recentMessages),
-    ], 4),
-    knownNpcs: [...new Set([
-      ...(previous.knownNpcs || []),
-      ...extractDiscoveredNpcs(recentMessages, currentSection.npcs || []),
-    ])],
+    discoveredClues: newClues,
+    knownNpcs: newKnownNpcs,
     openThreads: (isStructured && currentSection.openThreads?.length)
       ? normalizeShortList([...(previous.openThreads || []), ...currentSection.openThreads], 4)
       : extractOpenThreads(recentMessages, objective, currentSection),
@@ -1024,7 +1188,7 @@ function buildStructuredAdventureContext(structure, sceneState) {
   if (section.visibleFeatures?.length) lines.push(`SICHTBAR (nur diese Dinge existieren hier): ${section.visibleFeatures.join(' | ')}`)
 
   // NPC visibility: split into known (player has encountered) and hidden
-  const knownNpcs = sceneState?.knownNpcs || []
+  const knownNpcs = sceneState?.playerKnowledge?.knownNpcs || sceneState?.knownNpcs || []
   const sectionNpcs = section.npcs || []
   const visibleNpcs = sectionNpcs.filter(npc => knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
   const hiddenNpcs = sectionNpcs.filter(npc => !knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
