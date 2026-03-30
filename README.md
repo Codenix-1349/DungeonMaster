@@ -38,10 +38,11 @@ Dann im Browser öffnen: **http://localhost:5173**
 
 ## Unterstützte Modelle (via OpenRouter)
 
-- Google Gemini 2.5 Pro *(Empfohlen)*
+- **openrouter/free** *(Standard — automatisches Routing zu verfügbaren kostenlosen Modellen)*
+- Google Gemini 2.5 Pro
 - Anthropic Claude Sonnet / Opus
 - OpenAI GPT-4o
-- Meta Llama 3.3 70B *(Kostenlos)*
+- Meta Llama 3.3 70B
 
 ## Techstack
 
@@ -49,13 +50,21 @@ Dann im Browser öffnen: **http://localhost:5173**
 - Tailwind CSS
 - PDF.js (Modulimport)
 - OpenRouter API (LLM-Anbindung)
-- Kein Backend – reine Client-App
+- Node.js / Express Backend (optional — für Auth, verschlüsselte Key-Speicherung, Chat-Proxy)
+- SQLite (User-Daten bei Server-Betrieb)
 
-## Datenschutz
+## Betriebsmodi
 
-- Kein Backend – die App läuft vollständig im Browser
-- Der API Key wird nur in deinem lokalen `localStorage` gespeichert
+### Anonym (ohne Backend)
+- Die App läuft vollständig im Browser
+- Der API Key wird in `localStorage` gespeichert
 - Die einzige externe Verbindung geht an die OpenRouter API
+
+### Mit Account (Backend aktiv)
+- Registrierung / Login über den integrierten Server (`/server`)
+- Der API Key wird **serverseitig verschlüsselt** gespeichert — nicht im Browser
+- Chat-Anfragen laufen über einen Server-Proxy (Key bleibt serverseitig)
+- Sitzungsdaten werden lokal im Browser gespeichert
 
 ## Build
 
