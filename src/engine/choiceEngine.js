@@ -350,6 +350,130 @@ function deduplicateSemantic(choices) {
   return result
 }
 
+// ─── Retry Filter ───────────────────────────────────────────────────────────
+// Suppresses choices matching previously failed interactions unless sufficient
+// context change has occurred. Enforcement lives HERE in the Choice Layer —
+// not in AI prompting — so behaviour is deterministic.
+//
+// Interaction records are written by GamePage.handleCheckResult (authoritative
+// check flow) and stored in sceneState.interactionHistory.
+//
+// Rules:
+//   • Same target + same skill (or choice has no check) → suppress
+//   • Same target + different skill               → allow (new approach)
+//   • Weak label match + same skill               → soft deprioritize (+40)
+//   • Context change detected                     → allow everything
+//
+// Context change signals:
+//   • Section transition since failure
+//   • New clues discovered
+//   • New NPCs met
+//   • New items acquired
+//   • ≥5 turns elapsed (fallback)
+
+function findMatchingFailure(choice, failedInteractions) {
+  for (const interaction of failedInteractions) {
+    // Strong: same explicit target ID
+    if (choice.target && interaction.targetId &&
+        choice.target.toLowerCase() === interaction.targetId.toLowerCase()) {
+      return { interaction, strength: 'strong' }
+    }
+
+    // Weak: interaction target mentioned in choice label
+    if (interaction.targetId && interaction.targetId.length >= 3 &&
+        choice.label.toLowerCase().includes(interaction.targetId.toLowerCase())) {
+      return { interaction, strength: 'weak' }
+    }
+
+    // Weak: choice target mentioned in interaction label
+    if (choice.target && choice.target.length >= 3 &&
+        interaction.label && interaction.label.toLowerCase().includes(choice.target.toLowerCase())) {
+      return { interaction, strength: 'weak' }
+    }
+
+    // Weak: significant content-word overlap + same skill
+    if (interaction.label && choice.check?.skillOrAbility === interaction.skill) {
+      const cWords = extractContentWords(choice.label)
+      const iWords = extractContentWords(interaction.label)
+      if (cWords.length && iWords.length) {
+        const overlap = cWords.filter(w =>
+          iWords.some(iw => iw === w || iw.includes(w) || w.includes(iw))
+        )
+        const minLen = Math.min(cWords.length, iWords.length)
+        if (overlap.length >= Math.max(1, Math.ceil(minLen * 0.5))) {
+          return { interaction, strength: 'weak' }
+        }
+      }
+    }
+  }
+  return null
+}
+
+function hasContextChanged(interaction, sceneState) {
+  if (!sceneState) return true
+
+  // Section transition since failure
+  if (sceneState.gmState?.currentSectionId !== interaction.sectionId) return true
+
+  // Fallback: ≥5 turns elapsed
+  const turnDelta = (sceneState.turnCount || 0) - (interaction.turn || 0)
+  if (turnDelta >= 5) return true
+
+  const ctx = interaction.contextSnapshot || {}
+
+  // New clues discovered (new information)
+  if ((sceneState.playerKnowledge?.discoveredClues?.length || 0) > (ctx.clueCount || 0)) return true
+
+  // New NPCs met (new information)
+  if ((sceneState.playerKnowledge?.knownNpcs?.length || 0) > (ctx.npcCount || 0)) return true
+
+  // New items acquired (new tool / Werkzeug)
+  if (ctx.itemCount != null && sceneState._currentItemCount != null &&
+      sceneState._currentItemCount > ctx.itemCount) return true
+
+  return false
+}
+
+function applyRetryFilter(choices, sceneState) {
+  const history = sceneState?.interactionHistory
+  if (!history?.length) return choices
+
+  const failed = history.filter(i => i.outcome === 'failure')
+  if (!failed.length) return choices
+
+  const result = []
+  for (const choice of choices) {
+    // Free-form always passes
+    if (choice.kind === 'free') { result.push(choice); continue }
+
+    const match = findMatchingFailure(choice, failed)
+    if (!match) { result.push(choice); continue }
+
+    const { interaction, strength } = match
+
+    // Different skill = new approach → allow fully
+    if (choice.check?.skillOrAbility &&
+        choice.check.skillOrAbility !== interaction.skill) {
+      result.push(choice)
+      continue
+    }
+
+    // Context has changed → allow
+    if (hasContextChanged(interaction, sceneState)) {
+      result.push(choice)
+      continue
+    }
+
+    // Strong match + same/no skill + no context change → suppress entirely
+    if (strength === 'strong') continue
+
+    // Weak match + no context change → soft deprioritize
+    result.push({ ...choice, priority: choice.priority + 40 })
+  }
+
+  return result
+}
+
 // ─── Main Generator ─────────────────────────────────────────────────────────
 
 const MAX_CHOICES = 6
@@ -411,6 +535,9 @@ export function buildAvailableChoices({ aiResponse = '', section = null, sceneSt
 
   // Semantic deduplication: merge choices about the same target/intent
   merged = deduplicateSemantic(merged)
+
+  // Retry filter: suppress/deprioritize choices matching failed interactions
+  merged = applyRetryFilter(merged, sceneState)
 
   // Always offer free-form input as last option
   if (!merged.some(c => c.kind === 'free')) {
