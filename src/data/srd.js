@@ -1059,6 +1059,7 @@ export function createInitialSceneState(adventure) {
     activeQuest: (isStructured ? structure.module?.primaryObjective : null) || firstSection?.summary || 'Das Abenteuer beginnen und die Lage erfassen.',
     lastPlayerAction: '',
     recentActions: [],
+    interactionHistory: [],
     lastOutcome: '',
     summary: firstSection?.summary || 'Das Abenteuer beginnt und die erste Szene wird aufgebaut.',
     openThreads: (isStructured ? firstSection?.openThreads?.slice(0, 4) : null) || (firstSection?.title ? [`Den Abschnitt „${firstSection.title}” erkunden.`] : []),
@@ -1346,6 +1347,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     activeQuest: truncateText(previous.activeQuest || objective || summaryBase, 160),
     lastPlayerAction: truncateText(latestUser || previous.lastPlayerAction || '', 160),
     recentActions: buildRecentActions(previous.recentActions, latestUser, shouldTransition),
+    interactionHistory: (previous.interactionHistory || []).slice(-20),
     lastOutcome: latestOutcome,
     summary,
     openThreads: (isStructured && currentSection.openThreads?.length)

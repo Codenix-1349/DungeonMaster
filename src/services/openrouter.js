@@ -434,6 +434,18 @@ function buildSceneStateContext(sceneState = null) {
     }
   }
 
+  // ── Failed interactions (soft hint — real enforcement is in Choice Layer) ──
+  const failedRecent = (sceneState.interactionHistory || [])
+    .filter(i => i.outcome === 'failure' &&
+      i.sectionId === sceneState.gmState?.currentSectionId &&
+      (sceneState.turnCount || 0) - (i.turn || 0) < 5)
+  if (failedRecent.length) {
+    const failLines = failedRecent.map(i =>
+      `${i.label || 'Aktion'}${i.skill ? ` (${i.skill})` : ''} → fehlgeschlagen (Runde ${i.turn})`
+    )
+    lines.push(`\n**Kürzlich fehlgeschlagene Proben (biete diese NICHT erneut identisch an):**\n${failLines.join('\n')}`)
+  }
+
   if (lines.length === 0) return ''
   return `## Aktueller Szenenstatus\n${lines.join('\n')}`
 }

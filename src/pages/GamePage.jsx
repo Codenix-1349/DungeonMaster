@@ -248,6 +248,7 @@ export default function GamePage() {
     apiReady,
     selectedModel,
     sceneState,
+    setSceneState,
     syncSceneState,
     resetSceneState,
     sessions,
@@ -276,6 +277,7 @@ export default function GamePage() {
   const [selectedAdventureId, setSelectedAdventureId] = useState(adventure?.id || '')
   const logEndRef = useRef(null)
   const inputRef = useRef(null)
+  const pendingChoiceMetaRef = useRef(null)
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -374,6 +376,7 @@ export default function GamePage() {
       // Direct [PROBE:] tag — player already chose the action, no choices needed
       const checkTag = parseCheckTags(full)
       if (checkTag && !combat?.active) {
+        pendingChoiceMetaRef.current = null // AI-initiated, no choice metadata
         setPendingCheck(checkTag)
         setDynamicChoices([])
       }
@@ -464,10 +467,14 @@ export default function GamePage() {
       // Build choices from choice engine (structured + AI + fallback)
       if (!pendingCheck && !combat?.active) {
         const section = getCurrentSection(activeAdventure, updatedSceneState)
+        // Inject current item count so retry filter can detect new tools/items
+        const sceneWithItemCount = updatedSceneState
+          ? { ...updatedSceneState, _currentItemCount: activeCharacter?.inventory?.length || 0 }
+          : null
         const choices = buildAvailableChoices({
           aiResponse: full,
           section,
-          sceneState: updatedSceneState,
+          sceneState: sceneWithItemCount,
           combatActive: combat?.active,
         })
         setDynamicChoices(choices)
@@ -501,8 +508,33 @@ export default function GamePage() {
   const handleCombatAction = useCallback(text => handleSend(`[Kampfrunde] ${text}`), [handleSend])
 
   const handleCheckResult = useCallback((result, choiceLabel) => {
+    const choiceMeta = pendingChoiceMetaRef.current
+    pendingChoiceMetaRef.current = null
     setPendingCheck(null)
     setDynamicChoices([])
+
+    // Record failed interaction in sceneState (authoritative check flow)
+    if (!result.success && sceneState) {
+      const record = {
+        id: `int-${Date.now()}`,
+        sectionId: sceneState.gmState?.currentSectionId || null,
+        targetId: choiceMeta?.target || null,
+        skill: result.skillOrAbility || null,
+        outcome: 'failure',
+        turn: sceneState.turnCount || 0,
+        label: choiceLabel || '',
+        kind: choiceMeta?.kind || null,
+        contextSnapshot: {
+          clueCount: sceneState.playerKnowledge?.discoveredClues?.length || 0,
+          npcCount: sceneState.playerKnowledge?.knownNpcs?.length || 0,
+          itemCount: character?.inventory?.length || 0,
+        },
+      }
+      setSceneState(prev => ({
+        ...prev,
+        interactionHistory: [...(prev?.interactionHistory || []), record].slice(-20),
+      }))
+    }
 
     let rollStr = `d20(${result.d20Result})`
     if (result.roll2 !== null) {
@@ -519,7 +551,7 @@ export default function GamePage() {
     } else {
       handleSend(probeText)
     }
-  }, [handleSend])
+  }, [handleSend, sceneState, setSceneState, character])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -902,6 +934,7 @@ export default function GamePage() {
                     if (isFree) {
                       inputRef.current?.focus()
                     } else if (hasProbe) {
+                      pendingChoiceMetaRef.current = { target: choice.target, kind: choice.kind }
                       setPendingCheck({ ...choice.check, choiceLabel: choice.label })
                     } else {
                       handleSend(choice.label)
