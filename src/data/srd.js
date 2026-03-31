@@ -724,7 +724,7 @@ function mergeNotableElements(section = null, recentText = '') {
   return [...new Set([...sectionKeywords, ...recentKeywords])].slice(0, 6)
 }
 
-function findSectionById(structure, sectionId) {
+export function findSectionById(structure, sectionId) {
   return structure?.sections?.find(section => section.id === sectionId) || null
 }
 
@@ -1058,6 +1058,7 @@ export function createInitialSceneState(adventure) {
     currentObjective: (isStructured ? firstSection?.objective : null) || 'Die erste Szene betreten und Informationen sammeln.',
     activeQuest: (isStructured ? structure.module?.primaryObjective : null) || firstSection?.summary || 'Das Abenteuer beginnen und die Lage erfassen.',
     lastPlayerAction: '',
+    recentActions: [],
     lastOutcome: '',
     summary: firstSection?.summary || 'Das Abenteuer beginnt und die erste Szene wird aufgebaut.',
     openThreads: (isStructured ? firstSection?.openThreads?.slice(0, 4) : null) || (firstSection?.title ? [`Den Abschnitt „${firstSection.title}” erkunden.`] : []),
@@ -1067,6 +1068,14 @@ export function createInitialSceneState(adventure) {
     lastTransitionReason: 'Start des Abenteuers.',
     lastUpdatedAt: new Date().toISOString(),
   }
+}
+
+// ── Recent Actions tracker (engine truth — player actually did these) ──────
+// Tracks last 3 player actions for choice deduplication. Resets on section transition.
+function buildRecentActions(previous = [], latestAction = '', isTransition = false) {
+  if (isTransition) return latestAction?.length >= 3 ? [latestAction] : []
+  if (!latestAction || latestAction.length < 3) return (previous || []).slice(0, 3)
+  return [latestAction, ...(previous || [])].slice(0, 3)
 }
 
 // ── Phase 2.5b: Inferred hints builder (tightened) ────────────────────────
@@ -1336,6 +1345,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     currentObjective: objective,
     activeQuest: truncateText(previous.activeQuest || objective || summaryBase, 160),
     lastPlayerAction: truncateText(latestUser || previous.lastPlayerAction || '', 160),
+    recentActions: buildRecentActions(previous.recentActions, latestUser, shouldTransition),
     lastOutcome: latestOutcome,
     summary,
     openThreads: (isStructured && currentSection.openThreads?.length)
