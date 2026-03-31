@@ -402,30 +402,23 @@ function buildSceneStateContext(sceneState = null) {
     }
   }
 
-  // ── Inferred hints (AI-derived, NOT authoritative — soft narrative context only) ──
+  // ── Inferred hints (scene-scoped, AI-derived, NOT authoritative) ──
   const inf = sceneState.inferred
   if (inf) {
     const softLines = []
 
-    // Inferred NPC/object state observations
+    // NPC state observations (already scoped to current section in srd.js)
     const npcHints = Object.entries(inf.npcStates || {})
     if (npcHints.length) {
       softLines.push(`NPC-Beobachtungen: ${npcHints.map(([n, s]) => `${n} (${s})`).join(', ')}`)
     }
+    // Object state observations (already scoped to current section in srd.js)
     const objHints = Object.entries(inf.objectStates || {})
     if (objHints.length) {
       softLines.push(`Objekt-Beobachtungen: ${objHints.map(([o, s]) => `${o} (${s})`).join(', ')}`)
     }
 
-    // Inferred facts and factions
-    if (inf.facts?.length) {
-      softLines.push(`Narrative Hinweise: ${inf.facts.slice(0, 3).join(' | ')}`)
-    }
-    if (inf.factions?.length) {
-      softLines.push(`Erwähnte Gruppen: ${inf.factions.slice(0, 3).join(' | ')}`)
-    }
-
-    // Inferred dialogue disposition/suspicion trends
+    // Dialogue trend for active NPC only
     if (dlg?.activeNpcId && inf.dialogueHints?.[dlg.activeNpcId]) {
       const hint = inf.dialogueHints[dlg.activeNpcId]
       const parts = []
