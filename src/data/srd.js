@@ -1084,6 +1084,9 @@ export function createInitialSceneState(adventure) {
     // ── Memory Summary (compact session history) ──
     memorySummary: '',
 
+    // ── Inferred (AI-derived soft hints, initially empty) ──
+    inferred: { source: 'ai_inferred', npcStates: {}, objectStates: {}, facts: [], factions: [], dialogueHints: {} },
+
     // ── Scene State (current narrative frame) ──
     currentSectionTitle: firstSection?.title || normalizedAdventure?.title || 'Abenteuerstart',
     currentLocation: (isStructured ? firstSection?.location : firstSection?.title) || normalizedAdventure?.title || 'Unbekannter Ort',
@@ -1101,6 +1104,39 @@ export function createInitialSceneState(adventure) {
     lastTransitionReason: 'Start des Abenteuers.',
     lastUpdatedAt: new Date().toISOString(),
   }
+}
+
+// ── Phase 2.5: Inferred hints builder ─────────────────────────────────────
+// AI-derived observations accumulate here as soft hints, NOT authoritative truth.
+// source: 'ai_inferred' — may never directly become canonical game state.
+function buildInferredHints(previous, latestAssistant, latestUser, recentMessages, currentSection, knownNpcs, activeNpc) {
+  const prevInferred = previous.inferred || {}
+
+  // NPC & object state hints from AI narrative
+  const npcStateHints = { ...(prevInferred.npcStates || {}), ...extractNpcStateChanges(latestAssistant, knownNpcs) }
+  const objectStateHints = { ...(prevInferred.objectStates || {}), ...extractObjectStateChanges(latestAssistant, currentSection) }
+
+  // Fact & faction hints from AI narrative
+  const factHints = normalizeShortList([
+    ...(prevInferred.facts || []),
+    ...extractFactsFromMessages(recentMessages),
+  ], 8)
+  const factionHints = normalizeShortList([
+    ...(prevInferred.factions || []),
+    ...extractFactionsFromMessages(recentMessages, currentSection),
+  ], 6)
+
+  // Dialogue disposition/suspicion hints
+  const dialogueHints = { ...(prevInferred.dialogueHints || {}) }
+  if (activeNpc) {
+    const prevHint = dialogueHints[activeNpc] || { dispositionTrend: 0, suspicionTrend: 0 }
+    dialogueHints[activeNpc] = {
+      dispositionTrend: Math.max(-3, Math.min(3, prevHint.dispositionTrend + inferDispositionShift(latestAssistant))),
+      suspicionTrend: Math.max(-3, Math.min(3, prevHint.suspicionTrend + inferSuspicionShift(latestAssistant, latestUser))),
+    }
+  }
+
+  return { source: 'ai_inferred', npcStates: npcStateHints, objectStates: objectStateHints, facts: factHints, factions: factionHints, dialogueHints }
 }
 
 export function deriveSceneState({ adventure, previousSceneState = null, messages = [], combat = null, fallbackUserText = '' } = {}) {
@@ -1241,11 +1277,9 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     for (const flag of currentSection.setsOnEntry) newPlotFlags[flag] = true
   }
 
-  // Object & NPC state changes from AI narrative
-  const npcStateChanges = extractNpcStateChanges(latestAssistant, prevPk.knownNpcs || [])
-  const objectStateChanges = extractObjectStateChanges(latestAssistant, currentSection)
-  const newNpcStates = { ...(prevGm.npcStates || {}), ...npcStateChanges }
-  const newObjectStates = { ...(prevGm.objectStates || {}), ...objectStateChanges }
+  // Authoritative NPC/object states: carry forward only, no AI-derived writes (Phase 2.5)
+  const newNpcStates = { ...(prevGm.npcStates || {}) }
+  const newObjectStates = { ...(prevGm.objectStates || {}) }
 
   const visitCounts = { ...(prevGm.sectionVisitCounts || {}) }
   visitCounts[currentSection.id] = (visitCounts[currentSection.id] || 0) + (shouldTransition || !previous.turnCount ? 1 : 0)
@@ -1269,14 +1303,9 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     ...(prevPk.knownPlaces || []),
     ...(shouldTransition ? [currentSection.title] : []),
   ])]
-  const newFacts = normalizeShortList([
-    ...(prevPk.knownFacts || []),
-    ...extractFactsFromMessages(recentMessages),
-  ], 8)
-  const newFactions = normalizeShortList([
-    ...(prevPk.knownFactions || []),
-    ...extractFactionsFromMessages(recentMessages, currentSection),
-  ], 6)
+  // Authoritative facts/factions: carry forward only, no AI-derived writes (Phase 2.5)
+  const newFacts = normalizeShortList([...(prevPk.knownFacts || [])], 8)
+  const newFactions = normalizeShortList([...(prevPk.knownFactions || [])], 6)
 
   // Dialogue State: detect active NPC + update disposition/suspicion
   const activeNpc = detectActiveNpc(recentMessages, newKnownNpcs)
@@ -1284,14 +1313,10 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
   if (activeNpc && !npcRelations[activeNpc]) {
     npcRelations[activeNpc] = { disposition: 'neutral', suspicion: 0, lastTopic: '' }
   }
+  // Authoritative dialogue: carry forward, update lastTopic only — no AI-derived disposition/suspicion (Phase 2.5)
   if (activeNpc && npcRelations[activeNpc]) {
-    const prev = npcRelations[activeNpc]
-    const dispositionShift = inferDispositionShift(latestAssistant)
-    const suspicionShift = inferSuspicionShift(latestAssistant, latestUser)
     npcRelations[activeNpc] = {
-      ...prev,
-      disposition: applyDispositionShift(prev.disposition, dispositionShift),
-      suspicion: Math.max(0, Math.min(10, (prev.suspicion || 0) + suspicionShift)),
+      ...npcRelations[activeNpc],
       lastTopic: truncateText(latestUser, 80),
     }
   }
@@ -1330,6 +1355,9 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
 
     // ── Memory Summary ──
     memorySummary,
+
+    // ── Inferred (AI-derived soft hints, NOT authoritative truth) ──
+    inferred: buildInferredHints(previous, latestAssistant, latestUser, recentMessages, currentSection, prevPk.knownNpcs || [], activeNpc),
 
     // ── Scene State (current narrative frame) ──
     currentSectionTitle: currentSection.title,

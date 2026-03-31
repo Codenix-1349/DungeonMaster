@@ -357,7 +357,7 @@ function buildSceneStateContext(sceneState = null) {
     lines.push(`**Offene Fäden:** ${sceneState.openThreads.slice(0, 4).join(' | ')}`)
   }
 
-  // ── Player knowledge (only what the player has discovered) ──
+  // ── Player knowledge (authoritative — engine/adventure validated) ──
   const pk = sceneState.playerKnowledge
   const clues = pk?.discoveredClues || []
   if (clues?.length) {
@@ -369,14 +369,14 @@ function buildSceneStateContext(sceneState = null) {
     lines.push(`**Bekannte Orte:** ${knownPlaces.slice(0, 6).join(' | ')}`)
   }
 
-  const factions = pk?.knownFactions
-  if (factions?.length) {
-    lines.push(`**Bekannte Fraktionen:** ${factions.slice(0, 4).join(' | ')}`)
-  }
-
+  // Authoritative facts/factions (only if set by engine/adventure)
   const facts = pk?.knownFacts
   if (facts?.length) {
     lines.push(`**Bekannte Fakten:** ${facts.slice(0, 4).join(' | ')}`)
+  }
+  const factions = pk?.knownFactions
+  if (factions?.length) {
+    lines.push(`**Bekannte Fraktionen:** ${factions.slice(0, 4).join(' | ')}`)
   }
 
   if (sceneState.notableElements?.length) {
@@ -399,6 +399,45 @@ function buildSceneStateContext(sceneState = null) {
     const activeFlags = Object.entries(flags).filter(([, v]) => v).map(([k]) => k)
     if (activeFlags.length) {
       lines.push(`**Aktive Plot-Flags:** ${activeFlags.join(' | ')}`)
+    }
+  }
+
+  // ── Inferred hints (AI-derived, NOT authoritative — soft narrative context only) ──
+  const inf = sceneState.inferred
+  if (inf) {
+    const softLines = []
+
+    // Inferred NPC/object state observations
+    const npcHints = Object.entries(inf.npcStates || {})
+    if (npcHints.length) {
+      softLines.push(`NPC-Beobachtungen: ${npcHints.map(([n, s]) => `${n} (${s})`).join(', ')}`)
+    }
+    const objHints = Object.entries(inf.objectStates || {})
+    if (objHints.length) {
+      softLines.push(`Objekt-Beobachtungen: ${objHints.map(([o, s]) => `${o} (${s})`).join(', ')}`)
+    }
+
+    // Inferred facts and factions
+    if (inf.facts?.length) {
+      softLines.push(`Narrative Hinweise: ${inf.facts.slice(0, 3).join(' | ')}`)
+    }
+    if (inf.factions?.length) {
+      softLines.push(`Erwähnte Gruppen: ${inf.factions.slice(0, 3).join(' | ')}`)
+    }
+
+    // Inferred dialogue disposition/suspicion trends
+    if (dlg?.activeNpcId && inf.dialogueHints?.[dlg.activeNpcId]) {
+      const hint = inf.dialogueHints[dlg.activeNpcId]
+      const parts = []
+      if (hint.dispositionTrend > 0) parts.push('Tendenz: freundlicher')
+      else if (hint.dispositionTrend < 0) parts.push('Tendenz: feindseliger')
+      if (hint.suspicionTrend > 0) parts.push('Misstrauen steigt')
+      else if (hint.suspicionTrend < 0) parts.push('Misstrauen sinkt')
+      if (parts.length) softLines.push(`Gesprächseindruck ${dlg.activeNpcId}: ${parts.join(', ')}`)
+    }
+
+    if (softLines.length) {
+      lines.push(`\n**Einschätzungen (nicht kanonisch, nur narrative Hilfe):**\n${softLines.join('\n')}`)
     }
   }
 
