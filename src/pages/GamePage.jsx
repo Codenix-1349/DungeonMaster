@@ -6,11 +6,10 @@ import { useSound } from '../context/SoundContext'
 import { sendMessage, parseLootTags, parseCurrencyTags, parseLostItemTags, parseCheckTags, stripCheckTags, formatProbeHinweisTags, parseHPTags, parseXPTags } from '../services/openrouter'
 import CombatTracker from '../components/CombatTracker'
 import SkillCheckPanel from '../components/SkillCheckPanel'
-import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS } from '../data/srd'
+import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById } from '../data/srd'
+import { buildAvailableChoices } from '../engine/choiceEngine'
 
 const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
-// Dynamic choices are parsed from AI response - no static quick actions needed
-const QUICK_ACTIONS = []
 
 // Resolve a skill/ability key to its German display label
 function getCheckLabel(skillOrAbility) {
@@ -19,83 +18,12 @@ function getCheckLabel(skillOrAbility) {
   return ATTR_LABELS[skillOrAbility] || skillOrAbility
 }
 
-// Parse [PROBE_HINWEIS:skill|SG:N] from a choice label
-const PROBE_HINWEIS_RE = /\s*\[PROBE_HINWEIS:(\w+)\|SG:(\d+)(?:\|(VORTEIL|NACHTEIL))?\]/i
-
-function parseProbeHinweis(label) {
-  const m = label.match(PROBE_HINWEIS_RE)
-  if (!m) return { label, check: null }
-  return {
-    label: label.replace(PROBE_HINWEIS_RE, '').trim(),
-    check: {
-      skillOrAbility: m[1].toLowerCase(),
-      dc: parseInt(m[2]),
-      advantage: m[3]?.toUpperCase() === 'VORTEIL' ? 'advantage'
-               : m[3]?.toUpperCase() === 'NACHTEIL' ? 'disadvantage'
-               : null,
-    },
-  }
-}
-
-// ── Code-side skill check detection (fallback when AI omits [PROBE_HINWEIS:]) ──
-// Maps action keywords in choice text to skill + default DC
-const SKILL_KEYWORD_MAP = [
-  { pattern: /\b(untersuch|durchsuch|inspizier|prüf.*sorgfältig|absuch.*hinweis|absuch.*spur|absuch.*fall|nach.*fallen.*such|nach.*hinweis|nach.*spur|forsch|analys)/i, skill: 'investigation', dc: 12 },
-  { pattern: /\b(beobacht|lausch|horch|aufmerksam|spitz.*ohren|umhör|scharf.*aug|wahrnehm)/i, skill: 'perception', dc: 12 },
-  { pattern: /\b(schleich|versteck|unbemerkt|heimlich|leise.*beweg|ungesehen|anschleich|unauffällig)/i, skill: 'stealth', dc: 13 },
-  { pattern: /\b(überzeug|beruhig|überred|besänftig|appellier|bitt.*eindringlich)/i, skill: 'persuasion', dc: 13 },
-  { pattern: /\b(täusch|belüg|vormach|ablenkungsmanöver|bluffen|vorgeb|verheimlich)/i, skill: 'deception', dc: 13 },
-  { pattern: /\b(einschüchter|bedrohe|drohe|Angst.*einjag)/i, skill: 'intimidation', dc: 13 },
-  { pattern: /\b(kletter|hinaufkletter|hinunterklett|schwimm|spring.*über|hochzieh|erklettern|erklimm)/i, skill: 'athletics', dc: 13 },
-  { pattern: /\b(balancier|ausweich|akrobat|herunterspring|abroll)/i, skill: 'acrobatics', dc: 12 },
-  { pattern: /\b(schloss.*knack|schloss.*öffn|dietrich|aufbrech.*schloss|Taschendieb)/i, skill: 'sleightOfHand', dc: 14 },
-  { pattern: /\b(magisch.*erkenn|arkane.*zeichen|Magie.*ident|magische.*Aura|verzaubert|entziffere.*Runen)/i, skill: 'arcana', dc: 13 },
-  { pattern: /\b(spur.*les|spur.*folg|orientier|navigier|wildnis|überleb|fährt.*les)/i, skill: 'survival', dc: 12 },
-  { pattern: /\b(absicht.*erkenn|durchschau|lüge.*erkenn|aufrichtig|motiv|hintergedank)/i, skill: 'insight', dc: 13 },
-  { pattern: /\b(geschichtl|historisch|erinner.*an.*Wissen|alt.*Legende|bekannt.*Geschichte)/i, skill: 'history', dc: 12 },
-  { pattern: /\b(heilig|gebet|götter|religiös|segnung|untote.*erkenn)/i, skill: 'religion', dc: 12 },
-  { pattern: /\b(pflanz|tier.*erkenn|gift.*erkenn|natürlich|natur.*wissen)/i, skill: 'nature', dc: 12 },
-  { pattern: /\b(verbind.*Wunde|stabilisier|erste.*Hilfe|heilen(?!.*zauber))/i, skill: 'medicine', dc: 12 },
-]
-
-function inferCheckFromLabel(label) {
-  const lower = label.toLowerCase()
-  // Skip trivial actions that don't need checks
-  if (/\b(geh|verlasse|zurück|weiter.*geh|etwas anderes|beschreibe selbst|warte|raste|ruh)/i.test(lower)) return null
-  for (const { pattern, skill, dc } of SKILL_KEYWORD_MAP) {
-    if (pattern.test(lower)) return { skillOrAbility: skill, dc, advantage: null }
-  }
-  return null
-}
-
-// Parse numbered choices from AI response text (deduplicated)
-// Handles both line-separated and inline numbering (e.g. "1. Foo  2. Bar")
-// Extracts [PROBE_HINWEIS:] tags from choices that require skill checks
-// Falls back to code-side keyword detection if AI omits tags
-function parseChoices(text = '') {
-  const clean = String(text).replace(/\*\*/g, '')
-  // Split on numbered items: newline, 2+ spaces, or sentence-ending punctuation before a digit
-  const segments = clean.split(/(?=(?:^|\n|\s{2,}|[.!?]\s)\d[.):])/g)
-  const choices = []
-  const seen = new Set()
-  let hasOther = false
-  for (const seg of segments) {
-    const m = seg.trim().match(/^([1-9])[.):]\s*(.+)/)
-    if (!m) continue
-    const rawLabel = m[2].trim().split('\n')[0].trim()
-    const { label, check } = parseProbeHinweis(rawLabel)
-    // If AI didn't provide a check tag, try to infer one from the action text
-    const effectiveCheck = check || inferCheckFromLabel(label)
-    const key = label.toLowerCase()
-    const isOther = /etwas anderes|selbst beschreiben/i.test(label)
-    if (isOther && hasOther) continue
-    if (isOther) hasOther = true
-    if (label && label.length < 200 && !seen.has(key)) {
-      seen.add(key)
-      choices.push({ label, check: effectiveCheck })
-    }
-  }
-  return choices
+// Resolve current adventure section from adventure + sceneState
+function getCurrentSection(adventureData, currentSceneState) {
+  const normalized = normalizeAdventureEntry(adventureData)
+  const structure = normalized?.structure
+  if (!structure?.sections?.length) return null
+  return findSectionById(structure, currentSceneState?.gmState?.currentSectionId) || structure.sections[0]
 }
 
 // Parse enemy tags from AI text — supports both formats:
@@ -443,18 +371,11 @@ export default function GamePage() {
       const displayText = formatProbeHinweisTags(stripCheckTags(full), getCheckLabel)
       const assistantMsg = addMessage('assistant', displayText)
 
-      // Parse choices first — choices always take priority over direct [PROBE:] tags
-      const choices = parseChoices(full)
-      if (choices.length > 0 && !combat?.active) {
-        setDynamicChoices(choices)
-        setPendingCheck(null)
-      } else {
+      // Direct [PROBE:] tag — player already chose the action, no choices needed
+      const checkTag = parseCheckTags(full)
+      if (checkTag && !combat?.active) {
+        setPendingCheck(checkTag)
         setDynamicChoices([])
-        // Direct [PROBE:] tag only when AI gives no choices (player already chose the action)
-        const checkTag = parseCheckTags(full)
-        if (checkTag && !combat?.active) {
-          setPendingCheck(checkTag)
-        }
       }
 
       // Parse enemies if combat starts — trigger on KAMPF BEGINNT or enemy tags
@@ -533,13 +454,24 @@ export default function GamePage() {
         assistantMsg,
       ]
 
-      syncSceneState({
+      const updatedSceneState = syncSceneState({
         messages: fullTranscript,
         adventureOverride: activeAdventure,
         combatOverride: combat,
         fallbackUserText: text,
       })
 
+      // Build choices from choice engine (structured + AI + fallback)
+      if (!pendingCheck && !combat?.active) {
+        const section = getCurrentSection(activeAdventure, updatedSceneState)
+        const choices = buildAvailableChoices({
+          aiResponse: full,
+          section,
+          sceneState: updatedSceneState,
+          combatActive: combat?.active,
+        })
+        setDynamicChoices(choices)
+      }
 
     } catch (e) {
       setError(`Fehler: ${e.message}`)
@@ -961,13 +893,13 @@ export default function GamePage() {
             {dynamicChoices.length > 0 && !combat?.active && (
               <div className="flex flex-col gap-1.5 mt-2 max-h-56 overflow-y-auto pb-1" style={{ scrollbarWidth: 'thin' }}>
                 {dynamicChoices.map((choice, i) => {
-                  const isOther = /etwas anderes|selbst beschreiben/i.test(choice.label)
+                  const isFree = choice.kind === 'free'
                   const hasProbe = Boolean(choice.check)
                   const isSelected = pendingCheck?.choiceLabel === choice.label
                   const isDisabled = (!!pendingCheck && !isSelected) || !showTranscript || gameLog.length === 0 || streaming
                   const handleClick = () => {
                     if (pendingCheck) return
-                    if (isOther) {
+                    if (isFree) {
                       inputRef.current?.focus()
                     } else if (hasProbe) {
                       setPendingCheck({ ...choice.check, choiceLabel: choice.label })
@@ -977,20 +909,24 @@ export default function GamePage() {
                   }
                   return (
                     <button
-                      key={choice.label}
+                      key={choice.id}
                       onClick={handleClick}
                       disabled={isDisabled}
                       className={`w-full text-xs px-3 py-1.5 rounded border transition-all duration-150 font-body text-left flex items-center gap-2 ${
                         isSelected
                           ? 'border-blue-500 bg-blue-600/20 text-blue-200 ring-1 ring-blue-500/50'
-                          : isOther
+                          : isFree
                           ? 'border-stone-700 text-stone-500 hover:text-stone-300 hover:border-stone-500'
                           : hasProbe
                           ? 'border-blue-700/40 text-blue-300 hover:border-blue-500 hover:bg-blue-600/10'
+                          : choice.source === 'structured'
+                          ? 'border-emerald-700/40 text-emerald-400 hover:border-emerald-500 hover:bg-emerald-600/10'
                           : 'border-gold-700/40 text-gold-400 hover:border-gold-500 hover:bg-gold-600/10'
                       } ${isDisabled && !isSelected ? 'opacity-40' : ''}`}
                     >
-                      <span className="flex-1 min-w-0">{isOther ? '✏️ ' : `${i + 1}. `}{choice.label}</span>
+                      <span className="flex-1 min-w-0">
+                        {isFree ? '✏️ ' : `${i + 1}. `}{choice.label}
+                      </span>
                       {hasProbe && (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-900/40 border border-blue-700/30 text-blue-400 text-[10px] font-heading tracking-wide whitespace-nowrap flex-shrink-0 w-44">
                           <span className="flex-shrink-0">🎲</span>
