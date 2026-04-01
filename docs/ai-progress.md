@@ -1,5 +1,33 @@
 # Progress
 
+## 2026-04-01 — Refactor: Module Split (Paket 1-3)
+
+### Done — Structure refactor for Phase 3 readiness
+All 63 tests passing, build green. No behavior changes.
+
+#### Paket 1: `src/data/srd.js` (1859 → 105 lines, re-export facade)
+New modules:
+- `src/data/characterRules.js` — attributes, skills, classes, calc functions, inventory, XP, enemy presets
+- `src/data/adventureParser.js` — text utilities, adventure parsing (prose + structured)
+- `src/data/sceneState.js` — scene state creation/derivation, section finding, chunk selection
+- `src/data/knowledgeModel.js` — clue/thread extraction, NPC/object state detection, disposition heuristics
+- `src/data/adventureContext.js` — buildRelevantAdventureContext, structured context builder
+
+#### Paket 2: `src/services/openrouter.js` (856 → 40 lines, re-export facade)
+New modules:
+- `src/services/promptBuilder.js` — system prompt construction
+- `src/services/responseNormalization.js` — meta-leak stripping, decision boundary enforcement
+- `src/services/tagParsers.js` — [PROBE:], [BEUTE:], [GEGNER:], [HP:], [XP:] tag extraction
+- `src/services/openrouterTransport.js` — HTTP streaming, retry logic, error handling
+
+#### Paket 3: `src/pages/GamePage.jsx` (1088 → ~900 lines)
+Extracted components:
+- `src/components/game/MessageBubble.jsx` — MessageBubble, CombatRoundBubble, SkillCheckBubble, TypingIndicator
+- `src/components/game/SessionCard.jsx` — session overview card
+- `parseEnemyTags` moved to `tagParsers.js`
+
+---
+
 ## 2026-04-01 — Automated Test Suite (Batch 1 + 2 + 3)
 
 ### Done — 63 tests, all passing
