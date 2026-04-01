@@ -107,6 +107,8 @@ export {
   selectRelevantChunks,
   createInitialSceneState,
   deriveSceneState,
+  resolveReveals,
+  applyReveals,
 } from './sceneState'
 
 // ── Adventure Context ───────────────────────────────────────────────────────

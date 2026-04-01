@@ -43,6 +43,15 @@ function buildStructuredAdventureContext(structure, sceneState) {
     })
     lines.push(`OBJEKTE: ${objLabels.join(' | ')}`)
   }
+  // Runtime discoveries: engine-revealed objects visible in this section
+  const visibleDiscoveries = (sceneState?.gmState?.runtimeDiscoveries || []).filter(d => d.visible)
+  if (visibleDiscoveries.length) {
+    lines.push(`ENTDECKTE OBJEKTE (Engine-Truth): ${visibleDiscoveries.map(d => {
+      const state = d.state !== 'revealed' ? ` (${d.state})` : ''
+      return `${d.label}${state}`
+    }).join(' | ')}`)
+  }
+
   if (section.openThreads?.length) lines.push(`FÄDEN: ${section.openThreads.join(' | ')}`)
   if (section.suggestedActions?.length) lines.push(`VORGESCHLAGENE AKTIONEN: ${section.suggestedActions.join(' | ')}`)
 
@@ -54,6 +63,7 @@ function buildStructuredAdventureContext(structure, sceneState) {
   const changedObjects = section.interactiveObjects?.filter(o => objectStates[o]) || []
   if (changedObjects.length) confirmedParts.push(`Objekte: ${changedObjects.map(o => `${o} (${objectStates[o]})`).join(', ')}`)
   const discoveredClues = sceneState?.playerKnowledge?.discoveredClues || []
+  if (visibleDiscoveries.length) confirmedParts.push(`Entdeckte Objekte: ${visibleDiscoveries.map(d => d.label).join(', ')}`)
   if (discoveredClues.length) confirmedParts.push(`Bekannte Hinweise: ${discoveredClues.slice(0, 3).join(', ')}`)
   if (confirmedParts.length) {
     lines.push(`\n## Bestätigter Weltzustand (Engine-Truth — NICHT ignorieren)`)
