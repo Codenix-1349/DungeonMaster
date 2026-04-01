@@ -18,12 +18,6 @@ import {
   SPELL_LIST,
   SRD_VERSION_LABEL,
   applyRacialBonuses,
-  calcArmorClass,
-  calcAttackBonus,
-  calcHitPoints,
-  calcInitiativeBonus,
-  calcSpellAttackBonus,
-  calcSpellSaveDC,
   createCharacterTemplate,
   getAbilityModifier,
   getCantripsKnownCount,
@@ -41,8 +35,6 @@ import {
 function buildCharacterFromForm(form) {
   const level = Math.max(1, Number(form.level) || 1)
   const baseAttrs = form.baseAttributes || form.attributes || {}
-  const attrs = applyRacialBonuses(baseAttrs, form.race || 'Mensch')
-  const calculatedMaxHP = calcHitPoints(form.class, attrs.con, level)
 
   // Auto-generate spells string from known cantrips and spells
   const cantripNames = (form.knownCantrips || [])
@@ -51,19 +43,13 @@ function buildCharacterFromForm(form) {
     .map(key => SPELL_LIST.find(s => s.key === key)?.name).filter(Boolean)
   const autoSpells = [...cantripNames, ...spellNames].join(', ')
 
+  // Let normalizeCharacter handle ALL stat calculations (HP, AC, attack, etc.)
+  // to avoid double-calculation with potentially different intermediate values.
   const normalized = normalizeCharacter({
     ...form,
     level,
     baseAttributes: baseAttrs,
-    attributes: attrs,
-    armorClass: calcArmorClass(attrs.dex, form.armorBonus, form.class, attrs),
-    maxHP: calculatedMaxHP,
-    currentHP: calculatedMaxHP,
-    proficiencyBonus: getProficiencyBonus(level),
-    initiativeBonus: calcInitiativeBonus(attrs.dex),
-    attackBonus: calcAttackBonus(form.class, attrs, level),
-    spellSaveDC: calcSpellSaveDC(form.class, attrs, level),
-    spellAttackBonus: calcSpellAttackBonus(form.class, attrs, level),
+    maxHP: 0, // force recalculation
     spells: autoSpells || form.spells || '',
     knownCantrips: form.knownCantrips || [],
     knownSpells: form.knownSpells || [],
@@ -72,7 +58,7 @@ function buildCharacterFromForm(form) {
 
   return {
     ...normalized,
-    currentHP: Math.min(normalized.currentHP || normalized.maxHP, normalized.maxHP),
+    currentHP: normalized.maxHP,
   }
 }
 
@@ -235,8 +221,8 @@ export default function CharacterPage() {
     deleteCharacter(characterId)
   }
 
-  const currentProficiency = getProficiencyBonus(form.level)
-  const currentInitiative = calcInitiativeBonus(form.attributes.dex)
+  const currentProficiency = form.proficiencyBonus || getProficiencyBonus(form.level)
+  const currentInitiative = form.initiativeBonus ?? 0
   const primaryAbility = CLASS_CONFIG[form.class]?.primaryAbility || 'str'
   const primaryMod = getAbilityModifier(form.attributes[primaryAbility])
   const rosterCountLabel = characters.length === 1 ? '1 Held gespeichert' : `${characters.length} Helden gespeichert`
@@ -275,7 +261,7 @@ export default function CharacterPage() {
               <button onClick={() => startEdit(character)} className="btn-ghost">Aktiven Helden bearbeiten</button>
               <button onClick={() => navigate('/game?mode=new')} className="btn-primary">Mit aktivem Helden neues Abenteuer</button>
             </div>
-            <CharacterSheet />
+            <CharacterSheet hideInventory />
 
             <div className="panel-gold p-4 mt-4">
               <p className="section-subtitle mb-3">Inventar des aktiven Helden</p>
@@ -344,9 +330,10 @@ export default function CharacterPage() {
   const hasSpellStep = !!CASTER_PROGRESSION[form.class]
   const EQUIP_STEP = hasSpellStep ? 5 : 4
   const FINAL_STEP = hasSpellStep ? 6 : 5
-  const stepLabels = hasSpellStep
-    ? ['Intro', 'Basis', 'Attribute', 'Fertigkeiten', 'Zauber', 'Ausrüstung', 'Fertig']
-    : ['Intro', 'Basis', 'Attribute', 'Fertigkeiten', 'Ausrüstung', 'Fertig']
+  // Always show 7 steps so the stepper layout stays stable when switching classes.
+  // Non-casters skip the "Zauber" step but the circles/lines don't shift.
+  const stepLabels = ['Intro', 'Basis', 'Attribute', 'Fertigkeiten', 'Zauber', 'Ausrüstung', 'Fertig']
+  const displayStep = (!hasSpellStep && step >= 4) ? step + 1 : step
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -354,16 +341,21 @@ export default function CharacterPage() {
         <h1 className="section-title text-3xl mb-2">Charakter erschaffen</h1>
         <p className="font-body text-stone-500 italic">{SRD_VERSION_LABEL}</p>
         <div className="flex items-center gap-1 mt-4">
-          {stepLabels.map((label, i) => (
-            <React.Fragment key={i}>
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-heading transition-colors ${
-                i <= step ? 'bg-gold-600 text-black' : 'bg-stone-800 text-stone-600'
-              }`}>
-                {i + 1}
-              </div>
-              {i < stepLabels.length - 1 && <div className={`flex-1 h-px transition-colors ${i < step ? 'bg-gold-600' : 'bg-stone-800'}`} />}
-            </React.Fragment>
-          ))}
+          {stepLabels.map((label, i) => {
+            const isSkipped = !hasSpellStep && i === 4
+            const active = i <= displayStep && !isSkipped
+            const lineDone = i < displayStep
+            return (
+              <React.Fragment key={i}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-heading transition-colors ${
+                  isSkipped ? 'bg-stone-800/40 text-stone-700' : active ? 'bg-gold-600 text-black' : 'bg-stone-800 text-stone-600'
+                }`}>
+                  {isSkipped ? '–' : i + 1}
+                </div>
+                {i < stepLabels.length - 1 && <div className={`flex-1 h-px transition-colors ${lineDone ? 'bg-gold-600' : 'bg-stone-800'}`} />}
+              </React.Fragment>
+            )
+          })}
         </div>
       </div>
 
@@ -778,7 +770,7 @@ export default function CharacterPage() {
                 .map(key => SPELL_LIST.find(s => s.key === key)?.name)
                 .filter(Boolean).join(', ') || '—'
             }</span></p>
-            <p><span className="section-subtitle">Inventar:</span> <span className="font-body text-parchment">{form.inventory.join(', ') || '—'}</span></p>
+            <p><span className="section-subtitle">Inventar:</span> <span className="font-body text-parchment">{form.inventory.map(i => typeof i === 'object' ? i.name : i).join(', ') || '—'}</span></p>
           </div>
           <div className="flex justify-between">
             <button onClick={() => setStep(EQUIP_STEP)} className="btn-ghost">← Zurück</button>

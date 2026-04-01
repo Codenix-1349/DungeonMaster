@@ -3,7 +3,7 @@ import { useGame } from '../context/GameContext'
 import { ATTR_SHORT_LABELS, SKILLS, SPELL_LIST, PROJECT_NAME, calcSkillBonus } from '../data/srd'
 import InventoryPanel from './InventoryPanel'
 
-export default function CharacterSheet({ compact = false }) {
+export default function CharacterSheet({ compact = false, hideInventory = false }) {
   const { character, getModifier } = useGame()
 
   if (!character) {
@@ -126,9 +126,11 @@ export default function CharacterSheet({ compact = false }) {
         </div>
       )}
 
-      <div className="mb-4">
-        <InventoryPanel mode="readonly" character={character} />
-      </div>
+      {!hideInventory && (
+        <div className="mb-4">
+          <InventoryPanel mode="readonly" character={character} />
+        </div>
+      )}
 
       {(character.knownCantrips?.length > 0 || character.knownSpells?.length > 0 || character.spells) && (
         <div>
