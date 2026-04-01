@@ -198,6 +198,49 @@ function buildStructuredChoices(section, sceneState) {
     })
   }
 
+  // Runtime discoveries — engine-revealed objects from section.reveals[]
+  // These are authoritative (source: engine), NOT AI-inferred.
+  const discoveries = (sceneState?.gmState?.runtimeDiscoveries || []).filter(d => d.visible)
+  for (const disc of discoveries) {
+    // Look up the reveal definition to get its actions[]
+    const revealDef = (section.reveals || []).find(r => r.id === disc.revealId)
+    const actions = revealDef?.actions || []
+    if (actions.length) {
+      for (let i = 0; i < actions.length; i++) {
+        const action = actions[i]
+        const label = action.label
+        const recent = wasRecentlyActedOn(label, disc.label, recentActions)
+        if (recent) continue
+        choices.push({
+          id: `reveal-${disc.revealId}-${i}`,
+          label,
+          source: 'structured',
+          kind: disc.kind || 'object',
+          target: disc.label,
+          check: action.check ? { skillOrAbility: action.check.skill, dc: action.check.dc, advantage: null } : inferCheckFromLabel(label),
+          priority: 5 + i,
+          isFallback: false,
+        })
+      }
+    } else {
+      // No explicit actions — offer a generic "examine" choice
+      const label = `${disc.label} untersuchen`
+      const recent = wasRecentlyActedOn(label, disc.label, recentActions)
+      if (!recent) {
+        choices.push({
+          id: `reveal-${disc.revealId}`,
+          label,
+          source: 'structured',
+          kind: disc.kind || 'object',
+          target: disc.label,
+          check: inferCheckFromLabel(label),
+          priority: 5,
+          isFallback: false,
+        })
+      }
+    }
+  }
+
   // Suggested actions from adventure data (deprioritize recently used)
   const suggested = section.suggestedActions || []
   for (let i = 0; i < suggested.length; i++) {

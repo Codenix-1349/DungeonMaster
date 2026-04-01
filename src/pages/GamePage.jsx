@@ -8,7 +8,7 @@ import CombatTracker from '../components/CombatTracker'
 import SkillCheckPanel from '../components/SkillCheckPanel'
 import MessageBubble, { TypingIndicator } from '../components/game/MessageBubble'
 import SessionCard from '../components/game/SessionCard'
-import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById } from '../data/srd'
+import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById, resolveReveals, applyReveals } from '../data/srd'
 import { buildAvailableChoices } from '../engine/choiceEngine'
 
 const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
@@ -355,6 +355,17 @@ export default function GamePage() {
         ...prev,
         interactionHistory: [...(prev?.interactionHistory || []), record].slice(-20),
       }))
+    }
+
+    // On success: resolve engine-driven reveals (adventure data truth, NOT AI)
+    if (result.success && sceneState && choiceMeta?.target) {
+      const section = getCurrentSection(adventure, sceneState)
+      if (section) {
+        const matched = resolveReveals(section, sceneState, choiceMeta.target)
+        if (matched.length) {
+          setSceneState(prev => applyReveals(prev, matched))
+        }
+      }
     }
 
     let rollStr = `d20(${result.d20Result})`

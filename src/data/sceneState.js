@@ -50,6 +50,63 @@ export function findSectionById(structure, sectionId) {
   return structure?.sections?.find(section => section.id === sectionId) || null
 }
 
+// ─── Engine-Driven Reveal Resolution ─────────────────────────────────────────
+// Checks section.reveals[] against the interaction target. Reveals are defined
+// in adventure data (engine truth), NOT parsed from AI text.
+//
+// section.reveals[] schema (future structured adventure format):
+//   { id, label, trigger, actions?: [{ label, check? }], kind? }
+//
+// trigger: label of a static interactiveObject OR id of a previously revealed object.
+// When player successfully interacts with an object matching trigger → reveal activates.
+
+export function resolveReveals(section, sceneState, interactionTarget) {
+  const reveals = section?.reveals || []
+  if (!reveals.length || !interactionTarget) return []
+
+  const existing = sceneState?.gmState?.runtimeDiscoveries || []
+  const existingIds = new Set(existing.map(d => d.revealId))
+  const targetLower = interactionTarget.toLowerCase()
+
+  return reveals.filter(reveal => {
+    if (existingIds.has(reveal.id)) return false // already discovered
+    const triggerLower = (reveal.trigger || '').toLowerCase()
+    // Match: trigger equals target label (static object) OR target matches a revealed object's label whose revealId equals trigger
+    if (triggerLower === targetLower) return true
+    // Check if trigger references a revealed object's ID, and the target matches that object's label
+    const parentReveal = existing.find(d => d.revealId === triggerLower)
+    if (parentReveal && parentReveal.label.toLowerCase() === targetLower) return true
+    return false
+  })
+}
+
+export function applyReveals(sceneState, matchedReveals = []) {
+  if (!matchedReveals.length || !sceneState) return sceneState
+  const existing = sceneState.gmState?.runtimeDiscoveries || []
+  const sectionId = sceneState.gmState?.currentSectionId
+  const turn = sceneState.turnCount || 0
+
+  const newEntries = matchedReveals.map(reveal => ({
+    revealId: reveal.id,
+    sectionId,
+    label: reveal.label,
+    kind: reveal.kind || 'object',
+    visible: true,
+    state: 'revealed',
+    source: 'engine',
+    trigger: reveal.trigger,
+    turn,
+  }))
+
+  return {
+    ...sceneState,
+    gmState: {
+      ...sceneState.gmState,
+      runtimeDiscoveries: [...existing, ...newEntries],
+    },
+  }
+}
+
 function computeSectionTransitionWeight(section, previousSection, latestUser = '') {
   if (!section || !previousSection) return 0
   if (section.id === previousSection.id) return 8
@@ -198,6 +255,7 @@ export function createInitialSceneState(adventure) {
       npcStates: {},
       triggeredEvents: [],
       sectionVisitCounts: firstSection ? { [firstSection.id]: 1 } : {},
+      runtimeDiscoveries: [],
     },
 
     // ── Player Knowledge (what the player knows) ──
@@ -315,6 +373,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
         npcStates: {},
         triggeredEvents: [],
         sectionVisitCounts: Object.fromEntries((previousSceneState.visitedSectionIds || []).map(id => [id, 1])),
+        runtimeDiscoveries: [],
       },
       playerKnowledge: {
         knownNpcs: previousSceneState.knownNpcs || [],
@@ -451,6 +510,13 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     if (state === 'open' || state === 'destroyed') newObjectStates[obj] = state
   }
 
+  // Runtime discoveries: carry forward, scope visibility to current section
+  const prevDiscoveries = prevGm.runtimeDiscoveries || []
+  const runtimeDiscoveries = prevDiscoveries.map(d => ({
+    ...d,
+    visible: d.sectionId === currentSection.id,
+  }))
+
   const visitCounts = { ...(prevGm.sectionVisitCounts || {}) }
   visitCounts[currentSection.id] = (visitCounts[currentSection.id] || 0) + (shouldTransition || !previous.turnCount ? 1 : 0)
 
@@ -506,6 +572,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
       npcStates: newNpcStates,
       triggeredEvents,
       sectionVisitCounts: visitCounts,
+      runtimeDiscoveries,
     },
 
     // ── Player Knowledge ──
