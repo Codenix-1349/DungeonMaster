@@ -1,11 +1,13 @@
 # Next Steps
 
-## Refactor complete — ready for Phase 3
+## Phase 3 complete — Adventure Runtime Hardened
 
-The codebase is now cleanly split for Phase 3 (Adventure Runtime):
-- **Data layer**: characterRules, adventureParser, sceneState, knowledgeModel, adventureContext
-- **Service layer**: promptBuilder, responseNormalization, tagParsers, openrouterTransport
-- **UI layer**: game/MessageBubble, game/SessionCard extracted from GamePage
+Key changes: engine-truth over AI-truth, structured data over heuristics.
+- NPC/object states promoted to gmState (permanent, survive transitions)
+- NPC discovery: assistant-only (player can't meta-game names)
+- Structured transitions: exits-only (no false transitions)
+- Clue discovery: cross-referenced with section clues, assistant-only
+- Prompt leakage reduced (hidden NPCs/clues limited, engine-truth block added)
 
 ### Known open issue
 - **Proben ([PROBE:]-Tags) fire inconsistently** — skill checks sometimes don't trigger. Likely a prompt-level issue (see memory: project_proben_broken.md).
@@ -18,7 +20,7 @@ The codebase is now cleanly split for Phase 3 (Adventure Runtime):
 
 ## How to continue after an interruption
 1. `cd C:\Apps\DungeonsDaggers\DungeonMaster`
-2. `git checkout refactor/module-split` (or `main` if merged)
-3. `npm test` — verify all 63 tests pass
+2. `git checkout feature/phase3-adventure-runtime` (or `main` if merged)
+3. `npm test` — verify all 70 tests pass
 4. `npm run build` — verify build succeeds
 5. Read this file + `ai-progress.md` for context

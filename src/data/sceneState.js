@@ -255,25 +255,29 @@ function buildRecentActions(previous = [], latestAction = '', isTransition = fal
 // - No facts/factions (too close to pseudo-truth, removed in 2.5b)
 // - NPC/object hints scoped to current section, reset on transition
 // - Dialogue hints kept only for active NPC
-function buildInferredHints(previous, latestAssistant, latestUser, currentSection, knownNpcs, activeNpc, isTransition) {
+function buildInferredHints(previous, latestAssistant, latestUser, currentSection, knownNpcs, activeNpc, isTransition, gmState = {}) {
   const prevInferred = previous.inferred || {}
 
   // NPC state hints: scoped to current section's NPCs, reset on transition
+  // Phase 3: skip NPCs already promoted to gmState (authoritative wins)
+  const authoritativeNpcs = gmState.npcStates || {}
   const sectionNpcs = new Set((currentSection.npcs || []).map(n => n.toLowerCase()))
   const prevNpcHints = isTransition ? {} : { ...(prevInferred.npcStates || {}) }
   const freshNpcChanges = extractNpcStateChanges(latestAssistant, knownNpcs)
   const npcStates = {}
   for (const [npc, state] of Object.entries({ ...prevNpcHints, ...freshNpcChanges })) {
-    if (sectionNpcs.has(npc.toLowerCase())) npcStates[npc] = state
+    if (sectionNpcs.has(npc.toLowerCase()) && !authoritativeNpcs[npc]) npcStates[npc] = state
   }
 
   // Object state hints: scoped to current section's objects, reset on transition
+  // Phase 3: skip objects already promoted to gmState
+  const authoritativeObjects = gmState.objectStates || {}
   const sectionObjects = new Set((currentSection.interactiveObjects || []).map(o => o.toLowerCase()))
   const prevObjHints = isTransition ? {} : { ...(prevInferred.objectStates || {}) }
   const freshObjChanges = extractObjectStateChanges(latestAssistant, currentSection)
   const objectStates = {}
   for (const [obj, state] of Object.entries({ ...prevObjHints, ...freshObjChanges })) {
-    if (sectionObjects.has(obj.toLowerCase())) objectStates[obj] = state
+    if (sectionObjects.has(obj.toLowerCase()) && !authoritativeObjects[obj]) objectStates[obj] = state
   }
 
   // Dialogue hints: only for active NPC, all others dropped
@@ -385,9 +389,13 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     }
   }
 
+  // Phase 3: structured adventures use ONLY exit-based transitions — no heuristic scoring fallback
   const shouldTransition = exitTargetSection
     ? true
-    : (bestSection.id !== previousSection?.id && (explicitMove || assistantAnchorsNewSection || bestScore >= previousScore + 4))
+    : (structure.format === 'structured'
+      ? false  // structured: exits are the only way to transition
+      : (bestSection.id !== previousSection?.id && (explicitMove || assistantAnchorsNewSection || bestScore >= previousScore + 4))
+    )
 
   const currentSection = exitTargetSection || (shouldTransition ? bestSection : (previousSection || bestSection))
   const relevantChunks = selectRelevantChunks(structure, currentSection, searchTokens, combat?.active ? 3 : 2)
@@ -427,9 +435,21 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     for (const flag of currentSection.setsOnEntry) newPlotFlags[flag] = true
   }
 
-  // Authoritative NPC/object states: carry forward only, no AI-derived writes (Phase 2.5)
+  // Authoritative NPC/object states: carry forward + promote confirmed changes from AI narrative
+  // Phase 3: permanent states (dead, fled, destroyed, open) survive scene transitions
   const newNpcStates = { ...(prevGm.npcStates || {}) }
+  const confirmedNpcChanges = extractNpcStateChanges(latestAssistant, prevPk.knownNpcs || [])
+  for (const [npc, state] of Object.entries(confirmedNpcChanges)) {
+    // Only promote terminal/significant states to authoritative layer
+    if (state === 'dead' || state === 'fled') newNpcStates[npc] = state
+  }
+
   const newObjectStates = { ...(prevGm.objectStates || {}) }
+  const confirmedObjChanges = extractObjectStateChanges(latestAssistant, currentSection)
+  for (const [obj, state] of Object.entries(confirmedObjChanges)) {
+    // Only promote persistent states — 'closed' is reversible, skip it
+    if (state === 'open' || state === 'destroyed') newObjectStates[obj] = state
+  }
 
   const visitCounts = { ...(prevGm.sectionVisitCounts || {}) }
   visitCounts[currentSection.id] = (visitCounts[currentSection.id] || 0) + (shouldTransition || !previous.turnCount ? 1 : 0)
@@ -447,7 +467,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
   ])]
   const newClues = normalizeShortList([
     ...(prevPk.discoveredClues || []),
-    ...extractCluesFromMessages(recentMessages),
+    ...extractCluesFromMessages(recentMessages, currentSection.clues || []),
   ], 8)
   const newKnownPlaces = [...new Set([
     ...(prevPk.knownPlaces || []),
@@ -507,7 +527,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     memorySummary,
 
     // ── Inferred (AI-derived soft hints, scene-scoped, NOT authoritative truth) ──
-    inferred: buildInferredHints(previous, latestAssistant, latestUser, currentSection, prevPk.knownNpcs || [], activeNpc, shouldTransition),
+    inferred: buildInferredHints(previous, latestAssistant, latestUser, currentSection, prevPk.knownNpcs || [], activeNpc, shouldTransition, { npcStates: newNpcStates, objectStates: newObjectStates }),
 
     // ── Scene State (current narrative frame) ──
     currentSectionTitle: currentSection.title,
