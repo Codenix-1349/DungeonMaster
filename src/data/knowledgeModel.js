@@ -2,12 +2,29 @@ import { splitSentences, normalizeShortList } from './adventureParser'
 
 // ─── Clue & Thread Extraction ───────────────────────────────────────────────
 
-export function extractCluesFromMessages(messages = []) {
+export function extractCluesFromMessages(messages = [], sectionClues = []) {
+  // Phase 3: for structured adventures with defined clues[], cross-reference
+  // against the section's clue list. Only assistant messages count as reveals.
+  if (sectionClues.length > 0) {
+    const assistantText = messages
+      .filter(m => m.role === 'assistant')
+      .map(m => m.content)
+      .join(' ')
+      .toLowerCase()
+    return sectionClues.filter(clue => {
+      // Check if the AI's narration contains key words from the clue
+      const clueWords = clue.toLowerCase().split(/\s+/).filter(w => w.length >= 4)
+      const matchCount = clueWords.filter(w => assistantText.includes(w)).length
+      return matchCount >= Math.max(1, Math.ceil(clueWords.length * 0.4))
+    })
+  }
+
+  // Prose fallback: keyword heuristic (legacy behavior)
   const clueHints = ['hinweis', 'spur', 'schlüssel', 'karte', 'brief', 'zeichen', 'symbol', 'notiz', 'gerücht', 'amulett', 'ritual', 'name', 'blut', 'abdruck', 'siegel']
-  const text = messages.map(message => message.content).join(' ')
+  const assistantText = messages.filter(m => m.role === 'assistant').map(m => m.content).join(' ')
   const clues = []
 
-  for (const sentence of splitSentences(text)) {
+  for (const sentence of splitSentences(assistantText)) {
     const lower = sentence.toLowerCase()
     if (clueHints.some(hint => lower.includes(hint))) clues.push(sentence)
   }
@@ -36,8 +53,15 @@ export function extractOpenThreads(messages = [], previousObjective = '', sectio
 
 export function extractDiscoveredNpcs(messages = [], sectionNpcs = []) {
   if (!sectionNpcs.length) return []
-  const text = messages.map(m => m.content).join(' ').toLowerCase()
-  return sectionNpcs.filter(npc => text.toLowerCase().includes(npc.toLowerCase()))
+  // Phase 3: only assistant (DM) messages count — the AI must introduce an NPC
+  // in its narration for the NPC to become "discovered". Player merely mentioning
+  // a name doesn't legitimize discovery.
+  const assistantText = messages
+    .filter(m => m.role === 'assistant')
+    .map(m => m.content)
+    .join(' ')
+    .toLowerCase()
+  return sectionNpcs.filter(npc => assistantText.includes(npc.toLowerCase()))
 }
 
 // ── NPC Disposition / Suspicion Heuristics ──────────────────────────────────

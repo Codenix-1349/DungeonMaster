@@ -16,25 +16,76 @@ function buildStructuredAdventureContext(structure, sceneState) {
   if (section.visibleFeatures?.length) lines.push(`SICHTBAR (nur diese Dinge existieren hier): ${section.visibleFeatures.join(' | ')}`)
 
   // NPC visibility: split into known (player has encountered) and hidden
+  // Phase 3: respect gmState — dead/fled NPCs are no longer "present"
   const knownNpcs = sceneState?.playerKnowledge?.knownNpcs || []
+  const npcStates = sceneState?.gmState?.npcStates || {}
   const sectionNpcs = section.npcs || []
-  const visibleNpcs = sectionNpcs.filter(npc => knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
+  const visibleNpcs = sectionNpcs
+    .filter(npc => knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
+    .filter(npc => !['dead', 'fled'].includes(npcStates[npc]))
+  const absentNpcs = sectionNpcs
+    .filter(npc => knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
+    .filter(npc => ['dead', 'fled'].includes(npcStates[npc]))
   const hiddenNpcs = sectionNpcs.filter(npc => !knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
   if (visibleNpcs.length) lines.push(`ANWESENDE NPCS (nur diese sind hier, keine anderen erfinden): ${visibleNpcs.join(' | ')}`)
+  if (absentNpcs.length) lines.push(`NICHT MEHR ANWESEND: ${absentNpcs.map(npc => `${npc} (${npcStates[npc]})`).join(' | ')}`)
 
   if (section.enemies?.length) lines.push(`GEGNER: ${section.enemies.join(' | ')}`)
   if (section.exits?.length) {
     lines.push(`AUSGÄNGE: ${section.exits.map(e => e.label).join(' | ')}`)
   }
-  if (section.interactiveObjects?.length) lines.push(`OBJEKTE: ${section.interactiveObjects.join(' | ')}`)
+  if (section.interactiveObjects?.length) {
+    // Phase 3: annotate objects with authoritative state from gmState
+    const objectStates = sceneState?.gmState?.objectStates || {}
+    const objLabels = section.interactiveObjects.map(obj => {
+      const state = objectStates[obj]
+      return state ? `${obj} (${state})` : obj
+    })
+    lines.push(`OBJEKTE: ${objLabels.join(' | ')}`)
+  }
   if (section.openThreads?.length) lines.push(`FÄDEN: ${section.openThreads.join(' | ')}`)
   if (section.suggestedActions?.length) lines.push(`VORGESCHLAGENE AKTIONEN: ${section.suggestedActions.join(' | ')}`)
 
-  // Internal GM instructions — the AI must follow these but NEVER reveal them directly
+  // Phase 3: explicit engine-confirmed state summary — AI must respect this as ground truth
+  const confirmedParts = []
+  if (visibleNpcs.length) confirmedParts.push(`NPCs hier: ${visibleNpcs.join(', ')}`)
+  if (absentNpcs.length) confirmedParts.push(`Weg: ${absentNpcs.map(n => `${n} (${npcStates[n]})`).join(', ')}`)
+  const objectStates = sceneState?.gmState?.objectStates || {}
+  const changedObjects = section.interactiveObjects?.filter(o => objectStates[o]) || []
+  if (changedObjects.length) confirmedParts.push(`Objekte: ${changedObjects.map(o => `${o} (${objectStates[o]})`).join(', ')}`)
+  const discoveredClues = sceneState?.playerKnowledge?.discoveredClues || []
+  if (discoveredClues.length) confirmedParts.push(`Bekannte Hinweise: ${discoveredClues.slice(0, 3).join(', ')}`)
+  if (confirmedParts.length) {
+    lines.push(`\n## Bestätigter Weltzustand (Engine-Truth — NICHT ignorieren)`)
+    lines.push(confirmedParts.join('\n'))
+  }
+
+  // Internal GM instructions — Phase 3: minimize leakage surface
+  // Only send what the AI needs for the NEXT interaction, not the full list
   const internal = []
-  if (hiddenNpcs.length) internal.push(`NOCH NICHT SICHTBARE NPCS (erst natürlich einführen wenn Spieler sie entdeckt/anspricht/auf sie trifft): ${hiddenNpcs.join(' | ')}`)
+
+  // Hidden NPCs: limit to max 2 to reduce leakage risk
+  if (hiddenNpcs.length) {
+    const limitedHidden = hiddenNpcs.slice(0, 2)
+    internal.push(`MÖGLICHE BEGEGNUNG (erst einführen wenn Spieler sie trifft/entdeckt): ${limitedHidden.join(' | ')}`)
+  }
+
   if (section.transitionRules?.length) internal.push(`ÜBERGANGSREGELN: ${section.transitionRules.join(' | ')}`)
-  if (section.clues?.length) internal.push(`ENTDECKBARE HINWEISE (NUR enthüllen wenn Spieler aktiv sucht/fragt — NIEMALS vorweg verraten): ${section.clues.join(' | ')}`)
+
+  // Clues: only send those NOT yet discovered (reuses discoveredClues from above)
+  const undiscoveredClues = (section.clues || []).filter(clue => {
+    const clueWords = clue.toLowerCase().split(/\s+/).filter(w => w.length >= 4)
+    return !discoveredClues.some(dc => {
+      const dcLower = dc.toLowerCase()
+      return clueWords.filter(w => dcLower.includes(w)).length >= Math.ceil(clueWords.length * 0.4)
+    })
+  })
+  if (undiscoveredClues.length) {
+    // Limit to 2 clues to reduce leakage surface
+    const limitedClues = undiscoveredClues.slice(0, 2)
+    internal.push(`ENTDECKBARE HINWEISE (NUR bei aktivem Suchen/Untersuchen enthüllen, NIEMALS ungefragt): ${limitedClues.join(' | ')}`)
+  }
+
   if (internal.length) {
     lines.push(`\n## Interne Spielleiter-Anweisungen (NICHT dem Spieler mitteilen)`)
     lines.push(...internal)

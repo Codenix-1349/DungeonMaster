@@ -1,5 +1,41 @@
 # Progress
 
+## 2026-04-01 — Phase 3: Adventure Runtime Hardening (6 Deltas)
+
+### Done — Engine-Truth over AI-Truth, 70 tests passing, build green
+
+#### Delta 1: NPC/Object State Promotion to gmState
+- Terminal states (dead, fled, destroyed, open) promoted from `inferred` to `gmState`
+- Persist across scene transitions — dead NPCs stay dead
+- `adventureContext.js`: shows absent NPCs with state, annotates objects with authoritative state
+- `buildInferredHints` skips entries already in gmState (no duplication)
+
+#### Delta 2: NPC Discovery Hardening
+- `extractDiscoveredNpcs`: only assistant messages count (AI must introduce NPC)
+- Player mentioning an NPC name alone no longer auto-discovers them
+
+#### Delta 3: Structured Transition → Exits Only
+- Structured adventures: heuristic section scoring disabled for transitions
+- Only exit-based transitions allowed — no false transitions from keyword matching
+- Prose adventures: unchanged (heuristic still active)
+
+#### Delta 4: Clue Discovery Hardening
+- Structured adventures: cross-reference with `section.clues[]` array
+- Only AI responses scanned (player questions don't count as discovery)
+- Prose adventures: keyword heuristic preserved as fallback, but assistant-only
+
+#### Delta 5: Prompt Leakage Reduction
+- Hidden NPCs: max 2 sent to AI (was: all), relabeled "MÖGLICHE BEGEGNUNG"
+- Clues: only undiscovered sent, max 2, strengthened instruction
+- New "Bestätigter Weltzustand" block: engine-confirmed entities explicitly listed
+- `promptBuilder.js`: authoritative NPC/object states shown before inferred hints
+
+#### Delta 6: Tests & Cleanup
+- Updated Phase 2.5 truth-firewall tests to validate Phase 3 promotion behavior
+- Added 7 new tests: state persistence, non-terminal exclusion, player-only NPC mention, exits-only transition, clue cross-reference, clue player-ask rejection
+
+---
+
 ## 2026-04-01 — Refactor: Module Split (Paket 1-3)
 
 ### Done — Structure refactor for Phase 3 readiness

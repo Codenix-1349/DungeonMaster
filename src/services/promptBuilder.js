@@ -227,6 +227,16 @@ function buildSceneStateContext(sceneState = null) {
     }
   }
 
+  // ── Phase 3: Authoritative NPC/Object states from gmState ──
+  const gmNpcStates = Object.entries(sceneState.gmState?.npcStates || {})
+  const gmObjStates = Object.entries(sceneState.gmState?.objectStates || {})
+  if (gmNpcStates.length || gmObjStates.length) {
+    const stateParts = []
+    if (gmNpcStates.length) stateParts.push(`NPCs: ${gmNpcStates.map(([n, s]) => `${n} (${s})`).join(', ')}`)
+    if (gmObjStates.length) stateParts.push(`Objekte: ${gmObjStates.map(([o, s]) => `${o} (${s})`).join(', ')}`)
+    lines.push(`**Bestätigter Weltzustand:** ${stateParts.join(' | ')}`)
+  }
+
   // ── Inferred hints (scene-scoped, AI-derived, NOT authoritative) ──
   const inf = sceneState.inferred
   if (inf) {

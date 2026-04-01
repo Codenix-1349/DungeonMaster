@@ -61,8 +61,8 @@ function derive(prev, messages) {
 
 // ── Tests ──
 
-describe('Truth Firewall — gmState immutability from AI text', () => {
-  it('gmState.npcStates is NOT modified when AI narrates an NPC death', () => {
+describe('Truth Firewall — gmState: terminal NPC/object states promoted (Phase 3)', () => {
+  it('gmState.npcStates promotes terminal states (dead) from AI narration', () => {
     const prev = makePrev()
     prev.playerKnowledge.knownNpcs = ['Gareth']
 
@@ -71,13 +71,13 @@ describe('Truth Firewall — gmState immutability from AI text', () => {
       msg('assistant', 'Gareth fällt leblos zu Boden. Er stirbt.'),
     ])
 
-    // gmState.npcStates must NOT contain AI-derived death
-    expect(next.gmState.npcStates).toEqual({})
-    // But inferred.npcStates SHOULD pick it up as a soft hint
-    expect(next.inferred.npcStates.Gareth).toBe('dead')
+    // Phase 3: terminal states (dead, fled) are promoted to gmState
+    expect(next.gmState.npcStates.Gareth).toBe('dead')
+    // Once in gmState, NOT duplicated in inferred
+    expect(next.inferred.npcStates.Gareth).toBeUndefined()
   })
 
-  it('gmState.objectStates is NOT modified when AI narrates object destruction', () => {
+  it('gmState.objectStates promotes terminal states (destroyed) from AI narration', () => {
     const prev = makePrev()
 
     const next = derive(prev, [
@@ -85,11 +85,13 @@ describe('Truth Firewall — gmState immutability from AI text', () => {
       msg('assistant', 'Die Truhe wird zertrümmert und zerfällt in Splitter.'),
     ])
 
-    expect(next.gmState.objectStates).toEqual({})
-    expect(next.inferred.objectStates.Truhe).toBe('destroyed')
+    // Phase 3: terminal object states promoted to gmState
+    expect(next.gmState.objectStates.Truhe).toBe('destroyed')
+    // NOT duplicated in inferred
+    expect(next.inferred.objectStates.Truhe).toBeUndefined()
   })
 
-  it('gmState.npcStates carries forward engine-set values unchanged', () => {
+  it('gmState.npcStates carries forward + promotes new terminal states', () => {
     const prev = makePrev()
     prev.gmState.npcStates = { Gareth: 'dead' }
     prev.playerKnowledge.knownNpcs = ['Gareth', 'Mira']
@@ -101,10 +103,39 @@ describe('Truth Firewall — gmState immutability from AI text', () => {
 
     // Engine-set state carries forward
     expect(next.gmState.npcStates.Gareth).toBe('dead')
-    // AI-derived state does NOT enter gmState
-    expect(next.gmState.npcStates.Mira).toBeUndefined()
-    // But lands in inferred
-    expect(next.inferred.npcStates.Mira).toBe('fled')
+    // Phase 3: 'fled' is terminal → promoted to gmState
+    expect(next.gmState.npcStates.Mira).toBe('fled')
+    // NOT duplicated in inferred
+    expect(next.inferred.npcStates.Mira).toBeUndefined()
+  })
+
+  it('promoted NPC state (dead) persists across scene transitions', () => {
+    const prev = makePrev()
+    prev.gmState.npcStates = { Gareth: 'dead' }
+    prev.playerKnowledge.knownNpcs = ['Gareth']
+
+    // Simulate a turn with no new NPC changes
+    const next = derive(prev, [
+      msg('user', 'Ich gehe weiter.'),
+      msg('assistant', 'Du verlässt die Taverne.'),
+    ])
+
+    // Dead NPC state must persist (engine truth survives transitions)
+    expect(next.gmState.npcStates.Gareth).toBe('dead')
+  })
+
+  it('non-terminal NPC states (e.g. descriptive) do NOT get promoted', () => {
+    const prev = makePrev()
+    prev.playerKnowledge.knownNpcs = ['Gareth']
+
+    // AI describes Gareth laughing — not a terminal state
+    const next = derive(prev, [
+      msg('user', 'Was macht Gareth?'),
+      msg('assistant', 'Gareth lacht laut und poliert ein Glas.'),
+    ])
+
+    // No terminal state → gmState stays empty
+    expect(next.gmState.npcStates.Gareth).toBeUndefined()
   })
 })
 
