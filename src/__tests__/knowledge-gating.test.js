@@ -170,6 +170,56 @@ describe('Knowledge Gating — structured adventures: exits-only transitions (Ph
     // Exit label "Zum Wald gehen" matches → transition happens
     expect(next.gmState.currentSectionId).toBe('sec-2')
   })
+
+  it('structured adventure does NOT transition from assistant-only exit narration', () => {
+    const sec1 = makeSection({
+      id: 'sec-1', title: 'Taverne', npcs: ['Gareth'],
+      exits: [{ label: 'Zum Wald gehen', targetId: 'sec-2' }],
+    })
+    const sec2 = makeSection({
+      id: 'sec-2', title: 'Wald', npcs: ['Elara'],
+      keywords: ['wald'], searchText: 'wald elara',
+      location: 'Wald', chunkIndexes: [0],
+    })
+    const adventure = makeAdventure([sec1, sec2])
+    const prev = createInitialSceneState(adventure)
+
+    const next = deriveSceneState({
+      adventure, previousSceneState: prev,
+      messages: [
+        msg('user', 'Ich untersuche die Truhe.'),
+        msg('assistant', 'Du bleibst in der Taverne, auch wenn jemand vom Weg zum Wald spricht.'),
+      ],
+      fallbackUserActionKey: 'intr:inspect_chest',
+    })
+
+    expect(next.gmState.currentSectionId).toBe('sec-1')
+  })
+
+  it('structured adventure transitions via authoritative exit action key', () => {
+    const sec1 = makeSection({
+      id: 'sec-1', title: 'Taverne', npcs: ['Gareth'],
+      exits: [{ id: 'to_forest', label: 'Zum Wald gehen', targetId: 'sec-2' }],
+    })
+    const sec2 = makeSection({
+      id: 'sec-2', title: 'Wald', npcs: ['Elara'],
+      keywords: ['wald'], searchText: 'wald elara',
+      location: 'Wald', chunkIndexes: [0],
+    })
+    const adventure = makeAdventure([sec1, sec2])
+    const prev = createInitialSceneState(adventure)
+
+    const next = deriveSceneState({
+      adventure, previousSceneState: prev,
+      messages: [
+        msg('user', 'Zum Wald gehen'),
+        msg('assistant', 'Du trittst durch die Tür in die Dunkelheit.'),
+      ],
+      fallbackUserActionKey: 'exit:to_forest',
+    })
+
+    expect(next.gmState.currentSectionId).toBe('sec-2')
+  })
 })
 
 describe('Knowledge Gating — section transition does not auto-reveal', () => {

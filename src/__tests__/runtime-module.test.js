@@ -423,3 +423,30 @@ describe('blocksIfFlags lifecycle', () => {
     expect(choices.some(c => c.interactionId === 'take_parchment_note')).toBe(false)
   })
 })
+
+describe('runtime transitions', () => {
+  it('does not leave the section when assistant narration mentions another exit after an interaction', () => {
+    const adv = loadModule()
+    const prev = {
+      ...createInitialSceneState(adv),
+      gmState: {
+        ...createInitialSceneState(adv).gmState,
+        currentSectionId: 'old_brewery',
+        plotFlags: { HAS_CELLAR_KEY: true, CELLAR_UNLOCKED: true },
+      },
+    }
+
+    const next = deriveSceneState({
+      adventure: adv,
+      previousSceneState: prev,
+      messages: [
+        msg('user', 'Den beschädigten Tresen untersuchen'),
+        msg('assistant', 'Unter dem Tresen entdeckst du eine vibrierende Metallplatte. Aus der Ferne meinst du Wassergeräusche aus einem anderen Gang zu hören.'),
+      ],
+      fallbackUserText: 'Den beschädigten Tresen untersuchen',
+      fallbackUserActionKey: 'intr:inspect_counter',
+    })
+
+    expect(next.gmState.currentSectionId).toBe('old_brewery')
+  })
+})

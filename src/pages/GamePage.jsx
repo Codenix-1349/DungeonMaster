@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGame } from '../context/GameContext'
 import { useAuth } from '../context/AuthContext'
 import { useSound } from '../context/SoundContext'
-import { sendMessage, parseLootTags, parseCurrencyTags, parseLostItemTags, parseCheckTags, stripCheckTags, formatProbeHinweisTags, parseHPTags, parseXPTags, parseEnemyTags } from '../services/openrouter'
+import { sendMessage, parseLootTags, parseCurrencyTags, parseLostItemTags, parseCheckTags, parseHPTags, parseXPTags, parseEnemyTags } from '../services/openrouter'
 import CombatTracker from '../components/CombatTracker'
 import SkillCheckPanel from '../components/SkillCheckPanel'
 import MessageBubble, { TypingIndicator } from '../components/game/MessageBubble'
@@ -14,6 +14,7 @@ import { isRuntimeStructure } from '../data/runtimeModule'
 import {
   createPendingCheckFromChoice,
   createPendingChoiceMeta,
+  formatAssistantTextForDisplay,
   resolveResponsePendingCheck,
   resolveRuntimeChoiceFromText,
   shouldBuildChoicesAfterResponse,
@@ -198,6 +199,7 @@ export default function GamePage() {
     const activeCharacter = options.characterOverride ?? character
     const activeAdventure = options.adventureOverride ?? adventure
     const activeSceneState = options.sceneStateOverride ?? sceneState
+    const activeRuntimeModule = isRuntimeModule(activeAdventure)
     const history = Array.isArray(options.historyOverride)
       ? options.historyOverride
       : buildHistory()
@@ -261,7 +263,7 @@ export default function GamePage() {
       })
 
       // Strip [PROBE:] tags from displayed text (hide DC from player)
-      const displayText = formatProbeHinweisTags(stripCheckTags(full), getCheckLabel)
+      const displayText = formatAssistantTextForDisplay(full, getCheckLabel, { runtimeModule: activeRuntimeModule })
       const assistantMsg = addMessage('assistant', displayText)
 
       const responsePendingCheck = resolveResponsePendingCheck({
@@ -270,6 +272,7 @@ export default function GamePage() {
         combatActive: combat?.active,
         allowEngineCheckInference: options.allowEngineCheckInference !== false,
         hasPendingChoiceMeta: Boolean(pendingChoiceMetaRef.current),
+        runtimeModule: activeRuntimeModule,
       })
       if (responsePendingCheck) {
         pendingChoiceMetaRef.current = null // AI-initiated, no choice metadata
@@ -798,7 +801,7 @@ export default function GamePage() {
                   <span className="font-heading text-xs text-gold-600 tracking-wider">🗡️ DUNGEONS & DAGGERS</span>
                 </div>
                 {streamingText
-                  ? <div className="chat-dm"><p className="font-body text-base leading-relaxed whitespace-pre-wrap">{normalizeNumberedList(formatProbeHinweisTags(stripCheckTags(streamingText), getCheckLabel))}<span className="inline-block w-0.5 h-4 bg-gold-500 ml-0.5 animate-pulse" /></p></div>
+                  ? <div className="chat-dm"><p className="font-body text-base leading-relaxed whitespace-pre-wrap">{normalizeNumberedList(formatAssistantTextForDisplay(streamingText, getCheckLabel, { runtimeModule: isRuntimeModule(adventure) }))}<span className="inline-block w-0.5 h-4 bg-gold-500 ml-0.5 animate-pulse" /></p></div>
                   : <TypingIndicator />}
               </div>
             )}

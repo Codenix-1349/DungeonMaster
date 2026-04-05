@@ -404,6 +404,62 @@ function buildRecentActionKeys(previous = [], latestActionKey = null, isTransiti
   return [latestActionKey, ...(previous || []).filter(key => key !== latestActionKey)].slice(0, 3)
 }
 
+function normalizeStructuredActionText(value = '') {
+  return String(value)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function normalizeStructuredActionKeyPart(value = '') {
+  return String(value).trim().toLowerCase()
+}
+
+function findStructuredExitTarget({
+  previousSection,
+  structure,
+  latestUser = '',
+  fallbackUserActionKey = null,
+  isSectionAccessible = () => true,
+} = {}) {
+  if (structure?.format !== 'structured' || !previousSection?.exits?.length) return null
+
+  const normalizedActionKey = String(fallbackUserActionKey || '').toLowerCase()
+  if (normalizedActionKey.startsWith('exit:')) {
+    const expectedKey = normalizedActionKey.slice('exit:'.length)
+    const matchedExit = previousSection.exits.find(exit => (
+      normalizeStructuredActionKeyPart(exit.id || exit.targetId || exit.label) === expectedKey ||
+      normalizeStructuredActionText(exit.id || exit.targetId || exit.label) === expectedKey
+    ))
+    if (matchedExit?.targetId && matchedExit.targetId !== previousSection.id) {
+      const candidate = findSectionById(structure, matchedExit.targetId)
+      if (candidate && isSectionAccessible(candidate)) return candidate
+    }
+  }
+
+  const normalizedUser = normalizeStructuredActionText(latestUser)
+  if (!normalizedUser) return null
+
+  for (const exit of previousSection.exits) {
+    if (!exit.targetId || exit.targetId === previousSection.id) continue
+    const normalizedLabel = normalizeStructuredActionText(exit.label)
+    const labelWords = normalizedLabel.split(/\s+/).filter(w => w.length >= 4)
+    if (!normalizedLabel || !labelWords.length) continue
+
+    const exactLabel = normalizedUser === normalizedLabel
+    const matchCount = labelWords.filter(w => normalizedUser.includes(w)).length
+    if (!exactLabel && matchCount < Math.max(1, Math.ceil(labelWords.length * 0.5))) continue
+
+    const candidate = findSectionById(structure, exit.targetId)
+    if (candidate && isSectionAccessible(candidate)) return candidate
+  }
+
+  return null
+}
+
 // ── Phase 2.5b: Inferred hints builder (tightened) ────────────────────────
 // Short-lived, scene-scoped soft hints from AI narrative. NOT authoritative.
 // - No facts/factions (too close to pseudo-truth, removed in 2.5b)
@@ -450,6 +506,7 @@ function buildInferredHints(previous, latestAssistant, latestUser, currentSectio
 export function deriveSceneState({ adventure, previousSceneState = null, messages = [], combat = null, fallbackUserText = '', fallbackUserActionKey = null } = {}) {
   const normalizedAdventure = normalizeAdventureEntry(adventure)
   const structure = normalizedAdventure?.structure
+  const runtimeStructured = isRuntimeStructure(structure)
   if (!structure?.sections?.length) {
     return createInitialSceneState(normalizedAdventure)
   }
@@ -528,24 +585,14 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
   const explicitMove = /\b(gehe|betrete|betritt|verlasse|folge|öffne|steige|klettere|reise|laufe|renne|krieche)\b/i.test(latestUser)
   const assistantAnchorsNewSection = Boolean(bestSection?.title && latestAssistant.toLowerCase().includes(bestSection.title.toLowerCase()) && bestSection.id !== previousSection?.id)
 
-  // Structured adventures: match player/AI text against EXIT labels for direct transitions
-  let exitTargetSection = null
-  if (structure.format === 'structured' && previousSection?.exits?.length) {
-    const combined = `${latestUser} ${latestAssistant}`.toLowerCase()
-    for (const exit of previousSection.exits) {
-      if (!exit.targetId || exit.targetId === previousSection.id) continue
-      const labelWords = exit.label.toLowerCase().split(/\s+/).filter(w => w.length >= 4)
-      const matchCount = labelWords.filter(w => combined.includes(w)).length
-      if (matchCount >= Math.max(1, Math.ceil(labelWords.length * 0.5))) {
-        const candidate = findSectionById(structure, exit.targetId)
-        // Only allow transition if target section's flag-gates are satisfied
-        if (candidate && isSectionAccessible(candidate)) {
-          exitTargetSection = candidate
-          break
-        }
-      }
-    }
-  }
+  // Structured adventures: transition only from explicit exit intent.
+  const exitTargetSection = findStructuredExitTarget({
+    previousSection,
+    structure,
+    latestUser,
+    fallbackUserActionKey,
+    isSectionAccessible,
+  })
 
   // Phase 3: structured adventures use ONLY exit-based transitions — no heuristic scoring fallback
   const shouldTransition = exitTargetSection
@@ -637,8 +684,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
   }
 
   // Player Knowledge: accumulate — runtime modules use registries, legacy uses text heuristics
-  const isRuntimeModule = isRuntimeStructure(structure)
-  const runtimeNpcView = isRuntimeModule
+  const runtimeNpcView = runtimeStructured
     ? getVisibleRuntimeNpcs(structure, currentSection, {
       ...previous,
       gmState: { ...prevGm, npcStates: newNpcStates },
@@ -647,7 +693,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
 
   // NPC discovery: runtime modules use section.visibleNpcs + npcRegistry, legacy uses text matching
   let newKnownNpcs
-  if (isRuntimeModule) {
+  if (runtimeStructured) {
     const visibleNames = runtimeNpcView.map(entry => entry.name)
     newKnownNpcs = [...new Set([...(prevPk.knownNpcs || []), ...visibleNames])]
   } else {
@@ -659,7 +705,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
 
   // Clue discovery: runtime modules use revealedClueIds + clueRegistry, legacy uses text heuristics
   let newClues
-  if (isRuntimeModule) {
+  if (runtimeStructured) {
     const clueRegistry = structure.module.clueRegistry || {}
     newClues = revealedClueIds
       .map(id => clueRegistry[id]?.text)
@@ -679,7 +725,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
   const newFactions = normalizeShortList([...(prevPk.knownFactions || [])], 6)
 
   // Dialogue State: detect active NPC + update disposition/suspicion
-  const activeNpcCandidates = isRuntimeModule
+  const activeNpcCandidates = runtimeStructured
     ? runtimeNpcView.map(entry => entry.name)
     : newKnownNpcs
   const activeNpc = detectActiveNpc(recentMessages, activeNpcCandidates)
