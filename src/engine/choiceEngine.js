@@ -10,6 +10,8 @@
 //
 // The UI consumes only normalized Choice objects — never raw AI text.
 
+import { getAllowedRuntimeInteractions, normalizeRuntimeNpcState } from '../data/runtimeModule'
+
 // ─── Choice Schema ──────────────────────────────────────────────────────────
 // {
 //   id:         string   — unique key (e.g. 'exit-0', 'npc-gareth', 'ai-2', 'fallback-explore')
@@ -130,7 +132,7 @@ function wasRecentlyActedOn(label, target, recentActions = []) {
 
 // ─── Structured Runtime Choices ─────────────────────────────────────────────
 
-function buildStructuredChoices(section, sceneState) {
+function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
   if (!section) return []
   const choices = []
   const inferred = sceneState?.inferred || {}
@@ -160,23 +162,47 @@ function buildStructuredChoices(section, sceneState) {
 
   // NPCs — talk to visible, known NPCs (skip dead/fled, deprioritize recently talked to)
   const npcs = section.npcs || []
-  for (const npc of npcs) {
-    if (!knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase())) continue
-    const npcState = inferred.npcStates?.[npc]
-    if (npcState === 'dead' || npcState === 'fled') continue
-    if (activeNpcId && activeNpcId.toLowerCase() === npc.toLowerCase()) continue
-    const label = `Mit ${npc} sprechen`
-    const recent = wasRecentlyActedOn(label, npc, recentActions)
-    choices.push({
-      id: `npc-${npc.toLowerCase().replace(/\s+/g, '-')}`,
-      label,
-      source: 'structured',
-      kind: 'npc',
-      target: npc,
-      check: null,
-      priority: recent ? 65 : 15,
-      isFallback: false,
-    })
+  if (isRuntimeModule && npcs.length) {
+    for (let i = 0; i < npcs.length; i++) {
+      const npc = npcs[i]
+      const npcId = section.visibleNpcs?.[i] || npc
+      const npcState = normalizeRuntimeNpcState(sceneState?.gmState?.npcStates?.[npcId])
+      const presence = npcState.state || npcState.status || null
+      if (npcState.currentlyVisible === false) continue
+      if (presence === 'dead' || presence === 'fled') continue
+      if (activeNpcId && activeNpcId.toLowerCase() === npc.toLowerCase()) continue
+      const label = `Mit ${npc} sprechen`
+      const recent = wasRecentlyActedOn(label, npc, recentActions)
+      choices.push({
+        id: `npc-${npcId.toLowerCase().replace(/\s+/g, '-')}`,
+        label,
+        source: 'structured',
+        kind: 'npc',
+        target: npc,
+        check: null,
+        priority: recent ? 65 : 15,
+        isFallback: false,
+      })
+    }
+  } else {
+    for (const npc of npcs) {
+      if (!knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase())) continue
+      const npcState = inferred.npcStates?.[npc]
+      if (npcState === 'dead' || npcState === 'fled') continue
+      if (activeNpcId && activeNpcId.toLowerCase() === npc.toLowerCase()) continue
+      const label = `Mit ${npc} sprechen`
+      const recent = wasRecentlyActedOn(label, npc, recentActions)
+      choices.push({
+        id: `npc-${npc.toLowerCase().replace(/\s+/g, '-')}`,
+        label,
+        source: 'structured',
+        kind: 'npc',
+        target: npc,
+        check: null,
+        priority: recent ? 65 : 15,
+        isFallback: false,
+      })
+    }
   }
 
   // ── Interaction-based choices (runtime module format) ──
@@ -189,53 +215,76 @@ function buildStructuredChoices(section, sceneState) {
   const usedInteractionIds = new Set()
 
   if (sectionInteractions.length) {
-    // Section interactions (static, from adventure data)
-    for (let i = 0; i < sectionInteractions.length; i++) {
-      const intr = sectionInteractions[i]
-      if (!intr.id || !intr.label) continue
-      // Flag gate
-      if (intr.requiresFlags?.length && !intr.requiresFlags.every(f => plotFlags[f])) continue
-      // Availability: visible or runtimeObjectVisible
-      if (!intr.availability?.visible) {
-        const objId = intr.availability?.runtimeObjectVisible
-        if (!objId || !runtimeObjects[objId]?.visible) continue
+    if (isRuntimeModule) {
+      const allowedInteractions = getAllowedRuntimeInteractions(section, sceneState)
+      for (let i = 0; i < allowedInteractions.length; i++) {
+        const intr = allowedInteractions[i]
+        const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions)
+        if (recent) continue
+        usedInteractionIds.add(intr.id)
+        choices.push({
+          id: `intr-${intr.id}`,
+          label: intr.label,
+          source: 'structured',
+          kind: intr.kind || 'action',
+          target: intr.target || null,
+          interactionId: intr.id,
+          check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
+          priority: intr.source === 'runtime' ? 5 : 8 + i,
+          isFallback: false,
+        })
       }
-      const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions)
-      if (recent) continue
-      usedInteractionIds.add(intr.id)
-      choices.push({
-        id: `intr-${intr.id}`,
-        label: intr.label,
-        source: 'structured',
-        kind: intr.kind || 'action',
-        target: intr.target || null,
-        interactionId: intr.id,
-        check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
-        priority: 8 + i,
-        isFallback: false,
-      })
-    }
+    } else {
+      // Section interactions (static, from adventure data)
+      for (let i = 0; i < sectionInteractions.length; i++) {
+        const intr = sectionInteractions[i]
+        if (!intr.id || !intr.label) continue
+        // Flag gates: requires + blocks
+        if (intr.requiresFlags?.length && !intr.requiresFlags.every(f => plotFlags[f])) continue
+        if (intr.blocksIfFlags?.length && intr.blocksIfFlags.some(f => plotFlags[f])) continue
+        // Availability: visible or runtimeObjectVisible
+        if (!intr.availability?.visible) {
+          const objId = intr.availability?.runtimeObjectVisible
+          if (!objId || !runtimeObjects[objId]?.visible) continue
+        }
+        const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions)
+        if (recent) continue
+        usedInteractionIds.add(intr.id)
+        choices.push({
+          id: `intr-${intr.id}`,
+          label: intr.label,
+          source: 'structured',
+          kind: intr.kind || 'action',
+          target: intr.target || null,
+          interactionId: intr.id,
+          check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
+          priority: 8 + i,
+          isFallback: false,
+        })
+      }
 
-    // Runtime interactions (dynamically revealed, not already in section)
-    for (const [intrId, intr] of Object.entries(runtimeInteractions)) {
-      if (!intr.visible || usedInteractionIds.has(intrId)) continue
-      if (intr.sectionId && intr.sectionId !== currentSectionId) continue
-      const objId = intr.availability?.runtimeObjectVisible
-      if (objId && !runtimeObjects[objId]?.visible) continue
-      if (intr.requiresFlags?.length && !intr.requiresFlags.every(f => plotFlags[f])) continue
-      const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions)
-      if (recent) continue
-      choices.push({
-        id: `intr-${intrId}`,
-        label: intr.label,
-        source: 'structured',
-        kind: intr.kind || 'action',
-        target: intr.target || null,
-        interactionId: intrId,
-        check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
-        priority: 5,
-        isFallback: false,
-      })
+      // Runtime interactions (dynamically revealed, not already in section)
+      for (const [intrId, intr] of Object.entries(runtimeInteractions)) {
+        if (!intr.visible || usedInteractionIds.has(intrId)) continue
+        if (intr.sectionId && intr.sectionId !== currentSectionId) continue
+        const objId = intr.availability?.runtimeObjectVisible
+        if (objId && !runtimeObjects[objId]?.visible) continue
+        if (intr.requiresFlags?.length && !intr.requiresFlags.every(f => plotFlags[f])) continue
+        if (intr.blocksIfFlags?.length && intr.blocksIfFlags.some(f => plotFlags[f])) continue
+        const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions)
+        if (recent) continue
+        choices.push({
+          id: `intr-${intrId}`,
+          label: intr.label,
+          source: 'structured',
+          kind: intr.kind || 'action',
+          target: intr.target || null,
+          interactionId: intrId,
+          check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
+          priority: 5,
+          isFallback: false,
+        })
+      }
     }
   } else {
     // Legacy: interactiveObjects + runtimeDiscoveries
@@ -402,12 +451,29 @@ function areSemanticallyDuplicate(a, b) {
   // Exit vs non-exit are fundamentally different intents (movement vs interaction)
   if ((a.kind === 'exit') !== (b.kind === 'exit')) return false
 
+  const sameExplicitTarget = Boolean(
+    a.target &&
+    b.target &&
+    a.target.toLowerCase() === b.target.toLowerCase()
+  )
+  const sameTargetViaLabel = Boolean(
+    (a.target && a.target.length >= 3 && b.label.toLowerCase().includes(a.target.toLowerCase())) ||
+    (b.target && b.target.length >= 3 && a.label.toLowerCase().includes(b.target.toLowerCase()))
+  )
+
+  // Same target but different explicit skills = different approach, keep both
+  if ((sameExplicitTarget || sameTargetViaLabel) &&
+      a.check?.skillOrAbility &&
+      b.check?.skillOrAbility &&
+      a.check.skillOrAbility !== b.check.skillOrAbility) {
+    return false
+  }
+
   // Same explicit target
-  if (a.target && b.target && a.target.toLowerCase() === b.target.toLowerCase()) return true
+  if (sameExplicitTarget) return true
 
   // One has a target that appears in the other's label
-  if (a.target && a.target.length >= 3 && b.label.toLowerCase().includes(a.target.toLowerCase())) return true
-  if (b.target && b.target.length >= 3 && a.label.toLowerCase().includes(b.target.toLowerCase())) return true
+  if (sameTargetViaLabel) return true
 
   // Significant content-word overlap (>= 50% of the shorter set)
   const aWords = extractContentWords(a.label)
@@ -587,17 +653,15 @@ const MAX_CHOICES = 6
  * @param {boolean} params.combatActive   — suppress choices during combat
  * @returns {Choice[]} normalized choices, sorted by priority, capped
  */
-export function buildAvailableChoices({ aiResponse = '', section = null, sceneState = null, combatActive = false } = {}) {
+export function buildAvailableChoices({ aiResponse = '', section = null, sceneState = null, combatActive = false, isRuntimeModule = false } = {}) {
   if (combatActive) return []
 
-  const aiChoices = parseAiChoices(aiResponse)
-  const structuredChoices = buildStructuredChoices(section, sceneState)
+  const structuredChoices = buildStructuredChoices(section, sceneState, isRuntimeModule)
   const fallbackChoices = buildFallbackChoices(section, sceneState)
 
-  // Strategy:
-  // - If AI provides >=2 good choices, use them as primary, supplement with structured
-  // - If AI provides <2, use structured as primary, supplement with fallbacks
-  // - Always cap at MAX_CHOICES and include 1 free-form option
+  // Runtime modules: engine-only choices, AI has no say
+  // Legacy/prose: AI choices supplement structured choices
+  const aiChoices = isRuntimeModule ? [] : parseAiChoices(aiResponse)
 
   let merged = []
   const usedLabels = new Set()
@@ -610,26 +674,21 @@ export function buildAvailableChoices({ aiResponse = '', section = null, sceneSt
     return true
   }
 
-  if (aiChoices.length >= 2) {
-    // AI provides good choices — use as primary
-    for (const c of aiChoices) addUnique(c)
-    // Supplement with structured choices not already covered by AI
-    for (const c of structuredChoices) {
+  // Engine-first: structured choices always take priority
+  for (const c of structuredChoices) addUnique(c)
+
+  // AI choices only supplement (never for runtime modules)
+  for (const c of aiChoices) {
+    if (merged.length >= MAX_CHOICES - 1) break
+    addUnique(c)
+  }
+
+  // Fallbacks if not enough choices
+  if (merged.length < 2) {
+    for (const c of fallbackChoices) {
       if (merged.length >= MAX_CHOICES - 1) break
       addUnique(c)
     }
-  } else {
-    // AI didn't provide usable choices — structured first, then fallback
-    for (const c of structuredChoices) addUnique(c)
-    if (merged.length < 2) {
-      // Not enough structured choices either — add fallbacks
-      for (const c of fallbackChoices) {
-        if (merged.length >= MAX_CHOICES - 1) break
-        addUnique(c)
-      }
-    }
-    // If AI had 1 choice, add it too
-    for (const c of aiChoices) addUnique(c)
   }
 
   // Semantic deduplication: merge choices about the same target/intent

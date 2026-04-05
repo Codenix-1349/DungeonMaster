@@ -7,6 +7,7 @@ import {
   inferDispositionShift, inferSuspicionShift,
   extractNpcStateChanges, extractObjectStateChanges, detectActiveNpc,
 } from './knowledgeModel'
+import { getVisibleRuntimeNpcs, isRuntimeStructure, normalizeRuntimeNpcState } from './runtimeModule'
 
 export const SCENE_STATE_VERSION = 3
 
@@ -141,7 +142,7 @@ export function applyInteractionSuccess(sceneState, interaction, module) {
       if (!revealed.includes(clueId)) {
         revealed.push(clueId)
         const def = module.clueRegistry[clueId]
-        if (def?.text) clues.push(def.text)
+        if (def?.text && !clues.includes(def.text)) clues.push(def.text)
       }
     }
     gm = { ...gm, revealedClueIds: revealed }
@@ -169,8 +170,13 @@ export function applyInteractionSuccess(sceneState, interaction, module) {
   // 5. NPC updates
   if (result.npcUpdates?.length) {
     const npcStates = { ...(gm.npcStates || {}) }
+    const currentSectionId = gm.currentSectionId || sceneState.gmState?.currentSectionId || null
     for (const upd of result.npcUpdates) {
-      npcStates[upd.npcId] = { ...(npcStates[upd.npcId] || {}), ...upd }
+      const nextState = { ...normalizeRuntimeNpcState(npcStates[upd.npcId]), ...upd }
+      if (nextState.currentlyVisible === true && !nextState.sectionId && currentSectionId) {
+        nextState.sectionId = currentSectionId
+      }
+      npcStates[upd.npcId] = nextState
     }
     gm = { ...gm, npcStates: npcStates }
   }
@@ -623,15 +629,40 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     if (triggeredEvents.length > 10) triggeredEvents.splice(0, triggeredEvents.length - 10)
   }
 
-  // Player Knowledge: accumulate from messages
-  const newKnownNpcs = [...new Set([
-    ...(prevPk.knownNpcs || []),
-    ...extractDiscoveredNpcs(recentMessages, currentSection.npcs || []),
-  ])]
-  const newClues = normalizeShortList([
-    ...(prevPk.discoveredClues || []),
-    ...extractCluesFromMessages(recentMessages, currentSection.clues || []),
-  ], 8)
+  // Player Knowledge: accumulate — runtime modules use registries, legacy uses text heuristics
+  const isRuntimeModule = isRuntimeStructure(structure)
+  const runtimeNpcView = isRuntimeModule
+    ? getVisibleRuntimeNpcs(structure, currentSection, {
+      ...previous,
+      gmState: { ...prevGm, npcStates: newNpcStates },
+    })
+    : []
+
+  // NPC discovery: runtime modules use section.visibleNpcs + npcRegistry, legacy uses text matching
+  let newKnownNpcs
+  if (isRuntimeModule) {
+    const visibleNames = runtimeNpcView.map(entry => entry.name)
+    newKnownNpcs = [...new Set([...(prevPk.knownNpcs || []), ...visibleNames])]
+  } else {
+    newKnownNpcs = [...new Set([
+      ...(prevPk.knownNpcs || []),
+      ...extractDiscoveredNpcs(recentMessages, currentSection.npcs || []),
+    ])]
+  }
+
+  // Clue discovery: runtime modules use revealedClueIds + clueRegistry, legacy uses text heuristics
+  let newClues
+  if (isRuntimeModule) {
+    const clueRegistry = structure.module.clueRegistry || {}
+    newClues = revealedClueIds
+      .map(id => clueRegistry[id]?.text)
+      .filter(Boolean)
+  } else {
+    newClues = normalizeShortList([
+      ...(prevPk.discoveredClues || []),
+      ...extractCluesFromMessages(recentMessages, currentSection.clues || []),
+    ], 8)
+  }
   const newKnownPlaces = [...new Set([
     ...(prevPk.knownPlaces || []),
     ...(shouldTransition ? [currentSection.title] : []),
@@ -641,7 +672,10 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
   const newFactions = normalizeShortList([...(prevPk.knownFactions || [])], 6)
 
   // Dialogue State: detect active NPC + update disposition/suspicion
-  const activeNpc = detectActiveNpc(recentMessages, newKnownNpcs)
+  const activeNpcCandidates = isRuntimeModule
+    ? runtimeNpcView.map(entry => entry.name)
+    : newKnownNpcs
+  const activeNpc = detectActiveNpc(recentMessages, activeNpcCandidates)
   const npcRelations = { ...(prevDlg.npcRelations || {}) }
   if (activeNpc && !npcRelations[activeNpc]) {
     npcRelations[activeNpc] = { disposition: 'neutral', suspicion: 0, lastTopic: '' }

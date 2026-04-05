@@ -1,5 +1,6 @@
 import { normalizeAdventureEntry, truncateText, tokenizeText } from './adventureParser'
 import { findSectionById, selectRelevantChunks, deriveSceneState, SCENE_STATE_VERSION } from './sceneState'
+import { getAllowedRuntimeInteractions, getVisibleRuntimeNpcs, isRuntimeStructure } from './runtimeModule'
 
 // ─── Structured adventure: compact AI context builder ────────────────────────
 
@@ -7,6 +8,7 @@ function buildStructuredAdventureContext(structure, sceneState) {
   const section = findSectionById(structure, sceneState?.gmState?.currentSectionId) || structure.sections[0]
   if (!section) return { text: 'Kein Abenteuerabschnitt verfügbar.', selectedIndexes: [], sectionTitle: '' }
 
+  const isRuntimeModule = isRuntimeStructure(structure)
   const lines = []
   lines.push(`## Aktuelle Szene: ${section.title}`)
   if (section.type) lines.push(`TYP: ${section.type}`)
@@ -20,12 +22,18 @@ function buildStructuredAdventureContext(structure, sceneState) {
   const knownNpcs = sceneState?.playerKnowledge?.knownNpcs || []
   const npcStates = sceneState?.gmState?.npcStates || {}
   const sectionNpcs = section.npcs || []
-  const visibleNpcs = sectionNpcs
-    .filter(npc => knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
-    .filter(npc => !['dead', 'fled'].includes(npcStates[npc]))
-  const absentNpcs = sectionNpcs
-    .filter(npc => knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
-    .filter(npc => ['dead', 'fled'].includes(npcStates[npc]))
+  const visibleNpcEntries = isRuntimeModule
+    ? getVisibleRuntimeNpcs(structure, section, sceneState)
+    : sectionNpcs
+      .filter(npc => knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
+      .filter(npc => !['dead', 'fled'].includes(npcStates[npc]))
+      .map(npc => ({ name: npc, presence: npcStates[npc] || null }))
+  const visibleNpcs = visibleNpcEntries.map(entry => entry.name)
+  const absentNpcs = isRuntimeModule
+    ? []
+    : sectionNpcs
+      .filter(npc => knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
+      .filter(npc => ['dead', 'fled'].includes(npcStates[npc]))
   const hiddenNpcs = sectionNpcs.filter(npc => !knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase()))
   if (visibleNpcs.length) lines.push(`ANWESENDE NPCS (nur diese sind hier, keine anderen erfinden): ${visibleNpcs.join(' | ')}`)
   if (absentNpcs.length) lines.push(`NICHT MEHR ANWESEND: ${absentNpcs.map(npc => `${npc} (${npcStates[npc]})`).join(' | ')}`)
@@ -54,8 +62,15 @@ function buildStructuredAdventureContext(structure, sceneState) {
     }).join(' | ')}`)
   }
 
-  if (section.openThreads?.length) lines.push(`FÄDEN: ${section.openThreads.join(' | ')}`)
-  if (section.suggestedActions?.length) lines.push(`VORGESCHLAGENE AKTIONEN: ${section.suggestedActions.join(' | ')}`)
+  if (isRuntimeModule) {
+    const allowedInteractions = getAllowedRuntimeInteractions(section, sceneState)
+    if (allowedInteractions.length) {
+      lines.push(`ERLAUBTE INTERAKTIONEN (nur diese sind aktuell spielbar): ${allowedInteractions.map(interaction => interaction.label).join(' | ')}`)
+    }
+  } else {
+    if (section.openThreads?.length) lines.push(`FÄDEN: ${section.openThreads.join(' | ')}`)
+    if (section.suggestedActions?.length) lines.push(`VORGESCHLAGENE AKTIONEN: ${section.suggestedActions.join(' | ')}`)
+  }
 
   // Phase 3: explicit engine-confirmed state summary — AI must respect this as ground truth
   const confirmedParts = []
@@ -72,53 +87,53 @@ function buildStructuredAdventureContext(structure, sceneState) {
     lines.push(confirmedParts.join('\n'))
   }
 
-  // Internal GM instructions — Phase 3: minimize leakage surface
-  // Only send what the AI needs for the NEXT interaction, not the full list
-  const internal = []
+  if (!isRuntimeModule) {
+    const internal = []
 
-  // Hidden NPCs: limit to max 2 to reduce leakage risk
-  if (hiddenNpcs.length) {
-    const limitedHidden = hiddenNpcs.slice(0, 2)
-    internal.push(`MÖGLICHE BEGEGNUNG (erst einführen wenn Spieler sie trifft/entdeckt): ${limitedHidden.join(' | ')}`)
-  }
+    // Hidden NPCs: limit to max 2 to reduce leakage risk (prose only)
+    if (hiddenNpcs.length) {
+      const limitedHidden = hiddenNpcs.slice(0, 2)
+      internal.push(`MÖGLICHE BEGEGNUNG (erst einführen wenn Spieler sie trifft/entdeckt): ${limitedHidden.join(' | ')}`)
+    }
 
-  if (section.transitionRules?.length) internal.push(`ÜBERGANGSREGELN: ${section.transitionRules.join(' | ')}`)
+    if (section.transitionRules?.length) internal.push(`ÜBERGANGSREGELN: ${section.transitionRules.join(' | ')}`)
 
-  // Clues: only send those NOT yet discovered (reuses discoveredClues from above)
-  const undiscoveredClues = (section.clues || []).filter(clue => {
-    const clueWords = clue.toLowerCase().split(/\s+/).filter(w => w.length >= 4)
-    return !discoveredClues.some(dc => {
-      const dcLower = dc.toLowerCase()
-      return clueWords.filter(w => dcLower.includes(w)).length >= Math.ceil(clueWords.length * 0.4)
+    // Clues: only send those NOT yet discovered (prose only)
+    const undiscoveredClues = (section.clues || []).filter(clue => {
+      const clueWords = clue.toLowerCase().split(/\s+/).filter(w => w.length >= 4)
+      return !discoveredClues.some(dc => {
+        const dcLower = dc.toLowerCase()
+        return clueWords.filter(w => dcLower.includes(w)).length >= Math.ceil(clueWords.length * 0.4)
+      })
     })
-  })
-  if (undiscoveredClues.length) {
-    // Limit to 2 clues to reduce leakage surface
-    const limitedClues = undiscoveredClues.slice(0, 2)
-    internal.push(`ENTDECKBARE HINWEISE (NUR bei aktivem Suchen/Untersuchen enthüllen, NIEMALS ungefragt): ${limitedClues.join(' | ')}`)
-  }
+    if (undiscoveredClues.length) {
+      const limitedClues = undiscoveredClues.slice(0, 2)
+      internal.push(`ENTDECKBARE HINWEISE (NUR bei aktivem Suchen/Untersuchen enthüllen, NIEMALS ungefragt): ${limitedClues.join(' | ')}`)
+    }
 
-  if (internal.length) {
-    lines.push(`\n## Interne Spielleiter-Anweisungen (NICHT dem Spieler mitteilen)`)
-    lines.push(...internal)
+    if (internal.length) {
+      lines.push(`\n## Interne Spielleiter-Anweisungen (NICHT dem Spieler mitteilen)`)
+      lines.push(...internal)
+    }
+
+    // Neighboring exits — title only (prose only, spoiler risk for runtime modules)
+    const exitSections = section.exits
+      ?.map(e => structure.sections.find(s => s.id === e.targetId))
+      .filter(Boolean) || []
+    if (exitSections.length) {
+      lines.push(`\nNÄCHSTE SZENEN: ${exitSections.map(s => s.title).join(' | ')}`)
+    }
   }
 
   // Scene text as prose for atmosphere
   if (section.sceneText) lines.push(`\n${section.sceneText}`)
-
-  // Neighboring exits — title only, no objectives (avoids spoilers)
-  const exitSections = section.exits
-    ?.map(e => structure.sections.find(s => s.id === e.targetId))
-    .filter(Boolean) || []
-  if (exitSections.length) {
-    lines.push(`\nNÄCHSTE SZENEN: ${exitSections.map(s => s.title).join(' | ')}`)
-  }
 
   return {
     text: lines.join('\n'),
     selectedIndexes: section.chunkIndexes || [section.index],
     sectionTitle: section.title,
     module: structure.module || null,
+    runtimeModule: isRuntimeModule,
   }
 }
 
@@ -130,6 +145,7 @@ export function buildRelevantAdventureContext({ adventure, sceneState = null, me
       text: normalizedAdventure?.text ? truncateText(normalizedAdventure.text, 1800) : 'Kein Text verfügbar',
       selectedIndexes: [],
       sectionTitle: normalizedAdventure?.title || 'Abenteuer',
+      runtimeModule: false,
     }
   }
 
@@ -166,5 +182,6 @@ export function buildRelevantAdventureContext({ adventure, sceneState = null, me
     text: `### Aktueller Abenteuerabschnitt\n${currentSection.title}: ${currentSection.summary}\n\n${chunkText}${neighborHint}`.trim(),
     selectedIndexes: fallbackChunks.map(chunk => chunk.index),
     sectionTitle: currentSection.title,
+    runtimeModule: false,
   }
 }

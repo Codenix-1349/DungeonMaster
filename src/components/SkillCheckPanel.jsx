@@ -108,7 +108,7 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
   return (
     <div className="panel p-4 animate-slide-in">
       <div className="flex items-center gap-2 mb-3">
-        <span className="font-heading text-xs tracking-wider text-gold-500">PROBE: {label}</span>
+        <span className="font-heading text-xs tracking-wider text-gold-500">PROBE AUSSTEHEND</span>
         {check.advantage && (
           <span className={`text-xs px-1.5 py-0.5 rounded ${check.advantage === 'advantage' ? 'bg-blue-900/30 text-blue-400' : 'bg-orange-900/30 text-orange-400'}`}>
             {check.advantage === 'advantage' ? 'Vorteil' : 'Nachteil'}
@@ -116,9 +116,13 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
         )}
       </div>
 
-      {choiceLabel && (
-        <p className="font-body text-xs text-stone-400 italic mb-3 -mt-1">{choiceLabel}</p>
-      )}
+      <div className="rounded border border-blue-700/40 bg-blue-950/20 px-3 py-2 mb-3">
+        <p className="font-heading text-[11px] tracking-wide text-blue-300">1. Aktion gewählt</p>
+        <p className="font-heading text-sm text-parchment mt-1">{choiceLabel || label}</p>
+        <p className="font-body text-[11px] text-stone-400 mt-2">2. Jetzt würfeln, damit die Aktion ausgewertet wird.</p>
+      </div>
+
+      <p className="font-heading text-xs tracking-wider text-gold-500 mb-2">PROBE: {label}</p>
 
       <div className="space-y-2 mb-4">
         <div className="flex items-center justify-between text-sm">
@@ -138,7 +142,7 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
       </div>
 
       <button onClick={handleRoll} className="btn-primary w-full py-3 text-base animate-pulse">
-        Würfeln
+        Jetzt würfeln
       </button>
     </div>
   )

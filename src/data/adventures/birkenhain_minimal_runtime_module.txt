@@ -1,0 +1,520 @@
+# DUNGEONS & DAGGERS – MINIMALES STRUKTURIERTES TESTMODUL
+# MODUL: Der goldene Kessel von Birkenhain (Minimale Runtime-Version)
+# ZWECK: Phase-3 Testdaten für Runtime-Interaktionen, Reveals, Folgeaktionen, Clue-Registry, NPC-Registry
+
+MODULE_ID: birkenhain_minimal_runtime
+MODULE_VERSION: 0.2
+SYSTEM: DND5E
+START_SECTION_ID: inn_common_room
+PRIMARY_OBJECTIVE: Finde Tomas lebend.
+SECONDARY_OBJECTIVE: Erfahre den Ursprung des Kellerfluchs.
+TONE: Dorfmysterium, feuchter Kellerhorror, Versuchung durch Reichtum
+
+RUNTIME_RULES:
+  - Nur sichtbare oder dem Spieler bekannte Entitaeten duerfen erzaehlt oder als Optionen angeboten werden.
+  - Freitext bleibt erlaubt, aber engine-validierte Interaktionen bestimmen die Wahrheit.
+  - Ausgaenge duerfen nur aus der aktiven Sektion genommen werden.
+  - Reveals kommen aus Interaktionsregeln, nicht aus KI-Narration.
+  - Versteckte Hinweise, NPCs und Objekte bleiben unsichtbar bis ihre Reveal-Bedingungen erfuellt sind.
+
+PLOT_FLAGS:
+  - MARA_BEFRAGT
+  - HAS_CELLAR_KEY
+  - CELLAR_UNLOCKED
+  - SCHLOSS_INSPIZIERT
+  - TOMAS_FOUND
+  - TOMAS_ESCORTING
+  - WELL_CORRUPTION_LEARNED
+  - CROW_SEAL_FOUND
+  - CROW_SEAL_TAKEN
+  - KETTLE_REVEALED
+  - TRUNKWAECHTER_ACTIVE
+  - CURSE_CONTAINED
+  - TOMAS_RESCUED
+  - COUNTER_INSPECTED
+  - HIDDEN_PLATE_INSPECTED
+  - HIDDEN_PLATE_OPENED
+  - PARCHMENT_READ
+  - PARCHMENT_TAKEN
+  - KETTLE_INSPECTED
+  - TOMAS_BERUHIGT
+
+NPC_REGISTRY:
+  mara:
+    name: Mara Birken
+    firstSeen: inn_common_room
+    currentlyVisible: true
+    relationship: neutral
+    suspicion: low
+    knownFacts: []
+    secretsUnlocked: []
+    lastTopic: null
+    promisesMade: []
+  tomas:
+    name: Tomas
+    firstSeen: null
+    currentlyVisible: false
+    relationship: neutral
+    suspicion: none
+    knownFacts: []
+    secretsUnlocked: []
+    lastTopic: null
+    promisesMade: []
+
+CLUE_REGISTRY:
+  tomas_obsessed:
+    sourceSectionId: inn_common_room
+    revealConditions:
+      - interactionId: ask_mara_about_tomas
+        result: success
+    isRevealed: false
+    isPlayerKnown: false
+    text: Tomas war besessen von der Legende des goldenen Kessels.
+
+  cellar_recently_opened:
+    sourceSectionId: rear_hall_cellar_door
+    revealConditions:
+      - interactionId: inspect_lock
+        result: success
+    isRevealed: false
+    isPlayerKnown: false
+    text: Die Kellertuer wurde vor kurzem geoeffnet.
+
+  well_corruption_truth:
+    sourceSectionId: well_chamber
+    revealConditions:
+      - interactionId: inspect_well
+        result: success
+    isRevealed: false
+    isPlayerKnown: false
+    text: Der Kellerfluch entstand durch verdorbenes Brauwasser und einen verseuchten Brunnen.
+
+  kettle_is_focus:
+    sourceSectionId: ritual_cellar
+    revealConditions:
+      - interactionId: inspect_kettle
+        result: success
+    isRevealed: false
+    isPlayerKnown: false
+    text: Der goldene Kessel ist der Fokus der Verderbnis.
+
+OBJECT_REGISTRY:
+  cellar_key:
+    type: key
+    portable: true
+  cellar_door:
+    type: door
+    portable: false
+  hidden_plate:
+    type: concealed_panel
+    portable: false
+  parchment_note:
+    type: document
+    portable: true
+  crow_seal:
+    type: ritual_item
+    portable: true
+  golden_kettle:
+    type: focal_object
+    portable: false
+
+SECTIONS:
+  - id: inn_common_room
+    location: Gastraum des Gasthauses Zur Grauen Birke
+    objective: Sprich mit Mara und erfahre was mit Tomas geschehen ist.
+    visibleFeatures:
+      - Kaminfeuer
+      - regengeschlagene Fensterlaeden
+      - Mara hinter der Theke
+      - Tuer zum Hinterflur
+    visibleNpcs:
+      - mara
+    exits:
+      - id: to_rear_hall
+        label: Zum Hinterflur gehen
+        targetSectionId: rear_hall_cellar_door
+        requiresFlags: [HAS_CELLAR_KEY]
+    interactions:
+      - id: ask_mara_about_tomas
+        label: Mara ruhig nach Tomas fragen
+        kind: talk
+        target: mara
+        availability:
+          visible: true
+        blocksIfFlags: [MARA_BEFRAGT]
+        results:
+          success:
+            setFlags: [HAS_CELLAR_KEY, MARA_BEFRAGT]
+            npcUpdates:
+              - npcId: mara
+                relationshipDelta: +1
+                lastTopic: Tomas
+            revealClues:
+              - tomas_obsessed
+            revealRuntime:
+              objects: []
+              interactions: []
+        aiNarrationHint: Mara erklaert, dass Tomas im versiegelten Keller verschwunden ist, und gibt dir den Schluessel.
+
+  - id: rear_hall_cellar_door
+    location: Hinterflur vor der Kellertuer
+    objective: Oeffne den Keller und untersuche die Spuren.
+    visibleFeatures:
+      - feuchte Steinwaende
+      - schwere eisenbeschlagene Kellertuer
+      - verrostetes Schloss
+      - Kratzspuren auf dem Boden
+    exits:
+      - id: back_to_inn
+        label: Zurueck zum Gastraum
+        targetSectionId: inn_common_room
+      - id: to_brewery
+        label: In den Keller hinabsteigen
+        targetSectionId: old_brewery
+        requiresFlags: [CELLAR_UNLOCKED]
+    interactions:
+      - id: inspect_lock
+        label: Das Schloss und die Kratzspuren untersuchen
+        kind: inspect
+        target: cellar_door
+        availability:
+          visible: true
+        blocksIfFlags: [SCHLOSS_INSPIZIERT]
+        results:
+          success:
+            setFlags: [SCHLOSS_INSPIZIERT]
+            revealClues:
+              - cellar_recently_opened
+        aiNarrationHint: Frische Kratzer zeigen, dass die Tuer vor kurzem geoeffnet wurde.
+
+      - id: unlock_cellar_door
+        label: Die Kellertuer aufschliessen
+        kind: use_item
+        target: cellar_door
+        requiresFlags: [HAS_CELLAR_KEY]
+        blocksIfFlags: [CELLAR_UNLOCKED]
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [CELLAR_UNLOCKED]
+        aiNarrationHint: Das alte Schloss gibt nach und kalte Dunkelheit oeffnet sich darunter.
+
+  - id: old_brewery
+    location: Verlassener Braukeller
+    objective: Folge Tomas' Spur und untersuche den gestoerten Bereich.
+    visibleFeatures:
+      - verfaulte Faesser
+      - zerbrochene Bottiche
+      - feuchte Kupferrohre
+      - Schleimspur
+      - aufgestapelter Tresen und ruinierte Werkbank
+    exits:
+      - id: back_to_hall
+        label: Zurueck zur Kellertreppe
+        targetSectionId: rear_hall_cellar_door
+      - id: to_well_chamber
+        label: Den Wassergeraeuschen folgen
+        targetSectionId: well_chamber
+      - id: to_tomas_hideout
+        label: Hinter den eingesteurzten Faessern suchen
+        targetSectionId: tomas_hideout
+      - id: to_ritual_cellar
+        label: Tiefer in Richtung der verketteten Kammer vordringen
+        targetSectionId: ritual_cellar
+    interactions:
+      - id: inspect_counter
+        label: Den beschaedigten Tresen untersuchen
+        kind: inspect
+        target: counter
+        availability:
+          visible: true
+        blocksIfFlags: [COUNTER_INSPECTED]
+        check:
+          skill: investigation
+          dc: 12
+          onFail: Du findest Schadensspuren, aber nichts Verwertbares.
+        results:
+          success:
+            setFlags: [COUNTER_INSPECTED]
+            revealRuntime:
+              objects:
+                - id: hidden_plate
+                  sectionId: old_brewery
+                  label: Vibrierende Metallplatte unter dem Tresen
+                  kind: concealed_panel
+                  visible: true
+                  state: sealed
+                  source: inspect_counter
+                  priority: 100
+              interactions:
+                - id: inspect_hidden_plate
+                  sectionId: old_brewery
+                  label: Die Metallplatte genauer untersuchen
+                  kind: inspect
+                  target: hidden_plate
+                  visible: true
+                  state: available
+                  source: inspect_counter
+                  priority: 95
+                - id: open_hidden_plate
+                  sectionId: old_brewery
+                  label: Die Metallplatte oeffnen
+                  kind: manipulate
+                  target: hidden_plate
+                  visible: true
+                  state: available
+                  source: inspect_counter
+                  priority: 96
+        aiNarrationHint: Unter dem beschaedigten Tresen entdeckst du eine duenne Metallplatte, die leicht vibriert.
+
+      - id: inspect_hidden_plate
+        label: Die Metallplatte genauer untersuchen
+        kind: inspect
+        target: hidden_plate
+        availability:
+          runtimeObjectVisible: hidden_plate
+        blocksIfFlags: [HIDDEN_PLATE_INSPECTED]
+        results:
+          success:
+            setFlags: [HIDDEN_PLATE_INSPECTED]
+            objectStateUpdates:
+              - objectId: hidden_plate
+                state: understood
+        aiNarrationHint: Die Platte ist in das Holz eingearbeitet wie eine versteckte Zugangsklappe.
+
+      - id: open_hidden_plate
+        label: Die Metallplatte oeffnen
+        kind: manipulate
+        target: hidden_plate
+        availability:
+          runtimeObjectVisible: hidden_plate
+        blocksIfFlags: [HIDDEN_PLATE_OPENED]
+        results:
+          success:
+            setFlags: [HIDDEN_PLATE_OPENED]
+            objectStateUpdates:
+              - objectId: hidden_plate
+                state: opened
+            revealRuntime:
+              objects:
+                - id: parchment_note
+                  sectionId: old_brewery
+                  label: Gefaltetes Pergament hinter der Platte
+                  kind: document
+                  visible: true
+                  state: unread
+                  source: open_hidden_plate
+                  parentId: hidden_plate
+                  priority: 100
+              interactions:
+                - id: read_parchment_note
+                  sectionId: old_brewery
+                  label: Das Pergament lesen
+                  kind: read
+                  target: parchment_note
+                  visible: true
+                  state: available
+                  source: open_hidden_plate
+                  priority: 99
+                - id: take_parchment_note
+                  sectionId: old_brewery
+                  label: Das Pergament nehmen
+                  kind: take
+                  target: parchment_note
+                  visible: true
+                  state: available
+                  source: open_hidden_plate
+                  priority: 98
+        aiNarrationHint: Die Klappe oeffnet sich und gibt ein gefaltetes Pergament frei, das dahinter versteckt war.
+
+      - id: read_parchment_note
+        label: Das Pergament lesen
+        kind: read
+        target: parchment_note
+        availability:
+          runtimeObjectVisible: parchment_note
+        blocksIfFlags: [PARCHMENT_READ]
+        results:
+          success:
+            setFlags: [PARCHMENT_READ]
+            revealClues:
+              - well_corruption_truth
+        aiNarrationHint: Die Notiz warnt vor verdorbenem Brauwasser und einem verketteten Gefaess tiefer unten.
+
+      - id: take_parchment_note
+        label: Das Pergament nehmen
+        kind: take
+        target: parchment_note
+        availability:
+          runtimeObjectVisible: parchment_note
+        blocksIfFlags: [PARCHMENT_TAKEN]
+        results:
+          success:
+            setFlags: [PARCHMENT_TAKEN]
+            objectStateUpdates:
+              - objectId: parchment_note
+                state: taken
+        aiNarrationHint: Du nimmst das alte Pergament an dich.
+
+  - id: well_chamber
+    location: Runde Kammer mit dem alten Brunnen
+    objective: Erfahre den Ursprung der Verderbnis.
+    visibleFeatures:
+      - Steinbrunnen
+      - eiserne Kurbel
+      - schwarzes Wasser
+      - Kraehenschnitzereien
+    exits:
+      - id: back_to_brewery
+        label: Zurueck zur Brauerei
+        targetSectionId: old_brewery
+      - id: to_ritual_cellar
+        label: Weiter zur verketteten Kammer
+        targetSectionId: ritual_cellar
+    interactions:
+      - id: inspect_well
+        label: Den Brunnen und die Schnitzereien untersuchen
+        kind: inspect
+        target: well
+        availability:
+          visible: true
+        blocksIfFlags: [WELL_CORRUPTION_LEARNED]
+        check:
+          skill: investigation
+          dc: 10
+          onFail: Die Kammer fuehlt sich falsch an, aber die Wahrheit bleibt unklar.
+        results:
+          success:
+            setFlags: [WELL_CORRUPTION_LEARNED, CROW_SEAL_FOUND]
+            revealClues:
+              - well_corruption_truth
+            revealRuntime:
+              objects:
+                - id: crow_seal
+                  sectionId: well_chamber
+                  label: Kraehenfoermiges Siegelfragment nahe dem Brunnen
+                  kind: ritual_item
+                  visible: true
+                  state: obtainable
+                  source: inspect_well
+                  priority: 90
+              interactions:
+                - id: take_crow_seal
+                  sectionId: well_chamber
+                  label: Das Kraehen-Siegelfragment nehmen
+                  kind: take
+                  target: crow_seal
+                  visible: true
+                  state: available
+                  source: inspect_well
+                  priority: 89
+        aiNarrationHint: Du setzt zusammen, dass verdorbenes Brunnenwasser und Gier den Kellerfluch erschaffen haben.
+
+      - id: take_crow_seal
+        label: Das Kraehen-Siegelfragment nehmen
+        kind: take
+        target: crow_seal
+        availability:
+          runtimeObjectVisible: crow_seal
+        blocksIfFlags: [CROW_SEAL_TAKEN]
+        results:
+          success:
+            setFlags: [CROW_SEAL_TAKEN]
+            objectStateUpdates:
+              - objectId: crow_seal
+                state: taken
+        aiNarrationHint: Du nimmst das schwere Kraehen-Siegelfragment an dich.
+
+  - id: tomas_hideout
+    location: Versteckte Nische hinter umgesteurzten Faessern
+    objective: Finde Tomas und bringe ihn in Bewegung.
+    visibleFeatures:
+      - eingestuerzte Faesser
+      - abgebrannter Kerzenstummel
+      - veraengstigter Junge im Versteck
+    visibleNpcs:
+      - tomas
+    exits:
+      - id: back_to_brewery
+        label: Zurueck zur Brauerei
+        targetSectionId: old_brewery
+      - id: to_ritual_cellar
+        label: Vorsichtig zur tieferen Kammer vordringen
+        targetSectionId: ritual_cellar
+    interactions:
+      - id: calm_tomas
+        label: Tomas beruhigen und mitnehmen
+        kind: talk
+        target: tomas
+        availability:
+          visible: true
+        blocksIfFlags: [TOMAS_BERUHIGT]
+        results:
+          success:
+            setFlags: [TOMAS_FOUND, TOMAS_ESCORTING, TOMAS_BERUHIGT]
+            npcUpdates:
+              - npcId: tomas
+                currentlyVisible: true
+                lastTopic: Flucht
+        aiNarrationHint: Tomas fasst sich und erklaert sich bereit, in deiner Naehe zu bleiben.
+
+  - id: ritual_cellar
+    location: Verkettete Kammer mit dem goldenen Kessel
+    objective: Stelle dich der Quelle des Fluchs und waehle Eindaemmung oder Rueckzug.
+    visibleFeatures:
+      - massiver goldener Kessel
+      - drei schwere Ketten
+      - nasse Rinnen im Steinboden
+      - schlurfender Stammwaechter
+    exits:
+      - id: back_to_brewery
+        label: Zurueck zur Brauerei
+        targetSectionId: old_brewery
+    onEntry:
+      setFlags:
+        - KETTLE_REVEALED
+        - TRUNKWAECHTER_ACTIVE
+    interactions:
+      - id: inspect_kettle
+        label: Den goldenen Kessel aus der Ferne untersuchen
+        kind: inspect
+        target: golden_kettle
+        availability:
+          visible: true
+        blocksIfFlags: [KETTLE_INSPECTED]
+        results:
+          success:
+            setFlags: [KETTLE_INSPECTED]
+            revealClues:
+              - kettle_is_focus
+        aiNarrationHint: Der Kessel ist kein Schatz, sondern der Fokus der Verderbnis.
+
+      - id: contain_curse
+        label: Mit dem Kraehensiegelwissen den Fluch eindaemmen
+        kind: ritual
+        target: golden_kettle
+        requiresFlags:
+          - WELL_CORRUPTION_LEARNED
+          - CROW_SEAL_FOUND
+        blocksIfFlags: [CURSE_CONTAINED]
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [CURSE_CONTAINED]
+        aiNarrationHint: Mit dem Siegel und deinem Wissen vom Brunnen draengst du die Verderbnis zurueck.
+
+      - id: retreat_with_tomas
+        label: Mit Tomas zurueckziehen
+        kind: move
+        target: exit
+        requiresFlags:
+          - TOMAS_ESCORTING
+        blocksIfFlags: [TOMAS_RESCUED]
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [TOMAS_RESCUED]
+        aiNarrationHint: Du wahlst Tomas ueber die Gier und ziehst dich in Sicherheit zurueck.

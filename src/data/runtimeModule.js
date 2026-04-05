@@ -1,0 +1,97 @@
+function hasEntries(value) {
+  return Boolean(value && typeof value === 'object' && Object.keys(value).length > 0)
+}
+
+export function isRuntimeStructure(structure) {
+  if (structure?.format !== 'structured') return false
+  if (structure?.module?.runtimeMode === 'engine') return true
+  return (
+    hasEntries(structure?.module?.npcRegistry) ||
+    hasEntries(structure?.module?.clueRegistry) ||
+    hasEntries(structure?.module?.objectRegistry)
+  )
+}
+
+export function normalizeRuntimeNpcState(rawState) {
+  if (!rawState) return {}
+  return typeof rawState === 'string'
+    ? { state: rawState }
+    : rawState
+}
+
+export function getRuntimeNpcPresence(rawState) {
+  const state = normalizeRuntimeNpcState(rawState)
+  return state.state || state.status || null
+}
+
+export function getVisibleRuntimeNpcs(structure, section, sceneState) {
+  if (!isRuntimeStructure(structure) || !section) return []
+
+  const registry = structure.module?.npcRegistry || {}
+  const currentSectionId = section.id || sceneState?.gmState?.currentSectionId || null
+  const visibleIds = new Set(section.visibleNpcs || [])
+  const npcStates = sceneState?.gmState?.npcStates || {}
+
+  for (const [npcId, rawState] of Object.entries(npcStates)) {
+    const state = normalizeRuntimeNpcState(rawState)
+    if (state.currentlyVisible !== true) continue
+    if (state.sectionId && currentSectionId && state.sectionId !== currentSectionId) continue
+    visibleIds.add(npcId)
+  }
+
+  return [...visibleIds]
+    .map(npcId => {
+      const state = normalizeRuntimeNpcState(npcStates[npcId])
+      return {
+        id: npcId,
+        name: registry[npcId]?.name || npcId,
+        state,
+        presence: getRuntimeNpcPresence(state),
+      }
+    })
+    .filter(entry => entry.state.currentlyVisible !== false)
+    .filter(entry => !['dead', 'fled'].includes(entry.presence))
+}
+
+function isInteractionAllowed(interaction, sceneState, requireVisibleAvailability = false) {
+  if (!interaction?.id || !interaction.label) return false
+
+  const plotFlags = sceneState?.gmState?.plotFlags || {}
+  const runtimeObjects = sceneState?.gmState?.runtimeObjects || {}
+  const availability = interaction.availability || {}
+  const hasAvailability = Object.keys(availability).length > 0
+  const isExplicitlyVisible = availability.visible === true || !hasAvailability
+
+  if (interaction.requiresFlags?.length && !interaction.requiresFlags.every(flag => plotFlags[flag])) return false
+  if (interaction.blocksIfFlags?.length && interaction.blocksIfFlags.some(flag => plotFlags[flag])) return false
+
+  if (availability.runtimeObjectVisible) {
+    if (!runtimeObjects[availability.runtimeObjectVisible]?.visible) return false
+  } else if (requireVisibleAvailability && !isExplicitlyVisible) {
+    return false
+  }
+
+  return true
+}
+
+export function getAllowedRuntimeInteractions(section, sceneState) {
+  if (!section) return []
+
+  const currentSectionId = sceneState?.gmState?.currentSectionId
+  const runtimeInteractions = sceneState?.gmState?.runtimeInteractions || {}
+  const allowed = []
+
+  for (const interaction of section.interactions || []) {
+    if (!isInteractionAllowed(interaction, sceneState, true)) continue
+    allowed.push({ ...interaction, source: 'section' })
+  }
+
+  for (const [interactionId, interaction] of Object.entries(runtimeInteractions)) {
+    if (!interaction?.visible) continue
+    if (interaction.sectionId && currentSectionId && interaction.sectionId !== currentSectionId) continue
+    if (!isInteractionAllowed({ id: interactionId, ...interaction }, sceneState)) continue
+    allowed.push({ id: interactionId, ...interaction, source: 'runtime' })
+  }
+
+  return allowed
+}
