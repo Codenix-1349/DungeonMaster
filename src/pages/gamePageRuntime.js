@@ -1,4 +1,5 @@
 import { getChoiceActionKey, inferCheckFromLabel } from '../engine/choiceEngine'
+import { formatProbeHinweisTags, stripCheckTags, stripProbeHintTags } from '../services/openrouter'
 
 export function createPendingChoiceMeta(choice) {
   if (!choice?.check) return null
@@ -123,11 +124,22 @@ export function resolveResponsePendingCheck({
   combatActive = false,
   allowEngineCheckInference = true,
   hasPendingChoiceMeta = false,
+  runtimeModule = false,
 } = {}) {
   if (combatActive) return null
+  if (runtimeModule) {
+    if (!allowEngineCheckInference || hasPendingChoiceMeta) return null
+    return inferCheckFromLabel(userText)
+  }
   if (aiCheckTag) return aiCheckTag
   if (!allowEngineCheckInference || hasPendingChoiceMeta) return null
   return inferCheckFromLabel(userText)
+}
+
+export function formatAssistantTextForDisplay(rawText = '', getLabel, { runtimeModule = false } = {}) {
+  const withoutCheckTags = stripCheckTags(rawText)
+  if (runtimeModule) return stripProbeHintTags(withoutCheckTags)
+  return formatProbeHinweisTags(withoutCheckTags, getLabel)
 }
 
 export function shouldBuildChoicesAfterResponse({ combatActive = false, pendingCheck = null } = {}) {

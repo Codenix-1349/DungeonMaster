@@ -50,6 +50,11 @@ export function stripCheckTags(text = '') {
     .replace(/\s*\[PROBE:\w+\|SG:\d+(?:\|(?:VORTEIL|NACHTEIL))?\]/gi, '')
 }
 
+export function stripProbeHintTags(text = '') {
+  return text
+    .replace(/\s*\[PROBE_HINWEIS:\w+\|SG:\d+(?:\|(?:VORTEIL|NACHTEIL))?\]/gi, '')
+}
+
 // Replace [PROBE_HINWEIS:] tags with readable inline text (e.g. "🎲 Probe")
 export function formatProbeHinweisTags(text = '', getLabel) {
   return text.replace(

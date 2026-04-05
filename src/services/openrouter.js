@@ -23,6 +23,7 @@ export {
   parseLostItemTags,
   parseCheckTags,
   stripCheckTags,
+  stripProbeHintTags,
   formatProbeHinweisTags,
   parseHPTags,
   parseXPTags,

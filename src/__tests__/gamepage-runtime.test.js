@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createPendingCheckFromChoice,
   createPendingChoiceMeta,
+  formatAssistantTextForDisplay,
   resolveResponsePendingCheck,
   resolveRuntimeChoiceFromText,
   shouldBuildChoicesAfterResponse,
@@ -39,6 +40,17 @@ describe('GamePage runtime check flow helpers', () => {
     })
 
     expect(pendingCheck).toEqual({ skillOrAbility: 'perception', dc: 13, advantage: null })
+  })
+
+  it('ignores AI check tags in runtime modules and stays engine-authoritative', () => {
+    const pendingCheck = resolveResponsePendingCheck({
+      aiCheckTag: { skillOrAbility: 'investigation', dc: 12, advantage: null },
+      userText: 'Die Metallplatte öffnen',
+      allowEngineCheckInference: true,
+      runtimeModule: true,
+    })
+
+    expect(pendingCheck).toBeNull()
   })
 
   it('does not infer a second check for app-driven follow-up actions', () => {
@@ -122,5 +134,26 @@ describe('GamePage runtime check flow helpers', () => {
     })
 
     expect(choice).toBeNull()
+  })
+
+  it('strips probe hint tags from runtime-module narration', () => {
+    const text = formatAssistantTextForDisplay(
+      'Du bemerkst das Schloss. [PROBE_HINWEIS:investigation|SG:12]',
+      skill => skill,
+      { runtimeModule: true }
+    )
+
+    expect(text).toBe('Du bemerkst das Schloss.')
+  })
+
+  it('keeps probe hint formatting in legacy narration', () => {
+    const text = formatAssistantTextForDisplay(
+      '1. Die Tür prüfen [PROBE_HINWEIS:investigation|SG:12]',
+      skill => skill,
+      { runtimeModule: false }
+    )
+
+    expect(text).toContain('SG 12')
+    expect(text).toContain('investigation')
   })
 })
