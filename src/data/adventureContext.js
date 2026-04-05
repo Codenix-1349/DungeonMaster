@@ -43,12 +43,14 @@ function buildStructuredAdventureContext(structure, sceneState) {
     })
     lines.push(`OBJEKTE: ${objLabels.join(' | ')}`)
   }
-  // Runtime discoveries: engine-revealed objects visible in this section
+  // Runtime objects (new module format) + legacy runtime discoveries
+  const rtObjects = Object.values(sceneState?.gmState?.runtimeObjects || {}).filter(o => o.visible)
   const visibleDiscoveries = (sceneState?.gmState?.runtimeDiscoveries || []).filter(d => d.visible)
-  if (visibleDiscoveries.length) {
-    lines.push(`ENTDECKTE OBJEKTE (Engine-Truth): ${visibleDiscoveries.map(d => {
-      const state = d.state !== 'revealed' ? ` (${d.state})` : ''
-      return `${d.label}${state}`
+  const allRuntimeObjs = [...rtObjects.map(o => ({ label: o.label, state: o.state })), ...visibleDiscoveries.map(d => ({ label: d.label, state: d.state }))]
+  if (allRuntimeObjs.length) {
+    lines.push(`ENTDECKTE OBJEKTE (Engine-Truth): ${allRuntimeObjs.map(o => {
+      const state = o.state && o.state !== 'revealed' ? ` (${o.state})` : ''
+      return `${o.label}${state}`
     }).join(' | ')}`)
   }
 
@@ -63,7 +65,7 @@ function buildStructuredAdventureContext(structure, sceneState) {
   const changedObjects = section.interactiveObjects?.filter(o => objectStates[o]) || []
   if (changedObjects.length) confirmedParts.push(`Objekte: ${changedObjects.map(o => `${o} (${objectStates[o]})`).join(', ')}`)
   const discoveredClues = sceneState?.playerKnowledge?.discoveredClues || []
-  if (visibleDiscoveries.length) confirmedParts.push(`Entdeckte Objekte: ${visibleDiscoveries.map(d => d.label).join(', ')}`)
+  if (allRuntimeObjs.length) confirmedParts.push(`Entdeckte Objekte: ${allRuntimeObjs.map(o => o.label).join(', ')}`)
   if (discoveredClues.length) confirmedParts.push(`Bekannte Hinweise: ${discoveredClues.slice(0, 3).join(', ')}`)
   if (confirmedParts.length) {
     lines.push(`\n## Bestätigter Weltzustand (Engine-Truth — NICHT ignorieren)`)

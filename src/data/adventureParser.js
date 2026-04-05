@@ -376,6 +376,197 @@ function parseStructuredAdventure(text = '', title = 'Abenteuer') {
   }
 }
 
+// ─── YAML-like Indentation Parser ──────────────────────────────────────────
+// Minimal indent-aware parser for runtime module format. Not full YAML — just
+// enough to handle key:value, nested maps, lists, and inline arrays [A, B].
+
+function _yParseInline(str) {
+  if (!str) return null
+  if (str === 'true') return true
+  if (str === 'false') return false
+  if (str === 'null' || str === 'none') return null
+  if (/^[+-]?\d+$/.test(str)) return parseInt(str, 10)
+  if (str.startsWith('[') && str.endsWith(']')) {
+    const inner = str.slice(1, -1).trim()
+    if (!inner) return []
+    return inner.split(',').map(s => _yParseInline(s.trim()))
+  }
+  return str
+}
+
+function _yParseMap(lines, pos, minIndent) {
+  const map = {}
+  while (pos < lines.length) {
+    const l = lines[pos]
+    if (l.indent < minIndent) break
+    const kv = l.content.match(/^(\w+)\s*:\s*(.*)/)
+    if (!kv) { pos++; continue }
+    const key = kv[1], val = kv[2].trim()
+    if (val) { map[key] = _yParseInline(val); pos++ }
+    else if (pos + 1 < lines.length && lines[pos + 1].indent > l.indent) {
+      const ci = lines[pos + 1].indent
+      const r = lines[pos + 1].content.startsWith('- ')
+        ? _yParseList(lines, pos + 1, ci)
+        : _yParseMap(lines, pos + 1, ci)
+      map[key] = r.value; pos = r.pos
+    } else { map[key] = null; pos++ }
+  }
+  return { value: map, pos }
+}
+
+function _yParseList(lines, pos, minIndent) {
+  const list = []
+  while (pos < lines.length) {
+    const l = lines[pos]
+    if (l.indent < minIndent || !l.content.startsWith('- ')) break
+    const itemText = l.content.slice(2).trim()
+    const kv = itemText.match(/^(\w+)\s*:\s*(.*)/)
+    if (!kv) { list.push(_yParseInline(itemText)); pos++; continue }
+
+    // Complex list item
+    const item = {}
+    const key = kv[1], val = kv[2].trim()
+    pos++
+    if (val) { item[key] = _yParseInline(val) }
+    else if (pos < lines.length && lines[pos].indent > l.indent) {
+      const ci = lines[pos].indent
+      const r = lines[pos].content.startsWith('- ')
+        ? _yParseList(lines, pos, ci)
+        : _yParseMap(lines, pos, ci)
+      item[key] = r.value; pos = r.pos
+    } else { item[key] = null }
+
+    // Collect remaining properties of this list item
+    const propIndent = l.indent + 2
+    while (pos < lines.length && lines[pos].indent >= propIndent) {
+      const pl = lines[pos]
+      if (pl.indent === l.indent && pl.content.startsWith('- ')) break
+      const pkv = pl.content.match(/^(\w+)\s*:\s*(.*)/)
+      if (!pkv) { pos++; continue }
+      const pKey = pkv[1], pVal = pkv[2].trim()
+      if (pVal) { item[pKey] = _yParseInline(pVal); pos++ }
+      else if (pos + 1 < lines.length && lines[pos + 1].indent > pl.indent) {
+        const ci = lines[pos + 1].indent
+        const r = lines[pos + 1].content.startsWith('- ')
+          ? _yParseList(lines, pos + 1, ci)
+          : _yParseMap(lines, pos + 1, ci)
+        item[pKey] = r.value; pos = r.pos
+      } else { item[pKey] = null; pos++ }
+    }
+    list.push(item)
+  }
+  return { value: list, pos }
+}
+
+function parseYamlLike(text) {
+  const lines = text.split('\n')
+    .map((raw, i) => ({ indent: Math.max(0, raw.search(/\S/)), content: raw.trim(), lineNum: i }))
+    .filter(l => l.content && !l.content.startsWith('#'))
+  return _yParseMap(lines, 0, 0).value
+}
+
+// ─── Runtime Module Parser ─────────────────────────────────────────────────
+// Parses YAML-like structured module format (MODULE_ID + SECTIONS with nested
+// interactions, reveals, registries). Maps to internal structure for compat.
+
+function isRuntimeModule(text = '') {
+  return /^MODULE_ID:/m.test(text) && /^SECTIONS:/m.test(text)
+}
+
+function parseRuntimeModule(text, title = 'Abenteuer') {
+  const doc = parseYamlLike(text)
+
+  const module = {
+    moduleId: doc.MODULE_ID || '',
+    moduleVersion: doc.MODULE_VERSION || '',
+    system: doc.SYSTEM || '',
+    startSectionId: doc.START_SECTION_ID || '',
+    primaryObjective: doc.PRIMARY_OBJECTIVE || '',
+    secondaryObjective: doc.SECONDARY_OBJECTIVE || '',
+    tone: doc.TONE || '',
+    globalRules: doc.RUNTIME_RULES || [],
+    plotFlags: doc.PLOT_FLAGS || [],
+    npcRegistry: doc.NPC_REGISTRY || {},
+    clueRegistry: doc.CLUE_REGISTRY || {},
+    objectRegistry: doc.OBJECT_REGISTRY || {},
+  }
+
+  const rawSections = doc.SECTIONS || []
+  const sections = rawSections.map((sec, i) => {
+    const id = sec.id || `section-${i}`
+    const location = sec.location || ''
+    const titleStr = location || id
+
+    const exits = (sec.exits || []).map(e => ({
+      id: e.id || '',
+      label: e.label || '',
+      targetId: e.targetSectionId || '',
+      requiresFlags: Array.isArray(e.requiresFlags) ? e.requiresFlags : [],
+    }))
+
+    const interactions = (sec.interactions || []).map(intr => ({
+      id: intr.id || '',
+      label: intr.label || '',
+      kind: intr.kind || 'action',
+      target: intr.target || null,
+      requiresFlags: Array.isArray(intr.requiresFlags) ? intr.requiresFlags : [],
+      availability: intr.availability || {},
+      check: intr.check || null,
+      results: intr.results || {},
+      aiNarrationHint: intr.aiNarrationHint || '',
+    }))
+
+    // Derive interactiveObjects from visible interactions for compat
+    const interactiveObjects = [...new Set(
+      interactions.filter(intr => intr.availability?.visible).map(intr => intr.target).filter(Boolean)
+    )]
+
+    const npcs = (sec.visibleNpcs || []).map(npcId => {
+      const reg = module.npcRegistry[npcId]
+      return reg?.name || npcId
+    })
+
+    const setsOnEntry = sec.onEntry?.setFlags || sec.setsOnEntry || []
+
+    const allText = `${titleStr} ${location} ${sec.objective || ''} ${(sec.visibleFeatures || []).join(' ')} ${npcs.join(' ')}`
+
+    return {
+      id, index: i, title: titleStr, location,
+      type: sec.type || '',
+      objective: sec.objective || '',
+      requiresFlags: sec.requiresFlags || [],
+      blocksIfFlags: sec.blocksIfFlags || [],
+      setsOnEntry,
+      canSetFlags: sec.canSetFlags || [],
+      visibleFeatures: sec.visibleFeatures || [],
+      interactiveObjects,
+      npcs,
+      visibleNpcs: sec.visibleNpcs || [],
+      enemies: sec.enemies || [],
+      exits, interactions,
+      transitionRules: sec.transitionRules || [],
+      openThreads: sec.openThreads || [],
+      clues: sec.clues || [],
+      suggestedActions: sec.suggestedActions || [],
+      sceneText: sec.sceneText || '',
+      summary: sec.objective || firstSentences(titleStr, 220),
+      keywords: extractKeywords(allText, 10),
+      searchText: allText.toLowerCase(),
+      chunkIndexes: [i],
+    }
+  })
+
+  const chunks = sections.map((sec, i) => makeChunkBase(i, sec.id, sec.title, sec.sceneText || sec.summary))
+
+  return {
+    version: STRUCTURED_ADVENTURE_VERSION,
+    format: 'structured',
+    module,
+    sections,
+    chunks,
+  }
+}
+
 // ─── Adventure Record Building ──────────────────────────────────────────────
 
 function buildAdventureRecord(entry) {
@@ -384,7 +575,12 @@ function buildAdventureRecord(entry) {
   const text = String(entry.text || '').trim()
 
   let structure
-  if (isStructuredAdventureText(text)) {
+  if (isRuntimeModule(text)) {
+    // Runtime module format (YAML-like, version 3)
+    structure = entry.structure?.version === STRUCTURED_ADVENTURE_VERSION && entry.structure?.format === 'structured' && entry.structure?.module?.npcRegistry
+      ? entry.structure
+      : parseRuntimeModule(text, entry.title)
+  } else if (isStructuredAdventureText(text)) {
     // Structured adventure format (version 3)
     structure = entry.structure?.version === STRUCTURED_ADVENTURE_VERSION && entry.structure?.format === 'structured'
       ? entry.structure

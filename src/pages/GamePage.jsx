@@ -8,7 +8,7 @@ import CombatTracker from '../components/CombatTracker'
 import SkillCheckPanel from '../components/SkillCheckPanel'
 import MessageBubble, { TypingIndicator } from '../components/game/MessageBubble'
 import SessionCard from '../components/game/SessionCard'
-import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById, resolveReveals, applyReveals } from '../data/srd'
+import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById, resolveReveals, applyReveals, findInteractionDef, applyInteractionSuccess } from '../data/srd'
 import { buildAvailableChoices } from '../engine/choiceEngine'
 
 const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
@@ -328,6 +328,17 @@ export default function GamePage() {
 
   const handleCombatAction = useCallback(text => handleSend(`[Kampfrunde] ${text}`), [handleSend])
 
+  // Resolve and apply an interaction's success result. Returns updated state or null.
+  const resolveInteraction = useCallback((interactionId) => {
+    if (!interactionId || !adventure || !sceneState) return null
+    const normalized = normalizeAdventureEntry(adventure)
+    const structure = normalized?.structure
+    if (!structure) return null
+    const intrDef = findInteractionDef(structure, interactionId)
+    if (!intrDef?.results?.success) return null
+    return applyInteractionSuccess(sceneState, intrDef, structure.module)
+  }, [adventure, sceneState])
+
   const handleCheckResult = useCallback((result, choiceLabel) => {
     const choiceMeta = pendingChoiceMetaRef.current
     pendingChoiceMetaRef.current = null
@@ -357,13 +368,19 @@ export default function GamePage() {
       }))
     }
 
-    // On success: resolve engine-driven reveals (adventure data truth, NOT AI)
-    if (result.success && sceneState && choiceMeta?.target) {
-      const section = getCurrentSection(adventure, sceneState)
-      if (section) {
-        const matched = resolveReveals(section, sceneState, choiceMeta.target)
-        if (matched.length) {
-          setSceneState(prev => applyReveals(prev, matched))
+    // On success: apply interaction result or legacy reveal resolution
+    let stateOverride = null
+    if (result.success && sceneState) {
+      if (choiceMeta?.interactionId) {
+        stateOverride = resolveInteraction(choiceMeta.interactionId)
+        if (stateOverride) setSceneState(stateOverride)
+      } else if (choiceMeta?.target) {
+        const section = getCurrentSection(adventure, sceneState)
+        if (section) {
+          const matched = resolveReveals(section, sceneState, choiceMeta.target)
+          if (matched.length) {
+            setSceneState(prev => applyReveals(prev, matched))
+          }
         }
       }
     }
@@ -378,12 +395,13 @@ export default function GamePage() {
     const successLabel = result.success ? 'Erfolg' : 'Fehlschlag'
 
     const probeText = `[Probe] ${result.label}: ${rollStr} ${modStr} = ${result.total} vs SG ${result.dc} → ${successLabel}`
+    const sendOpts = stateOverride ? { sceneStateOverride: stateOverride } : {}
     if (choiceLabel) {
-      handleSend(`${choiceLabel} | ${probeText}`)
+      handleSend(`${choiceLabel} | ${probeText}`, sendOpts)
     } else {
-      handleSend(probeText)
+      handleSend(probeText, sendOpts)
     }
-  }, [handleSend, sceneState, setSceneState, character])
+  }, [handleSend, sceneState, setSceneState, character, adventure, resolveInteraction])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -766,9 +784,18 @@ export default function GamePage() {
                     if (isFree) {
                       inputRef.current?.focus()
                     } else if (hasProbe) {
-                      pendingChoiceMetaRef.current = { target: choice.target, kind: choice.kind }
+                      pendingChoiceMetaRef.current = { target: choice.target, kind: choice.kind, interactionId: choice.interactionId }
                       setPendingCheck({ ...choice.check, choiceLabel: choice.label })
                     } else {
+                      // No-check interaction: apply success result immediately
+                      if (choice.interactionId) {
+                        const updated = resolveInteraction(choice.interactionId)
+                        if (updated) {
+                          setSceneState(updated)
+                          handleSend(choice.label, { sceneStateOverride: updated })
+                          return
+                        }
+                      }
                       handleSend(choice.label)
                     }
                   }
