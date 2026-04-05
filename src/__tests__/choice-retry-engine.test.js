@@ -22,7 +22,7 @@ function makeSceneState(overrides = {}) {
     playerKnowledge: { knownNpcs: ['Gareth'], knownPlaces: [], discoveredClues: [], knownFactions: [], knownFacts: [] },
     dialogueState: { activeNpcId: null, npcRelations: {} },
     inferred: { source: 'ai_inferred', npcStates: {}, objectStates: {}, dialogueHints: {} },
-    recentActions: [], interactionHistory: [],
+    recentActions: [], recentActionKeys: [], interactionHistory: [],
     currentObjective: 'Erkunden.', ...overrides,
   }
 }
@@ -108,6 +108,28 @@ describe('buildAvailableChoices — fallbacks', () => {
     })
     expect(choices).toEqual([])
   })
+
+  it('runtime modules do not inject semantic fallback actions', () => {
+    const choices = buildAvailableChoices({
+      aiResponse: 'Der Raum ist still.',
+      section: {
+        id: 'runtime-sec',
+        title: 'Leerer Raum',
+        npcs: ['Gareth'],
+        visibleNpcs: ['gareth'],
+        visibleFeatures: ['Kalter Stein'],
+        suggestedActions: ['Mit Gareth sprechen'],
+        exits: [],
+        interactions: [],
+      },
+      sceneState: makeSceneState({ currentObjective: 'Finde einen Weg hinaus.' }),
+      isRuntimeModule: true,
+    })
+
+    expect(choices).toEqual([
+      expect.objectContaining({ kind: 'free', label: 'Etwas anderes tun' }),
+    ])
+  })
 })
 
 // ── Semantic Deduplication ──
@@ -131,6 +153,31 @@ describe('buildAvailableChoices — semantic dedup', () => {
 // ── Retry Filter ──
 
 describe('buildAvailableChoices — retry filter', () => {
+  it('suppresses runtime interactions via stable recent action keys', () => {
+    const section = makeSection({
+      npcs: [],
+      visibleNpcs: [],
+      exits: [],
+      interactions: [{
+        id: 'ask-gareth-about-key',
+        label: 'Gareth nach dem Schlüssel fragen',
+        kind: 'talk',
+        target: 'gareth',
+        availability: { visible: true },
+      }],
+    })
+
+    const choices = buildAvailableChoices({
+      aiResponse: '',
+      section,
+      sceneState: makeSceneState({ recentActionKeys: ['intr:ask-gareth-about-key'] }),
+      isRuntimeModule: true,
+    })
+
+    expect(choices.some(c => c.interactionId === 'ask-gareth-about-key')).toBe(false)
+    expect(choices.some(c => c.kind === 'free')).toBe(true)
+  })
+
   it('suppresses structured choice with exact target match after failure', () => {
     // Structured choices have an explicit target — strong match → suppress
     const section = makeSection({ interactiveObjects: ['Truhe'] })

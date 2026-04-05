@@ -285,6 +285,7 @@ describe('npc visibility', () => {
     const innState = createInitialSceneState(adv)
     const innChoices = buildAvailableChoices({ aiResponse: '', section: innSection, sceneState: innState, isRuntimeModule: true })
     expect(innChoices.some(c => /Mara/i.test(c.label))).toBe(true)
+    expect(innChoices.some(c => c.label === 'Mit Mara Birken sprechen')).toBe(false)
     expect(innChoices.some(c => /Mit Tomas sprechen/i.test(c.label))).toBe(false)
 
     const hideoutSection = findSectionById(adv.structure, 'tomas_hideout')
@@ -297,6 +298,7 @@ describe('npc visibility', () => {
     }
     const hideoutChoices = buildAvailableChoices({ aiResponse: '', section: hideoutSection, sceneState: hideoutState, isRuntimeModule: true })
     expect(hideoutChoices.some(c => /Tomas/i.test(c.label))).toBe(true)
+    expect(hideoutChoices.some(c => c.label === 'Mit Tomas sprechen')).toBe(false)
     expect(hideoutChoices.some(c => /Mara/i.test(c.label))).toBe(false)
   })
 })
@@ -353,5 +355,71 @@ describe('blocksIfFlags lifecycle', () => {
     const choicesAfter = buildAvailableChoices({ aiResponse: '', section, sceneState: stateAfter, isRuntimeModule: true })
     const maraAfter = choicesAfter.find(c => c.interactionId === 'ask_mara_about_tomas')
     expect(maraAfter).toBeUndefined()
+  })
+
+  it('consumed brewery reveal-chain interactions stay hidden across derived runtime turns', () => {
+    const adv = loadModule()
+    const structure = adv.structure
+    const section = findSectionById(structure, 'old_brewery')
+
+    const makeBreweryState = () => {
+      const base = createInitialSceneState(adv)
+      return {
+        ...base,
+        gmState: {
+          ...base.gmState,
+          currentSectionId: 'old_brewery',
+          plotFlags: { HAS_CELLAR_KEY: true, CELLAR_UNLOCKED: true },
+        },
+      }
+    }
+
+    const applyTurn = (state, interactionId) => {
+      const intr = findInteractionDef(structure, interactionId)
+      const updated = applyInteractionSuccess(state, intr, structure.module)
+      return deriveSceneState({
+        adventure: adv,
+        previousSceneState: updated,
+        messages: [
+          msg('user', intr.label),
+          msg('assistant', intr.aiNarrationHint || ''),
+        ],
+        fallbackUserText: intr.label,
+        fallbackUserActionKey: `intr:${interactionId}`,
+      })
+    }
+
+    let state = makeBreweryState()
+
+    state = applyTurn(state, 'inspect_counter')
+    let choices = buildAvailableChoices({ aiResponse: '', section, sceneState: state, isRuntimeModule: true })
+    expect(choices.some(c => c.interactionId === 'inspect_counter')).toBe(false)
+    expect(choices.some(c => c.interactionId === 'inspect_hidden_plate')).toBe(true)
+    expect(choices.some(c => c.interactionId === 'open_hidden_plate')).toBe(true)
+
+    state = applyTurn(state, 'inspect_hidden_plate')
+    expect(state.gmState.plotFlags.HIDDEN_PLATE_INSPECTED).toBe(true)
+    choices = buildAvailableChoices({ aiResponse: '', section, sceneState: state, isRuntimeModule: true })
+    expect(choices.some(c => c.interactionId === 'inspect_hidden_plate')).toBe(false)
+    expect(choices.some(c => c.interactionId === 'open_hidden_plate')).toBe(true)
+
+    state = applyTurn(state, 'open_hidden_plate')
+    choices = buildAvailableChoices({ aiResponse: '', section, sceneState: state, isRuntimeModule: true })
+    expect(choices.some(c => c.interactionId === 'open_hidden_plate')).toBe(false)
+    expect(choices.some(c => c.interactionId === 'read_parchment_note')).toBe(true)
+    expect(choices.some(c => c.interactionId === 'take_parchment_note')).toBe(true)
+
+    state = applyTurn(state, 'read_parchment_note')
+    choices = buildAvailableChoices({ aiResponse: '', section, sceneState: state, isRuntimeModule: true })
+    expect(choices.some(c => c.interactionId === 'read_parchment_note')).toBe(false)
+    expect(choices.some(c => c.interactionId === 'take_parchment_note')).toBe(true)
+
+    state = applyTurn(state, 'take_parchment_note')
+    choices = buildAvailableChoices({ aiResponse: '', section, sceneState: state, isRuntimeModule: true })
+    expect(choices.some(c => c.interactionId === 'inspect_counter')).toBe(false)
+    expect(choices.some(c => c.interactionId === 'inspect_hidden_plate')).toBe(false)
+    expect(choices.some(c => c.interactionId === 'open_hidden_plate')).toBe(false)
+    expect(choices.some(c => c.interactionId === 'read_parchment_note')).toBe(false)
+    expect(choices.some(c => c.interactionId === 'take_parchment_note')).toBe(false)
   })
 })

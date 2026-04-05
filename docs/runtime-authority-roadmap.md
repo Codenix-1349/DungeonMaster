@@ -2,6 +2,16 @@
 
 Last updated: 2026-04-05
 
+## Workflow rule
+
+After each working branch:
+
+- implement and test on the branch
+- commit and push only after explicit user approval
+- merge the branch into `main` before creating the next working branch
+
+Do not start a new branch while the previous approved branch is still waiting to be merged into `main`.
+
 ## Goal
 
 Runtime modules must be engine-authoritative.

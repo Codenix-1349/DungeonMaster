@@ -15,6 +15,7 @@ import {
   createPendingCheckFromChoice,
   createPendingChoiceMeta,
   resolveResponsePendingCheck,
+  resolveRuntimeChoiceFromText,
   shouldBuildChoicesAfterResponse,
 } from './gamePageRuntime'
 
@@ -160,8 +161,34 @@ export default function GamePage() {
     })
   }, [gameLog])
 
+  // Resolve and apply an interaction's success result against a specific scene state.
+  const resolveInteraction = useCallback((interactionId, baseSceneState = sceneState) => {
+    if (!interactionId || !adventure || !baseSceneState) return null
+    const normalized = normalizeAdventureEntry(adventure)
+    const structure = normalized?.structure
+    if (!structure) return null
+    const intrDef = findInteractionDef(structure, interactionId)
+    if (!intrDef?.results?.success) return null
+    return applyInteractionSuccess(baseSceneState, intrDef, structure.module)
+  }, [adventure, sceneState])
+
+  const findRuntimeTextChoice = useCallback((userText, activeAdventure = adventure, activeSceneState = sceneState) => {
+    if (!isRuntimeModule(activeAdventure) || !activeSceneState) return null
+    const section = getCurrentSection(activeAdventure, activeSceneState)
+    if (!section) return null
+    const choices = buildAvailableChoices({
+      aiResponse: '',
+      section,
+      sceneState: activeSceneState,
+      combatActive: combat?.active,
+      isRuntimeModule: true,
+    })
+    return resolveRuntimeChoiceFromText({ userText, choices })
+  }, [adventure, sceneState, combat?.active])
+
   const handleSend = useCallback(async (userText, options = {}) => {
-    const text = userText || input.trim()
+    const rawText = userText || input.trim()
+    const text = rawText.trim()
     if (!text || streaming) return
     if (!apiReady) {
       setError('Kein API Key – bitte Einstellungen öffnen.')
@@ -174,6 +201,37 @@ export default function GamePage() {
     const history = Array.isArray(options.historyOverride)
       ? options.historyOverride
       : buildHistory()
+
+    const matchedRuntimeChoice = !options.skipRuntimeChoiceResolution && !options.recentActionKey
+      ? findRuntimeTextChoice(text, activeAdventure, activeSceneState)
+      : null
+
+    if (matchedRuntimeChoice) {
+      if (matchedRuntimeChoice.check) {
+        pendingChoiceMetaRef.current = createPendingChoiceMeta(matchedRuntimeChoice)
+        setPendingCheck(createPendingCheckFromChoice(matchedRuntimeChoice))
+        setInput('')
+        setError('')
+        return
+      }
+
+      const nextOptions = {
+        ...options,
+        allowEngineCheckInference: false,
+        recentActionKey: matchedRuntimeChoice.actionKey || null,
+        skipRuntimeChoiceResolution: true,
+      }
+
+      if (matchedRuntimeChoice.interactionId) {
+        const updated = resolveInteraction(matchedRuntimeChoice.interactionId, activeSceneState)
+        if (updated) {
+          setSceneState(updated)
+          nextOptions.sceneStateOverride = updated
+        }
+      }
+
+      return handleSend(matchedRuntimeChoice.label, nextOptions)
+    }
 
     setInput('')
     setError('')
@@ -300,6 +358,7 @@ export default function GamePage() {
         adventureOverride: activeAdventure,
         combatOverride: combat,
         fallbackUserText: text,
+        fallbackUserActionKey: options.recentActionKey || null,
       })
 
       // Build choices from choice engine (structured + AI + fallback)
@@ -342,20 +401,12 @@ export default function GamePage() {
     startCombat,
     awardXP,
     gameLog,
+    findRuntimeTextChoice,
+    resolveInteraction,
+    setSceneState,
   ])
 
   const handleCombatAction = useCallback(text => handleSend(`[Kampfrunde] ${text}`), [handleSend])
-
-  // Resolve and apply an interaction's success result. Returns updated state or null.
-  const resolveInteraction = useCallback((interactionId) => {
-    if (!interactionId || !adventure || !sceneState) return null
-    const normalized = normalizeAdventureEntry(adventure)
-    const structure = normalized?.structure
-    if (!structure) return null
-    const intrDef = findInteractionDef(structure, interactionId)
-    if (!intrDef?.results?.success) return null
-    return applyInteractionSuccess(sceneState, intrDef, structure.module)
-  }, [adventure, sceneState])
 
   const handleCheckResult = useCallback((result, choiceLabel) => {
     const choiceMeta = pendingChoiceMetaRef.current
@@ -415,6 +466,7 @@ export default function GamePage() {
     const probeText = `[Probe] ${result.label}: ${rollStr} ${modStr} = ${result.total} vs SG ${result.dc} → ${successLabel}`
     const sendOpts = {
       allowEngineCheckInference: false,
+      recentActionKey: choiceMeta?.actionKey || null,
       ...(stateOverride ? { sceneStateOverride: stateOverride } : {}),
     }
     if (choiceLabel) {
@@ -813,11 +865,18 @@ export default function GamePage() {
                         const updated = resolveInteraction(choice.interactionId)
                         if (updated) {
                           setSceneState(updated)
-                          handleSend(choice.label, { sceneStateOverride: updated, allowEngineCheckInference: false })
+                          handleSend(choice.label, {
+                            sceneStateOverride: updated,
+                            allowEngineCheckInference: false,
+                            recentActionKey: choice.actionKey || null,
+                          })
                           return
                         }
                       }
-                      handleSend(choice.label, { allowEngineCheckInference: false })
+                      handleSend(choice.label, {
+                        allowEngineCheckInference: false,
+                        recentActionKey: choice.actionKey || null,
+                      })
                     }
                   }
                   return (

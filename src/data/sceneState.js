@@ -377,6 +377,7 @@ export function createInitialSceneState(adventure) {
     activeQuest: (isStructured ? structure.module?.primaryObjective : null) || firstSection?.summary || 'Das Abenteuer beginnen und die Lage erfassen.',
     lastPlayerAction: '',
     recentActions: [],
+    recentActionKeys: [],
     interactionHistory: [],
     lastOutcome: '',
     summary: firstSection?.summary || 'Das Abenteuer beginnt und die erste Szene wird aufgebaut.',
@@ -395,6 +396,12 @@ function buildRecentActions(previous = [], latestAction = '', isTransition = fal
   if (isTransition) return latestAction?.length >= 3 ? [latestAction] : []
   if (!latestAction || latestAction.length < 3) return (previous || []).slice(0, 3)
   return [latestAction, ...(previous || [])].slice(0, 3)
+}
+
+function buildRecentActionKeys(previous = [], latestActionKey = null, isTransition = false) {
+  if (isTransition) return latestActionKey ? [latestActionKey] : []
+  if (!latestActionKey) return (previous || []).slice(0, 3)
+  return [latestActionKey, ...(previous || []).filter(key => key !== latestActionKey)].slice(0, 3)
 }
 
 // ── Phase 2.5b: Inferred hints builder (tightened) ────────────────────────
@@ -440,7 +447,7 @@ function buildInferredHints(previous, latestAssistant, latestUser, currentSectio
   return { source: 'ai_inferred', npcStates, objectStates, dialogueHints }
 }
 
-export function deriveSceneState({ adventure, previousSceneState = null, messages = [], combat = null, fallbackUserText = '' } = {}) {
+export function deriveSceneState({ adventure, previousSceneState = null, messages = [], combat = null, fallbackUserText = '', fallbackUserActionKey = null } = {}) {
   const normalizedAdventure = normalizeAdventureEntry(adventure)
   const structure = normalizedAdventure?.structure
   if (!structure?.sections?.length) {
@@ -739,6 +746,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     activeQuest: truncateText(previous.activeQuest || objective || summaryBase, 160),
     lastPlayerAction: truncateText(latestUser || previous.lastPlayerAction || '', 160),
     recentActions: buildRecentActions(previous.recentActions, latestUser, shouldTransition),
+    recentActionKeys: buildRecentActionKeys(previous.recentActionKeys, fallbackUserActionKey, shouldTransition),
     interactionHistory: (previous.interactionHistory || []).slice(-20),
     lastOutcome: latestOutcome,
     summary,
