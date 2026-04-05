@@ -1,5 +1,12 @@
 # Next Steps
 
+## Active roadmap
+
+The current runtime-module implementation roadmap is tracked in:
+- `docs/runtime-authority-roadmap.md`
+
+Resume future work from that document first. It is the canonical plan for the runtime cleanup and authority model.
+
 ## Phase 3 complete — Adventure Runtime Hardened
 
 Key changes: engine-truth over AI-truth, structured data over heuristics.

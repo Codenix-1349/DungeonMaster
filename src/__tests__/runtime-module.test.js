@@ -1,24 +1,59 @@
 // ─── Runtime Module Tests ───────────────────────────────────────────────────
 // Tests for the Birkenhain minimal runtime module:
-// parser, interaction resolution, reveal chains, choice generation, clue registry.
+// parser, interaction resolution, reveal chains, choice generation, clue registry,
+// blocksIfFlags lifecycle, engine-truth verification.
 
 import { describe, it, expect } from 'vitest'
 import { normalizeAdventureEntry } from '../data/srd.js'
 import {
   createInitialSceneState,
+  deriveSceneState,
   findInteractionDef,
   applyInteractionSuccess,
   findSectionById,
+  buildRelevantAdventureContext,
 } from '../data/srd.js'
 import { buildAvailableChoices } from '../engine/choiceEngine.js'
+import { buildSystemPrompt } from '../services/openrouter.js'
 
 // ── Load the module text ──
 import { readFileSync } from 'fs'
-import { resolve } from 'path'
-const MODULE_TEXT = readFileSync(resolve('c:/Apps/Abenteuer/birkenhain_minimal_runtime_module.txt'), 'utf-8')
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+const MODULE_TEXT = readFileSync(resolve(__dirname, '../data/adventures/birkenhain_minimal_runtime_module.txt'), 'utf-8')
 
 function loadModule() {
   return normalizeAdventureEntry({ id: 'test-module', title: 'Birkenhain Test', text: MODULE_TEXT })
+}
+
+function msg(role, content) {
+  return {
+    id: `${role}-${Math.random()}`,
+    role,
+    content,
+    type: 'narrative',
+    timestamp: new Date().toISOString(),
+  }
+}
+
+function makeCharacter() {
+  return {
+    name: 'Testheld',
+    race: 'Mensch',
+    class: 'Schurke',
+    level: 2,
+    currentHP: 14,
+    maxHP: 14,
+    armorClass: 14,
+    proficiencyBonus: 2,
+    xp: 0,
+    attributes: { str: 10, dex: 16, con: 12, int: 12, wis: 11, cha: 13 },
+    skillProficiencies: ['investigation', 'perception'],
+    inventory: [],
+    currency: { gm: 0, sm: 0, km: 0 },
+  }
 }
 
 // ── 1. Module loading / parsing ──
@@ -42,15 +77,16 @@ describe('runtime module parser', () => {
     expect(m.objectRegistry.hidden_plate).toBeDefined()
   })
 
-  it('parses sections with interactions', () => {
+  it('parses sections with interactions including blocksIfFlags', () => {
     const sections = loadModule().structure.sections
     expect(sections.length).toBeGreaterThanOrEqual(3)
     const inn = sections.find(s => s.id === 'inn_common_room')
     expect(inn).toBeDefined()
     expect(inn.interactions.length).toBeGreaterThanOrEqual(1)
     expect(inn.interactions[0].id).toBe('ask_mara_about_tomas')
+    expect(inn.interactions[0].blocksIfFlags).toContain('MARA_BEFRAGT')
     expect(inn.exits.length).toBeGreaterThanOrEqual(1)
-    expect(inn.visibleFeatures).toContain('fireplace')
+    expect(inn.visibleFeatures).toContain('Kaminfeuer')
   })
 
   it('parses old_brewery with inspect_counter interaction', () => {
@@ -103,7 +139,7 @@ describe('reveal chain', () => {
     expect(intr).toBeDefined()
     const updated = applyInteractionSuccess(scene, intr, structure.module)
     expect(updated.gmState.runtimeObjects.hidden_plate).toBeDefined()
-    expect(updated.gmState.runtimeObjects.hidden_plate.label).toMatch(/metal plate/i)
+    expect(updated.gmState.runtimeObjects.hidden_plate.label).toMatch(/Metallplatte/i)
     expect(updated.gmState.runtimeObjects.hidden_plate.visible).toBe(true)
   })
 
@@ -113,14 +149,16 @@ describe('reveal chain', () => {
         currentSectionId: 'old_brewery',
         plotFlags: { HAS_CELLAR_KEY: true, CELLAR_UNLOCKED: true },
         runtimeObjects: {
-          hidden_plate: { id: 'hidden_plate', sectionId: 'old_brewery', label: 'Vibrating metal plate', visible: true, state: 'sealed' },
+          hidden_plate: { id: 'hidden_plate', sectionId: 'old_brewery', label: 'Vibrierende Metallplatte', visible: true, state: 'sealed' },
         },
       },
     })
     const section = findSectionById(structure, 'old_brewery')
-    const choices = buildAvailableChoices({ aiResponse: '', section, sceneState: scene })
+    const choices = buildAvailableChoices({ aiResponse: '', section, sceneState: scene, isRuntimeModule: true })
     const plateChoices = choices.filter(c => c.interactionId === 'inspect_hidden_plate' || c.interactionId === 'open_hidden_plate')
     expect(plateChoices.length).toBeGreaterThanOrEqual(1)
+    const inspectChoice = choices.find(c => c.interactionId === 'inspect_hidden_plate')
+    expect(inspectChoice?.check).toBeNull()
   })
 
   it('open_hidden_plate reveals parchment_note', () => {
@@ -129,7 +167,7 @@ describe('reveal chain', () => {
         currentSectionId: 'old_brewery',
         plotFlags: { HAS_CELLAR_KEY: true, CELLAR_UNLOCKED: true },
         runtimeObjects: {
-          hidden_plate: { id: 'hidden_plate', sectionId: 'old_brewery', label: 'Vibrating metal plate', visible: true, state: 'sealed' },
+          hidden_plate: { id: 'hidden_plate', sectionId: 'old_brewery', label: 'Vibrierende Metallplatte', visible: true, state: 'sealed' },
         },
       },
     })
@@ -147,13 +185,13 @@ describe('reveal chain', () => {
         currentSectionId: 'old_brewery',
         plotFlags: { HAS_CELLAR_KEY: true, CELLAR_UNLOCKED: true },
         runtimeObjects: {
-          hidden_plate: { id: 'hidden_plate', sectionId: 'old_brewery', label: 'Vibrating metal plate', visible: true, state: 'opened' },
-          parchment_note: { id: 'parchment_note', sectionId: 'old_brewery', label: 'Folded parchment', visible: true, state: 'unread' },
+          hidden_plate: { id: 'hidden_plate', sectionId: 'old_brewery', label: 'Vibrierende Metallplatte', visible: true, state: 'opened' },
+          parchment_note: { id: 'parchment_note', sectionId: 'old_brewery', label: 'Gefaltetes Pergament', visible: true, state: 'unread' },
         },
       },
     })
     const section = findSectionById(structure, 'old_brewery')
-    const choices = buildAvailableChoices({ aiResponse: '', section, sceneState: scene })
+    const choices = buildAvailableChoices({ aiResponse: '', section, sceneState: scene, isRuntimeModule: true })
     const parchChoices = choices.filter(c => c.interactionId === 'read_parchment_note' || c.interactionId === 'take_parchment_note')
     expect(parchChoices.length).toBeGreaterThanOrEqual(1)
   })
@@ -165,17 +203,31 @@ describe('truth firewall', () => {
   it('AI text does not create runtime objects or interactions', () => {
     const adv = loadModule()
     const state = createInitialSceneState(adv)
-    // Simulating: AI says "you discover a hidden plate" but no interaction was resolved
-    // runtimeObjects should remain empty — only engine writes truth
     expect(state.gmState.runtimeObjects).toEqual({})
     expect(state.gmState.runtimeInteractions).toEqual({})
   })
+
+  it('AI narration alone does not reveal runtime clues or objects', () => {
+    const adv = loadModule()
+    const next = deriveSceneState({
+      adventure: adv,
+      previousSceneState: createInitialSceneState(adv),
+      messages: [
+        msg('user', 'Ich schaue mich nur um.'),
+        msg('assistant', 'Unter dem Tresen spürst du fast eine vibrierende Metallplatte, und jemand raunt von Tomas und dem goldenen Kessel.'),
+      ],
+    })
+
+    expect(next.gmState.runtimeObjects).toEqual({})
+    expect(next.gmState.revealedClueIds).toEqual([])
+    expect(next.playerKnowledge.discoveredClues).toEqual([])
+  })
 })
 
-// ── 8. Choice priority: structured/runtime before AI/fallback ──
+// ── 8. Choice priority: runtime-module suppresses AI choices ──
 
 describe('choice priority', () => {
-  it('interaction choices have higher priority than AI choices', () => {
+  it('runtime module suppresses AI-parsed choices entirely', () => {
     const adv = loadModule()
     const section = findSectionById(adv.structure, 'inn_common_room')
     const state = createInitialSceneState(adv)
@@ -183,12 +235,12 @@ describe('choice priority', () => {
       aiResponse: '1. Schau dich um\n2. Rede mit dem Wirt',
       section,
       sceneState: state,
+      isRuntimeModule: true,
     })
-    const intrChoice = choices.find(c => c.interactionId)
     const aiChoice = choices.find(c => c.source === 'ai')
-    if (intrChoice && aiChoice) {
-      expect(intrChoice.priority).toBeLessThan(aiChoice.priority)
-    }
+    expect(aiChoice).toBeUndefined()
+    const intrChoice = choices.find(c => c.interactionId)
+    expect(intrChoice).toBeDefined()
   })
 })
 
@@ -205,25 +257,101 @@ describe('clue registry', () => {
   })
 })
 
-// ── 10. Static choices still work (exits, NPCs) ──
+// ── 10. Static choices still work (exits, flag-gated) ──
 
 describe('static choices', () => {
   it('exits are generated (flag-gated)', () => {
     const adv = loadModule()
     const section = findSectionById(adv.structure, 'inn_common_room')
-    // Without flag: exit to rear hall should be hidden
     const stateNoFlag = createInitialSceneState(adv)
-    const choicesNoFlag = buildAvailableChoices({ aiResponse: '', section, sceneState: stateNoFlag })
-    const exitNoFlag = choicesNoFlag.find(c => c.kind === 'exit' && c.label === 'Rear hallway')
+    const choicesNoFlag = buildAvailableChoices({ aiResponse: '', section, sceneState: stateNoFlag, isRuntimeModule: true })
+    const exitNoFlag = choicesNoFlag.find(c => c.kind === 'exit' && /Hinterflur/i.test(c.label))
     expect(exitNoFlag).toBeUndefined()
 
-    // With flag: exit should appear
     const stateWithFlag = {
       ...stateNoFlag,
       gmState: { ...stateNoFlag.gmState, plotFlags: { HAS_CELLAR_KEY: true } },
     }
-    const choicesWithFlag = buildAvailableChoices({ aiResponse: '', section, sceneState: stateWithFlag })
-    const exitWithFlag = choicesWithFlag.find(c => c.kind === 'exit' && c.label === 'Rear hallway')
+    const choicesWithFlag = buildAvailableChoices({ aiResponse: '', section, sceneState: stateWithFlag, isRuntimeModule: true })
+    const exitWithFlag = choicesWithFlag.find(c => c.kind === 'exit' && /Hinterflur/i.test(c.label))
     expect(exitWithFlag).toBeDefined()
+  })
+})
+
+describe('npc visibility', () => {
+  it('talk choices come from the active runtime section, not from free narration', () => {
+    const adv = loadModule()
+    const innSection = findSectionById(adv.structure, 'inn_common_room')
+    const innState = createInitialSceneState(adv)
+    const innChoices = buildAvailableChoices({ aiResponse: '', section: innSection, sceneState: innState, isRuntimeModule: true })
+    expect(innChoices.some(c => /Mara/i.test(c.label))).toBe(true)
+    expect(innChoices.some(c => /Mit Tomas sprechen/i.test(c.label))).toBe(false)
+
+    const hideoutSection = findSectionById(adv.structure, 'tomas_hideout')
+    const hideoutState = {
+      ...innState,
+      gmState: {
+        ...innState.gmState,
+        currentSectionId: 'tomas_hideout',
+      },
+    }
+    const hideoutChoices = buildAvailableChoices({ aiResponse: '', section: hideoutSection, sceneState: hideoutState, isRuntimeModule: true })
+    expect(hideoutChoices.some(c => /Tomas/i.test(c.label))).toBe(true)
+    expect(hideoutChoices.some(c => /Mara/i.test(c.label))).toBe(false)
+  })
+})
+
+describe('runtime context', () => {
+  it('adventure context exposes only visible runtime state and allowed interactions', () => {
+    const adv = loadModule()
+    const state = createInitialSceneState(adv)
+    const context = buildRelevantAdventureContext({ adventure: adv, sceneState: state, messages: [] })
+
+    expect(context.runtimeModule).toBe(true)
+    expect(context.text).toContain('ANWESENDE NPCS')
+    expect(context.text).toContain('Mara Birken')
+    expect(context.text).toContain('ERLAUBTE INTERAKTIONEN')
+    expect(context.text).toContain('Mara ruhig nach Tomas fragen')
+    expect(context.text).not.toContain('Mit Tomas sprechen')
+    expect(context.text).not.toContain('NÄCHSTE SZENEN')
+    expect(context.text).not.toContain('Vibrierende Metallplatte')
+  })
+})
+
+describe('runtime prompt mode', () => {
+  it('uses strict runtime-module prompt instructions without spoiler context', () => {
+    const adv = loadModule()
+    const state = createInitialSceneState(adv)
+    const prompt = buildSystemPrompt(makeCharacter(), adv, [], null, state)
+
+    expect(prompt).toContain('Strukturiertes Modul (STRENG)')
+    expect(prompt).toContain('Generiere KEINE nummerierten Optionslisten')
+    expect(prompt).toContain('ERLAUBTE INTERAKTIONEN')
+    expect(prompt).not.toContain('NÄCHSTE SZENEN')
+    expect(prompt).not.toContain('Vibrierende Metallplatte')
+  })
+})
+
+// ── 11. blocksIfFlags — consumed interactions disappear ──
+
+describe('blocksIfFlags lifecycle', () => {
+  it('interaction is hidden after its blocksIfFlags flag is set', () => {
+    const adv = loadModule()
+    const section = findSectionById(adv.structure, 'inn_common_room')
+
+    // Before: MARA_BEFRAGT not set → interaction visible
+    const stateBefore = createInitialSceneState(adv)
+    const choicesBefore = buildAvailableChoices({ aiResponse: '', section, sceneState: stateBefore, isRuntimeModule: true })
+    const maraBefore = choicesBefore.find(c => c.interactionId === 'ask_mara_about_tomas')
+    expect(maraBefore).toBeDefined()
+
+    // After: MARA_BEFRAGT set → interaction hidden
+    const stateAfter = {
+      ...stateBefore,
+      gmState: { ...stateBefore.gmState, plotFlags: { MARA_BEFRAGT: true, HAS_CELLAR_KEY: true } },
+    }
+    const choicesAfter = buildAvailableChoices({ aiResponse: '', section, sceneState: stateAfter, isRuntimeModule: true })
+    const maraAfter = choicesAfter.find(c => c.interactionId === 'ask_mara_about_tomas')
+    expect(maraAfter).toBeUndefined()
   })
 })

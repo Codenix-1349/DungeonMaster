@@ -10,6 +10,13 @@ import MessageBubble, { TypingIndicator } from '../components/game/MessageBubble
 import SessionCard from '../components/game/SessionCard'
 import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById, resolveReveals, applyReveals, findInteractionDef, applyInteractionSuccess } from '../data/srd'
 import { buildAvailableChoices } from '../engine/choiceEngine'
+import { isRuntimeStructure } from '../data/runtimeModule'
+import {
+  createPendingCheckFromChoice,
+  createPendingChoiceMeta,
+  resolveResponsePendingCheck,
+  shouldBuildChoicesAfterResponse,
+} from './gamePageRuntime'
 
 const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
 
@@ -26,6 +33,11 @@ function getCurrentSection(adventureData, currentSceneState) {
   const structure = normalized?.structure
   if (!structure?.sections?.length) return null
   return findSectionById(structure, currentSceneState?.gmState?.currentSectionId) || structure.sections[0]
+}
+
+function isRuntimeModule(adventureData) {
+  const normalized = normalizeAdventureEntry(adventureData)
+  return isRuntimeStructure(normalized?.structure)
 }
 
 function SelectionTile({ title, subtitle, active, disabled = false, onClick, children }) {
@@ -194,11 +206,16 @@ export default function GamePage() {
       const displayText = formatProbeHinweisTags(stripCheckTags(full), getCheckLabel)
       const assistantMsg = addMessage('assistant', displayText)
 
-      // Direct [PROBE:] tag — player already chose the action, no choices needed
-      const checkTag = parseCheckTags(full)
-      if (checkTag && !combat?.active) {
+      const responsePendingCheck = resolveResponsePendingCheck({
+        aiCheckTag: parseCheckTags(full),
+        userText: text,
+        combatActive: combat?.active,
+        allowEngineCheckInference: options.allowEngineCheckInference !== false,
+        hasPendingChoiceMeta: Boolean(pendingChoiceMetaRef.current),
+      })
+      if (responsePendingCheck) {
         pendingChoiceMetaRef.current = null // AI-initiated, no choice metadata
-        setPendingCheck(checkTag)
+        setPendingCheck(responsePendingCheck)
         setDynamicChoices([])
       }
 
@@ -286,7 +303,7 @@ export default function GamePage() {
       })
 
       // Build choices from choice engine (structured + AI + fallback)
-      if (!pendingCheck && !combat?.active) {
+      if (shouldBuildChoicesAfterResponse({ combatActive: combat?.active, pendingCheck: responsePendingCheck })) {
         const section = getCurrentSection(activeAdventure, updatedSceneState)
         // Inject current item count so retry filter can detect new tools/items
         const sceneWithItemCount = updatedSceneState
@@ -297,6 +314,7 @@ export default function GamePage() {
           section,
           sceneState: sceneWithItemCount,
           combatActive: combat?.active,
+          isRuntimeModule: isRuntimeModule(activeAdventure),
         })
         setDynamicChoices(choices)
       }
@@ -395,7 +413,10 @@ export default function GamePage() {
     const successLabel = result.success ? 'Erfolg' : 'Fehlschlag'
 
     const probeText = `[Probe] ${result.label}: ${rollStr} ${modStr} = ${result.total} vs SG ${result.dc} → ${successLabel}`
-    const sendOpts = stateOverride ? { sceneStateOverride: stateOverride } : {}
+    const sendOpts = {
+      allowEngineCheckInference: false,
+      ...(stateOverride ? { sceneStateOverride: stateOverride } : {}),
+    }
     if (choiceLabel) {
       handleSend(`${choiceLabel} | ${probeText}`, sendOpts)
     } else {
@@ -784,19 +805,19 @@ export default function GamePage() {
                     if (isFree) {
                       inputRef.current?.focus()
                     } else if (hasProbe) {
-                      pendingChoiceMetaRef.current = { target: choice.target, kind: choice.kind, interactionId: choice.interactionId }
-                      setPendingCheck({ ...choice.check, choiceLabel: choice.label })
+                      pendingChoiceMetaRef.current = createPendingChoiceMeta(choice)
+                      setPendingCheck(createPendingCheckFromChoice(choice))
                     } else {
                       // No-check interaction: apply success result immediately
                       if (choice.interactionId) {
                         const updated = resolveInteraction(choice.interactionId)
                         if (updated) {
                           setSceneState(updated)
-                          handleSend(choice.label, { sceneStateOverride: updated })
+                          handleSend(choice.label, { sceneStateOverride: updated, allowEngineCheckInference: false })
                           return
                         }
                       }
-                      handleSend(choice.label)
+                      handleSend(choice.label, { allowEngineCheckInference: false })
                     }
                   }
                   return (

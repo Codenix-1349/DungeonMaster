@@ -135,7 +135,7 @@ Passe Gegnerwerte an die Stufe des Spielercharakters an. Solo-Held ohne Gruppe �
 - Schaden (Falle, Gift, Sturz): **[HP:-N]** — Heilung (Zauber, Quelle): **[HP:+N]** — Tags am Ende des Absatzes.`
 }
 
-function buildChoiceStyleInstruction(userText = '', combatActive = false) {
+function buildChoiceStyleInstruction(userText = '', combatActive = false, isRuntimeModule = false) {
   if (combatActive) {
     return `## Ausgabeformat Kampf
 - Im Kampf KEINE nummerierten Optionslisten generieren.
@@ -145,21 +145,33 @@ function buildChoiceStyleInstruction(userText = '', combatActive = false) {
 - Halte Kampf-Narration kurz (2-4 Sätze). Die Spannung kommt aus den Würfelergebnissen, nicht aus langen Texten.`
   }
 
+  if (isRuntimeModule) {
+    return `## Ausgabeformat — Strukturiertes Modul (STRENG)
+- Die App zeigt dem Spieler automatisch alle verfügbaren Aktionen als Buttons.
+- Generiere KEINE nummerierten Optionslisten. KEINE Auswahlmöglichkeiten auflisten.
+- Generiere KEINE [PROBE:]-, [PROBE_HINWEIS:]- oder [WÜRFEL:]-Tags. Die App steuert alle Proben.
+- Deine EINZIGE Aufgabe: Beschreibe die Szene, sprich als NSCs, erzeuge Atmosphäre.
+- Beende mit "Was tust du?" oder einer ähnlichen offenen Frage — OHNE Optionen.
+- Halte Antworten kompakt (3-6 Sätze). Keine langen Monologe.
+- Erfinde KEINE neuen Objekte, NPCs, Hinweise oder Orte. Nur was im Kontext steht existiert.`
+  }
+
   return `## Ausgabeformat für Entscheidungsszenen
 WICHTIG: Beende JEDE Antwort außerhalb des Kampfes mit 3 bis 5 nummerierten, situativen Handlungsoptionen.
 - Die Optionen müssen direkt zur aktuellen Szene passen (Ort, NSCs, sichtbare Objekte, Gefahren).
 - Jede Option ist ein konkreter Satz in der Ich-Perspektive oder als kurze Handlungsbeschreibung.
 - Vermeide generische Optionen wie "Ich schaue mich um" – sei spezifisch für die Szene.
+- PFLICHT: Riskante Optionen MÜSSEN einen **[PROBE_HINWEIS:fertigkeit|SG:schwierigkeit]** Tag am Ende haben!
 - Die letzte Option ist IMMER: **[Zahl]. Etwas anderes (beschreibe selbst)**
 - Formatiere so — JEDE Option auf einer EIGENEN Zeile (Zeilenumbruch vor jeder Nummer):
-1. [Konkrete Aktion]
+1. [Konkrete Aktion] [PROBE_HINWEIS:skill|SG:N]
 2. [Konkrete Aktion]
-3. [Konkrete Aktion]
+3. [Konkrete Aktion] [PROBE_HINWEIS:skill|SG:N]
 4. Etwas anderes (beschreibe selbst)
 - Schreibe NIEMALS zwei Optionen auf dieselbe Zeile. IMMER Zeilenumbruch vor jeder Nummer.`
 }
 
-function buildSceneStateContext(sceneState = null) {
+function buildSceneStateContext(sceneState = null, { runtimeModule = false } = {}) {
   if (!sceneState) return ''
 
   const lines = []
@@ -168,7 +180,7 @@ function buildSceneStateContext(sceneState = null) {
   if (sceneState.currentSectionTitle) lines.push(`**Aktueller Abschnitt:** ${sceneState.currentSectionTitle}`)
   if (sceneState.currentLocation) lines.push(`**Ort:** ${sceneState.currentLocation}`)
   if (sceneState.currentObjective) lines.push(`**Aktuelles Ziel:** ${sceneState.currentObjective}`)
-  if (sceneState.activeQuest) lines.push(`**Aktiver Faden:** ${sceneState.activeQuest}`)
+  if (!runtimeModule && sceneState.activeQuest) lines.push(`**Aktiver Faden:** ${sceneState.activeQuest}`)
   if (sceneState.lastPlayerAction) lines.push(`**Letzte Spieleraktion:** ${sceneState.lastPlayerAction}`)
 
   // ── Memory summary (compact history instead of raw summary) ──
@@ -178,7 +190,7 @@ function buildSceneStateContext(sceneState = null) {
     lines.push(`**Szenenzusammenfassung:** ${sceneState.summary}`)
   }
 
-  if (sceneState.openThreads?.length) {
+  if (!runtimeModule && sceneState.openThreads?.length) {
     lines.push(`**Offene Fäden:** ${sceneState.openThreads.slice(0, 4).join(' | ')}`)
   }
 
@@ -187,6 +199,11 @@ function buildSceneStateContext(sceneState = null) {
   const clues = pk?.discoveredClues || []
   if (clues?.length) {
     lines.push(`**Bekannte Hinweise:** ${clues.slice(0, 4).join(' | ')}`)
+  }
+
+  if (runtimeModule) {
+    if (lines.length === 0) return ''
+    return `## Aktueller Szenenstatus\n${lines.join('\n')}`
   }
 
   const knownPlaces = pk?.knownPlaces
@@ -335,6 +352,7 @@ export function buildSystemPrompt(character, adventure, messages = [], combat = 
     messages,
     combat,
   })
+  const runtimeModule = Boolean(adventureContext.runtimeModule)
 
   let prompt = `Du bist die in-world-Erzählstimme von ${PROJECT_NAME} für ein Solo-Abenteuer nach ${SRD_VERSION_LABEL}.
 
@@ -367,9 +385,9 @@ ${SRD_CORE_PROMPT_RULES.trim()}
 ## Relevante Regeln für diese Szene
 ${rulesContext.text || 'Nutze die SRD-Grundlogik fair, simpel und konsistent.'}
 
-${buildChoiceStyleInstruction(userText, Boolean(combat?.active))}`
+${buildChoiceStyleInstruction(userText, Boolean(combat?.active), runtimeModule)}`
 
-  const sceneContext = buildSceneStateContext(sceneState)
+  const sceneContext = buildSceneStateContext(sceneState, { runtimeModule })
   if (sceneContext) {
     prompt += `\n\n${sceneContext}`
   }

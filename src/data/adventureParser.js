@@ -353,6 +353,7 @@ function parseStructuredAdventure(text = '', title = 'Abenteuer') {
 
   const module = {
     ...parseStructuredHeader(headerText),
+    runtimeMode: 'guided',
     globalRules: parseGlobalRules(headerText),
     plotFlags: parseGlobalPlotFlags(headerText),
   }
@@ -480,6 +481,7 @@ function parseRuntimeModule(text, title = 'Abenteuer') {
     moduleId: doc.MODULE_ID || '',
     moduleVersion: doc.MODULE_VERSION || '',
     system: doc.SYSTEM || '',
+    runtimeMode: 'engine',
     startSectionId: doc.START_SECTION_ID || '',
     primaryObjective: doc.PRIMARY_OBJECTIVE || '',
     secondaryObjective: doc.SECONDARY_OBJECTIVE || '',
@@ -510,6 +512,7 @@ function parseRuntimeModule(text, title = 'Abenteuer') {
       kind: intr.kind || 'action',
       target: intr.target || null,
       requiresFlags: Array.isArray(intr.requiresFlags) ? intr.requiresFlags : [],
+      blocksIfFlags: Array.isArray(intr.blocksIfFlags) ? intr.blocksIfFlags : [],
       availability: intr.availability || {},
       check: intr.check || null,
       results: intr.results || {},
