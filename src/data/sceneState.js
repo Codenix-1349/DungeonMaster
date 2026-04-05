@@ -107,6 +107,86 @@ export function applyReveals(sceneState, matchedReveals = []) {
   }
 }
 
+// ─── Interaction-Based Resolution (Runtime Module) ──────────────────────────
+// For the new runtime module format: interactions define results with setFlags,
+// revealClues, revealRuntime (objects + interactions), npcUpdates, objectStateUpdates.
+
+export function findInteractionDef(structure, interactionId) {
+  if (!structure?.sections || !interactionId) return null
+  for (const section of structure.sections) {
+    const intr = (section.interactions || []).find(i => i.id === interactionId)
+    if (intr) return intr
+  }
+  return null
+}
+
+export function applyInteractionSuccess(sceneState, interaction, module) {
+  if (!interaction?.results?.success || !sceneState) return sceneState
+  const result = interaction.results.success
+  let gm = { ...sceneState.gmState }
+  let pk = { ...sceneState.playerKnowledge }
+
+  // 1. Set flags
+  if (result.setFlags?.length) {
+    const flags = { ...gm.plotFlags }
+    for (const flag of result.setFlags) flags[flag] = true
+    gm = { ...gm, plotFlags: flags }
+  }
+
+  // 2. Reveal clues (registry-based)
+  if (result.revealClues?.length && module?.clueRegistry) {
+    const revealed = [...(gm.revealedClueIds || [])]
+    const clues = [...(pk.discoveredClues || [])]
+    for (const clueId of result.revealClues) {
+      if (!revealed.includes(clueId)) {
+        revealed.push(clueId)
+        const def = module.clueRegistry[clueId]
+        if (def?.text) clues.push(def.text)
+      }
+    }
+    gm = { ...gm, revealedClueIds: revealed }
+    pk = { ...pk, discoveredClues: clues }
+  }
+
+  // 3. Reveal runtime objects
+  if (result.revealRuntime?.objects?.length) {
+    const objects = { ...(gm.runtimeObjects || {}) }
+    for (const obj of result.revealRuntime.objects) {
+      objects[obj.id] = { ...obj }
+    }
+    gm = { ...gm, runtimeObjects: objects }
+  }
+
+  // 4. Reveal runtime interactions
+  if (result.revealRuntime?.interactions?.length) {
+    const interactions = { ...(gm.runtimeInteractions || {}) }
+    for (const intr of result.revealRuntime.interactions) {
+      interactions[intr.id] = { ...intr }
+    }
+    gm = { ...gm, runtimeInteractions: interactions }
+  }
+
+  // 5. NPC updates
+  if (result.npcUpdates?.length) {
+    const npcStates = { ...(gm.npcStates || {}) }
+    for (const upd of result.npcUpdates) {
+      npcStates[upd.npcId] = { ...(npcStates[upd.npcId] || {}), ...upd }
+    }
+    gm = { ...gm, npcStates: npcStates }
+  }
+
+  // 6. Object state updates
+  if (result.objectStateUpdates?.length) {
+    const ro = { ...(gm.runtimeObjects || {}) }
+    for (const upd of result.objectStateUpdates) {
+      if (ro[upd.objectId]) ro[upd.objectId] = { ...ro[upd.objectId], state: upd.state }
+    }
+    gm = { ...gm, runtimeObjects: ro }
+  }
+
+  return { ...sceneState, gmState: gm, playerKnowledge: pk }
+}
+
 function computeSectionTransitionWeight(section, previousSection, latestUser = '') {
   if (!section || !previousSection) return 0
   if (section.id === previousSection.id) return 8
@@ -256,6 +336,9 @@ export function createInitialSceneState(adventure) {
       triggeredEvents: [],
       sectionVisitCounts: firstSection ? { [firstSection.id]: 1 } : {},
       runtimeDiscoveries: [],
+      runtimeObjects: {},
+      runtimeInteractions: {},
+      revealedClueIds: [],
     },
 
     // ── Player Knowledge (what the player knows) ──
@@ -374,6 +457,9 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
         triggeredEvents: [],
         sectionVisitCounts: Object.fromEntries((previousSceneState.visitedSectionIds || []).map(id => [id, 1])),
         runtimeDiscoveries: [],
+        runtimeObjects: {},
+        runtimeInteractions: {},
+        revealedClueIds: [],
       },
       playerKnowledge: {
         knownNpcs: previousSceneState.knownNpcs || [],
@@ -517,6 +603,17 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     visible: d.sectionId === currentSection.id,
   }))
 
+  // Runtime objects/interactions: carry forward, scope by sectionId
+  const runtimeObjects = {}
+  for (const [id, obj] of Object.entries(prevGm.runtimeObjects || {})) {
+    runtimeObjects[id] = { ...obj, visible: obj.sectionId === currentSection.id }
+  }
+  const runtimeInteractions = {}
+  for (const [id, intr] of Object.entries(prevGm.runtimeInteractions || {})) {
+    runtimeInteractions[id] = { ...intr, visible: intr.sectionId === currentSection.id }
+  }
+  const revealedClueIds = [...(prevGm.revealedClueIds || [])]
+
   const visitCounts = { ...(prevGm.sectionVisitCounts || {}) }
   visitCounts[currentSection.id] = (visitCounts[currentSection.id] || 0) + (shouldTransition || !previous.turnCount ? 1 : 0)
 
@@ -573,6 +670,9 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
       triggeredEvents,
       sectionVisitCounts: visitCounts,
       runtimeDiscoveries,
+      runtimeObjects,
+      runtimeInteractions,
+      revealedClueIds,
     },
 
     // ── Player Knowledge ──

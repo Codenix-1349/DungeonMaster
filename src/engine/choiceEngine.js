@@ -138,11 +138,13 @@ function buildStructuredChoices(section, sceneState) {
   const activeNpcId = sceneState?.dialogueState?.activeNpcId || null
   const recentActions = sceneState?.recentActions || []
 
-  // Exits — navigation options (deprioritize recently used)
+  // Exits — navigation options (flag-gated, deprioritize recently used)
+  const exitFlags = sceneState?.gmState?.plotFlags || {}
   const exits = section.exits || []
   for (let i = 0; i < exits.length; i++) {
     const exit = exits[i]
     if (!exit.label) continue
+    if (exit.requiresFlags?.length && !exit.requiresFlags.every(f => exitFlags[f])) continue
     const recent = wasRecentlyActedOn(exit.label, null, recentActions)
     choices.push({
       id: `exit-${i}`,
@@ -177,66 +179,120 @@ function buildStructuredChoices(section, sceneState) {
     })
   }
 
-  // Interactive objects — examine/interact (skip destroyed, suppress if recently examined)
-  const objects = section.interactiveObjects || []
-  for (const obj of objects) {
-    const objState = inferred.objectStates?.[obj]
-    if (objState === 'destroyed') continue
-    const label = `${obj} untersuchen`
-    const recent = wasRecentlyActedOn(label, obj, recentActions)
-    // Recently examined objects are fully suppressed — player already did this
-    if (recent) continue
-    choices.push({
-      id: `obj-${obj.toLowerCase().replace(/\s+/g, '-')}`,
-      label,
-      source: 'structured',
-      kind: 'object',
-      target: obj,
-      check: inferCheckFromLabel(label),
-      priority: 18,
-      isFallback: false,
-    })
-  }
+  // ── Interaction-based choices (runtime module format) ──
+  // If section has explicit interactions[], use those instead of interactiveObjects.
+  const sectionInteractions = section.interactions || []
+  const plotFlags = sceneState?.gmState?.plotFlags || {}
+  const runtimeObjects = sceneState?.gmState?.runtimeObjects || {}
+  const runtimeInteractions = sceneState?.gmState?.runtimeInteractions || {}
+  const currentSectionId = sceneState?.gmState?.currentSectionId
+  const usedInteractionIds = new Set()
 
-  // Runtime discoveries — engine-revealed objects from section.reveals[]
-  // These are authoritative (source: engine), NOT AI-inferred.
-  const discoveries = (sceneState?.gmState?.runtimeDiscoveries || []).filter(d => d.visible)
-  for (const disc of discoveries) {
-    // Look up the reveal definition to get its actions[]
-    const revealDef = (section.reveals || []).find(r => r.id === disc.revealId)
-    const actions = revealDef?.actions || []
-    if (actions.length) {
-      for (let i = 0; i < actions.length; i++) {
-        const action = actions[i]
-        const label = action.label
-        const recent = wasRecentlyActedOn(label, disc.label, recentActions)
-        if (recent) continue
-        choices.push({
-          id: `reveal-${disc.revealId}-${i}`,
-          label,
-          source: 'structured',
-          kind: disc.kind || 'object',
-          target: disc.label,
-          check: action.check ? { skillOrAbility: action.check.skill, dc: action.check.dc, advantage: null } : inferCheckFromLabel(label),
-          priority: 5 + i,
-          isFallback: false,
-        })
+  if (sectionInteractions.length) {
+    // Section interactions (static, from adventure data)
+    for (let i = 0; i < sectionInteractions.length; i++) {
+      const intr = sectionInteractions[i]
+      if (!intr.id || !intr.label) continue
+      // Flag gate
+      if (intr.requiresFlags?.length && !intr.requiresFlags.every(f => plotFlags[f])) continue
+      // Availability: visible or runtimeObjectVisible
+      if (!intr.availability?.visible) {
+        const objId = intr.availability?.runtimeObjectVisible
+        if (!objId || !runtimeObjects[objId]?.visible) continue
       }
-    } else {
-      // No explicit actions — offer a generic "examine" choice
-      const label = `${disc.label} untersuchen`
-      const recent = wasRecentlyActedOn(label, disc.label, recentActions)
-      if (!recent) {
-        choices.push({
-          id: `reveal-${disc.revealId}`,
-          label,
-          source: 'structured',
-          kind: disc.kind || 'object',
-          target: disc.label,
-          check: inferCheckFromLabel(label),
-          priority: 5,
-          isFallback: false,
-        })
+      const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions)
+      if (recent) continue
+      usedInteractionIds.add(intr.id)
+      choices.push({
+        id: `intr-${intr.id}`,
+        label: intr.label,
+        source: 'structured',
+        kind: intr.kind || 'action',
+        target: intr.target || null,
+        interactionId: intr.id,
+        check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
+        priority: 8 + i,
+        isFallback: false,
+      })
+    }
+
+    // Runtime interactions (dynamically revealed, not already in section)
+    for (const [intrId, intr] of Object.entries(runtimeInteractions)) {
+      if (!intr.visible || usedInteractionIds.has(intrId)) continue
+      if (intr.sectionId && intr.sectionId !== currentSectionId) continue
+      const objId = intr.availability?.runtimeObjectVisible
+      if (objId && !runtimeObjects[objId]?.visible) continue
+      if (intr.requiresFlags?.length && !intr.requiresFlags.every(f => plotFlags[f])) continue
+      const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions)
+      if (recent) continue
+      choices.push({
+        id: `intr-${intrId}`,
+        label: intr.label,
+        source: 'structured',
+        kind: intr.kind || 'action',
+        target: intr.target || null,
+        interactionId: intrId,
+        check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
+        priority: 5,
+        isFallback: false,
+      })
+    }
+  } else {
+    // Legacy: interactiveObjects + runtimeDiscoveries
+    const objects = section.interactiveObjects || []
+    for (const obj of objects) {
+      const objState = inferred.objectStates?.[obj]
+      if (objState === 'destroyed') continue
+      const label = `${obj} untersuchen`
+      const recent = wasRecentlyActedOn(label, obj, recentActions)
+      if (recent) continue
+      choices.push({
+        id: `obj-${obj.toLowerCase().replace(/\s+/g, '-')}`,
+        label,
+        source: 'structured',
+        kind: 'object',
+        target: obj,
+        check: inferCheckFromLabel(label),
+        priority: 18,
+        isFallback: false,
+      })
+    }
+
+    const discoveries = (sceneState?.gmState?.runtimeDiscoveries || []).filter(d => d.visible)
+    for (const disc of discoveries) {
+      const revealDef = (section.reveals || []).find(r => r.id === disc.revealId)
+      const actions = revealDef?.actions || []
+      if (actions.length) {
+        for (let i = 0; i < actions.length; i++) {
+          const action = actions[i]
+          const recent = wasRecentlyActedOn(action.label, disc.label, recentActions)
+          if (recent) continue
+          choices.push({
+            id: `reveal-${disc.revealId}-${i}`,
+            label: action.label,
+            source: 'structured',
+            kind: disc.kind || 'object',
+            target: disc.label,
+            check: action.check ? { skillOrAbility: action.check.skill, dc: action.check.dc, advantage: null } : inferCheckFromLabel(action.label),
+            priority: 5 + i,
+            isFallback: false,
+          })
+        }
+      } else {
+        const label = `${disc.label} untersuchen`
+        const recent = wasRecentlyActedOn(label, disc.label, recentActions)
+        if (!recent) {
+          choices.push({
+            id: `reveal-${disc.revealId}`,
+            label,
+            source: 'structured',
+            kind: disc.kind || 'object',
+            target: disc.label,
+            check: inferCheckFromLabel(label),
+            priority: 5,
+            isFallback: false,
+          })
+        }
       }
     }
   }
