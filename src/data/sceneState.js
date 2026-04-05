@@ -121,11 +121,40 @@ export function findInteractionDef(structure, interactionId) {
   return null
 }
 
-export function applyInteractionSuccess(sceneState, interaction, module) {
-  if (!interaction?.results?.success || !sceneState) return sceneState
-  const result = interaction.results.success
+function getInteractionResult(interaction, outcome = 'success') {
+  if (!interaction?.results) return null
+  if (outcome === 'failure' || outcome === 'fail') {
+    return interaction.results.failure || interaction.results.fail || null
+  }
+  return interaction.results.success || null
+}
+
+function buildPortableTakeEffects(sceneState, interaction, module, outcome = 'success') {
+  if (outcome !== 'success' || interaction?.kind !== 'take' || !interaction?.target) {
+    return { inventoryAdds: [], objectUpdates: [], suppressTargetInteractions: false }
+  }
+
+  const objectId = interaction.target
+  const objectDef = module?.objectRegistry?.[objectId]
+  const runtimeObject = sceneState?.gmState?.runtimeObjects?.[objectId]
+  if (!objectDef?.portable || !runtimeObject || runtimeObject.suppressed === true) {
+    return { inventoryAdds: [], objectUpdates: [], suppressTargetInteractions: false }
+  }
+
+  return {
+    inventoryAdds: [runtimeObject.label || interaction.label || objectId],
+    objectUpdates: [{ objectId, state: 'taken', suppressed: true, visible: false }],
+    suppressTargetInteractions: true,
+  }
+}
+
+export function resolveInteractionOutcome(sceneState, interaction, module, outcome = 'success') {
+  const result = getInteractionResult(interaction, outcome)
+  if (!result || !sceneState) return { sceneState, inventoryAdds: [] }
+
   let gm = { ...sceneState.gmState }
   let pk = { ...sceneState.playerKnowledge }
+  const takeEffects = buildPortableTakeEffects(sceneState, interaction, module, outcome)
 
   // 1. Set flags
   if (result.setFlags?.length) {
@@ -182,15 +211,44 @@ export function applyInteractionSuccess(sceneState, interaction, module) {
   }
 
   // 6. Object state updates
-  if (result.objectStateUpdates?.length) {
+  const objectStateUpdates = [...(result.objectStateUpdates || []), ...takeEffects.objectUpdates]
+  if (objectStateUpdates.length) {
     const ro = { ...(gm.runtimeObjects || {}) }
-    for (const upd of result.objectStateUpdates) {
-      if (ro[upd.objectId]) ro[upd.objectId] = { ...ro[upd.objectId], state: upd.state }
+    for (const upd of objectStateUpdates) {
+      if (!ro[upd.objectId]) continue
+      const { objectId, ...changes } = upd
+      const nextObject = { ...ro[objectId], ...changes }
+      if (changes.suppressed === true) nextObject.visible = false
+      ro[objectId] = nextObject
     }
     gm = { ...gm, runtimeObjects: ro }
   }
 
-  return { ...sceneState, gmState: gm, playerKnowledge: pk }
+  if (takeEffects.suppressTargetInteractions && interaction?.target) {
+    const runtimeInteractions = { ...(gm.runtimeInteractions || {}) }
+    for (const [interactionId, runtimeInteraction] of Object.entries(runtimeInteractions)) {
+      if (runtimeInteraction?.target !== interaction.target) continue
+      runtimeInteractions[interactionId] = {
+        ...runtimeInteraction,
+        suppressed: true,
+        visible: false,
+      }
+    }
+    gm = { ...gm, runtimeInteractions }
+  }
+
+  return {
+    sceneState: { ...sceneState, gmState: gm, playerKnowledge: pk },
+    inventoryAdds: takeEffects.inventoryAdds,
+  }
+}
+
+export function applyInteractionOutcome(sceneState, interaction, module, outcome = 'success') {
+  return resolveInteractionOutcome(sceneState, interaction, module, outcome).sceneState
+}
+
+export function applyInteractionSuccess(sceneState, interaction, module) {
+  return applyInteractionOutcome(sceneState, interaction, module, 'success')
 }
 
 function computeSectionTransitionWeight(section, previousSection, latestUser = '') {
@@ -666,11 +724,13 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
   // Runtime objects/interactions: carry forward, scope by sectionId
   const runtimeObjects = {}
   for (const [id, obj] of Object.entries(prevGm.runtimeObjects || {})) {
-    runtimeObjects[id] = { ...obj, visible: obj.sectionId === currentSection.id }
+    const inCurrentSection = obj.sectionId ? obj.sectionId === currentSection.id : true
+    runtimeObjects[id] = { ...obj, visible: obj.suppressed !== true && inCurrentSection }
   }
   const runtimeInteractions = {}
   for (const [id, intr] of Object.entries(prevGm.runtimeInteractions || {})) {
-    runtimeInteractions[id] = { ...intr, visible: intr.sectionId === currentSection.id }
+    const inCurrentSection = intr.sectionId ? intr.sectionId === currentSection.id : true
+    runtimeInteractions[id] = { ...intr, visible: intr.suppressed !== true && inCurrentSection }
   }
   const revealedClueIds = [...(prevGm.revealedClueIds || [])]
 

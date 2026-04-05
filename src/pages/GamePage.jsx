@@ -8,7 +8,7 @@ import CombatTracker from '../components/CombatTracker'
 import SkillCheckPanel from '../components/SkillCheckPanel'
 import MessageBubble, { TypingIndicator } from '../components/game/MessageBubble'
 import SessionCard from '../components/game/SessionCard'
-import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById, resolveReveals, applyReveals, findInteractionDef, applyInteractionSuccess } from '../data/srd'
+import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById, resolveReveals, applyReveals, findInteractionDef, resolveInteractionOutcome } from '../data/srd'
 import { buildAvailableChoices } from '../engine/choiceEngine'
 import { isRuntimeStructure } from '../data/runtimeModule'
 import {
@@ -162,15 +162,14 @@ export default function GamePage() {
     })
   }, [gameLog])
 
-  // Resolve and apply an interaction's success result against a specific scene state.
-  const resolveInteraction = useCallback((interactionId, baseSceneState = sceneState) => {
+  // Resolve an interaction outcome against a specific scene state.
+  const resolveInteraction = useCallback((interactionId, baseSceneState = sceneState, outcome = 'success') => {
     if (!interactionId || !adventure || !baseSceneState) return null
     const normalized = normalizeAdventureEntry(adventure)
     const structure = normalized?.structure
     if (!structure) return null
     const intrDef = findInteractionDef(structure, interactionId)
-    if (!intrDef?.results?.success) return null
-    return applyInteractionSuccess(baseSceneState, intrDef, structure.module)
+    return resolveInteractionOutcome(baseSceneState, intrDef, structure.module, outcome)
   }, [adventure, sceneState])
 
   const findRuntimeTextChoice = useCallback((userText, activeAdventure = adventure, activeSceneState = sceneState) => {
@@ -225,10 +224,11 @@ export default function GamePage() {
       }
 
       if (matchedRuntimeChoice.interactionId) {
-        const updated = resolveInteraction(matchedRuntimeChoice.interactionId, activeSceneState)
-        if (updated) {
-          setSceneState(updated)
-          nextOptions.sceneStateOverride = updated
+        const resolved = resolveInteraction(matchedRuntimeChoice.interactionId, activeSceneState, 'success')
+        if (resolved?.sceneState) {
+          setSceneState(resolved.sceneState)
+          for (const itemName of resolved.inventoryAdds || []) addItem(itemName)
+          nextOptions.sceneStateOverride = resolved.sceneState
         }
       }
 
@@ -407,6 +407,7 @@ export default function GamePage() {
     findRuntimeTextChoice,
     resolveInteraction,
     setSceneState,
+    addItem,
   ])
 
   const handleCombatAction = useCallback(text => handleSend(`[Kampfrunde] ${text}`), [handleSend])
@@ -417,45 +418,56 @@ export default function GamePage() {
     setPendingCheck(null)
     setDynamicChoices([])
 
+    let nextSceneState = sceneState
+    let inventoryAdds = []
+
     // Record failed interaction in sceneState (authoritative check flow)
-    if (!result.success && sceneState) {
+    if (!result.success && nextSceneState) {
       const record = {
         id: `int-${Date.now()}`,
-        sectionId: sceneState.gmState?.currentSectionId || null,
+        sectionId: nextSceneState.gmState?.currentSectionId || null,
         targetId: choiceMeta?.target || null,
         skill: result.skillOrAbility || null,
         outcome: 'failure',
-        turn: sceneState.turnCount || 0,
+        turn: nextSceneState.turnCount || 0,
         label: choiceLabel || '',
         kind: choiceMeta?.kind || null,
         contextSnapshot: {
-          clueCount: sceneState.playerKnowledge?.discoveredClues?.length || 0,
-          npcCount: sceneState.playerKnowledge?.knownNpcs?.length || 0,
+          clueCount: nextSceneState.playerKnowledge?.discoveredClues?.length || 0,
+          npcCount: nextSceneState.playerKnowledge?.knownNpcs?.length || 0,
           itemCount: character?.inventory?.length || 0,
         },
       }
-      setSceneState(prev => ({
-        ...prev,
-        interactionHistory: [...(prev?.interactionHistory || []), record].slice(-20),
-      }))
+      nextSceneState = {
+        ...nextSceneState,
+        interactionHistory: [...(nextSceneState?.interactionHistory || []), record].slice(-20),
+      }
     }
 
-    // On success: apply interaction result or legacy reveal resolution
-    let stateOverride = null
-    if (result.success && sceneState) {
-      if (choiceMeta?.interactionId) {
-        stateOverride = resolveInteraction(choiceMeta.interactionId)
-        if (stateOverride) setSceneState(stateOverride)
-      } else if (choiceMeta?.target) {
-        const section = getCurrentSection(adventure, sceneState)
-        if (section) {
-          const matched = resolveReveals(section, sceneState, choiceMeta.target)
-          if (matched.length) {
-            setSceneState(prev => applyReveals(prev, matched))
-          }
+    if (choiceMeta?.interactionId && nextSceneState) {
+      const resolved = resolveInteraction(
+        choiceMeta.interactionId,
+        nextSceneState,
+        result.success ? 'success' : 'failure'
+      )
+      if (resolved?.sceneState) nextSceneState = resolved.sceneState
+      if (resolved?.inventoryAdds?.length) inventoryAdds = resolved.inventoryAdds
+    } else if (result.success && nextSceneState && choiceMeta?.target) {
+      const section = getCurrentSection(adventure, nextSceneState)
+      if (section) {
+        const matched = resolveReveals(section, nextSceneState, choiceMeta.target)
+        if (matched.length) {
+          nextSceneState = applyReveals(nextSceneState, matched)
         }
       }
     }
+
+    const stateOverride = nextSceneState && nextSceneState !== sceneState
+      ? nextSceneState
+      : null
+
+    if (stateOverride) setSceneState(stateOverride)
+    for (const itemName of inventoryAdds) addItem(itemName)
 
     let rollStr = `d20(${result.d20Result})`
     if (result.roll2 !== null) {
@@ -477,7 +489,7 @@ export default function GamePage() {
     } else {
       handleSend(probeText, sendOpts)
     }
-  }, [handleSend, sceneState, setSceneState, character, adventure, resolveInteraction])
+  }, [handleSend, sceneState, setSceneState, character, adventure, resolveInteraction, addItem])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -865,11 +877,12 @@ export default function GamePage() {
                     } else {
                       // No-check interaction: apply success result immediately
                       if (choice.interactionId) {
-                        const updated = resolveInteraction(choice.interactionId)
-                        if (updated) {
-                          setSceneState(updated)
+                        const resolved = resolveInteraction(choice.interactionId, sceneState, 'success')
+                        if (resolved?.sceneState) {
+                          setSceneState(resolved.sceneState)
+                          for (const itemName of resolved.inventoryAdds || []) addItem(itemName)
                           handleSend(choice.label, {
-                            sceneStateOverride: updated,
+                            sceneStateOverride: resolved.sceneState,
                             allowEngineCheckInference: false,
                             recentActionKey: choice.actionKey || null,
                           })
