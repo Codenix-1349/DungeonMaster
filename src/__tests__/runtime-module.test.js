@@ -10,6 +10,7 @@ import {
   deriveSceneState,
   findInteractionDef,
   applyInteractionSuccess,
+  resolveInteractionOutcome,
   findSectionById,
   buildRelevantAdventureContext,
 } from '../data/srd.js'
@@ -195,6 +196,53 @@ describe('reveal chain', () => {
     const parchChoices = choices.filter(c => c.interactionId === 'read_parchment_note' || c.interactionId === 'take_parchment_note')
     expect(parchChoices.length).toBeGreaterThanOrEqual(1)
   })
+
+  it('take_parchment_note returns engine-authenticated inventory gain and hides the runtime object', () => {
+    const scene = makeBreweryState({
+      gmState: {
+        currentSectionId: 'old_brewery',
+        plotFlags: { HAS_CELLAR_KEY: true, CELLAR_UNLOCKED: true, HIDDEN_PLATE_OPENED: true },
+        runtimeObjects: {
+          hidden_plate: { id: 'hidden_plate', sectionId: 'old_brewery', label: 'Vibrierende Metallplatte', visible: true, state: 'opened' },
+          parchment_note: { id: 'parchment_note', sectionId: 'old_brewery', label: 'Gefaltetes Pergament', visible: true, state: 'unread' },
+        },
+      },
+    })
+    const intr = findInteractionDef(structure, 'take_parchment_note')
+    const resolved = resolveInteractionOutcome(scene, intr, structure.module, 'success')
+
+    expect(resolved.inventoryAdds).toEqual(['Gefaltetes Pergament'])
+    expect(resolved.sceneState.gmState.runtimeObjects.parchment_note.state).toBe('taken')
+    expect(resolved.sceneState.gmState.runtimeObjects.parchment_note.suppressed).toBe(true)
+    expect(resolved.sceneState.gmState.runtimeObjects.parchment_note.visible).toBe(false)
+  })
+
+  it('suppressed runtime objects stay hidden after the next derived turn', () => {
+    const scene = makeBreweryState({
+      gmState: {
+        currentSectionId: 'old_brewery',
+        plotFlags: { HAS_CELLAR_KEY: true, CELLAR_UNLOCKED: true, HIDDEN_PLATE_OPENED: true },
+        runtimeObjects: {
+          parchment_note: { id: 'parchment_note', sectionId: 'old_brewery', label: 'Gefaltetes Pergament', visible: true, state: 'unread' },
+        },
+      },
+    })
+    const intr = findInteractionDef(structure, 'take_parchment_note')
+    const resolved = resolveInteractionOutcome(scene, intr, structure.module, 'success')
+    const next = deriveSceneState({
+      adventure: adv,
+      previousSceneState: resolved.sceneState,
+      messages: [
+        msg('user', intr.label),
+        msg('assistant', intr.aiNarrationHint || ''),
+      ],
+      fallbackUserText: intr.label,
+      fallbackUserActionKey: 'intr:take_parchment_note',
+    })
+
+    expect(next.gmState.runtimeObjects.parchment_note.visible).toBe(false)
+    expect(next.gmState.runtimeObjects.parchment_note.suppressed).toBe(true)
+  })
 })
 
 // ── 7. Truth firewall — AI narration doesn't create runtime truth ──
@@ -254,6 +302,32 @@ describe('clue registry', () => {
     const updated = applyInteractionSuccess(state, intr, adv.structure.module)
     expect(updated.gmState.revealedClueIds).toContain('tomas_obsessed')
     expect(updated.playerKnowledge.discoveredClues.some(c => /Tomas/i.test(c))).toBe(true)
+  })
+})
+
+describe('interaction outcomes', () => {
+  it('failure outcomes can mutate runtime state authoritatively', () => {
+    const adv = loadModule()
+    const base = createInitialSceneState(adv)
+    const interaction = {
+      id: 'well_failure',
+      kind: 'inspect',
+      target: 'well',
+      results: {
+        failure: {
+          setFlags: ['WELL_DISTURBED'],
+          revealClues: ['well_corruption_truth'],
+        },
+      },
+    }
+
+    const resolved = resolveInteractionOutcome(base, interaction, adv.structure.module, 'failure')
+
+    expect(resolved.sceneState.gmState.plotFlags.WELL_DISTURBED).toBe(true)
+    expect(resolved.sceneState.gmState.revealedClueIds).toContain('well_corruption_truth')
+    expect(resolved.sceneState.playerKnowledge.discoveredClues).toContain(
+      adv.structure.module.clueRegistry.well_corruption_truth.text
+    )
   })
 })
 

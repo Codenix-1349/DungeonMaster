@@ -110,7 +110,9 @@ export {
   resolveReveals,
   applyReveals,
   findInteractionDef,
+  applyInteractionOutcome,
   applyInteractionSuccess,
+  resolveInteractionOutcome,
 } from './sceneState'
 
 // ── Adventure Context ───────────────────────────────────────────────────────
