@@ -273,7 +273,7 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
     return applyLiveSceneState(nextValue)
   }, [applyLiveSceneState])
 
-  const syncSceneState = useCallback(({ messages, adventureOverride = null, combatOverride = null, fallbackUserText = '' }) => {
+  const syncSceneState = useCallback(({ messages, adventureOverride = null, combatOverride = null, fallbackUserText = '', fallbackUserActionKey = null }) => {
     const activeAdventure = normalizeAdventureEntry(adventureOverride || adventureRef.current)
     if (!activeAdventure) {
       setSceneState(null)
@@ -286,6 +286,7 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
       messages,
       combat: combatOverride ?? combatRef.current,
       fallbackUserText,
+      fallbackUserActionKey,
     })
 
     setSceneState(nextSceneState)

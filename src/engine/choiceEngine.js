@@ -10,7 +10,7 @@
 //
 // The UI consumes only normalized Choice objects — never raw AI text.
 
-import { getAllowedRuntimeInteractions, normalizeRuntimeNpcState } from '../data/runtimeModule'
+import { getAllowedRuntimeInteractions } from '../data/runtimeModule'
 
 // ─── Choice Schema ──────────────────────────────────────────────────────────
 // {
@@ -114,7 +114,22 @@ export function parseAiChoices(text = '') {
 // Check if a choice target or label was recently acted upon by the player.
 // Uses recentActions from sceneState (engine truth, not AI-inferred).
 
-function wasRecentlyActedOn(label, target, recentActions = []) {
+function normalizeActionKeyPart(value = '') {
+  return String(value).trim().toLowerCase()
+}
+
+export function getChoiceActionKey(choice = {}) {
+  if (choice.actionKey) return choice.actionKey
+  if (choice.interactionId) return `intr:${normalizeActionKeyPart(choice.interactionId)}`
+  if (choice.kind === 'exit' && choice.target) return `exit:${normalizeActionKeyPart(choice.target)}`
+  if (choice.kind === 'npc' && choice.target) return `npc:${normalizeActionKeyPart(choice.target)}`
+  if (choice.target) return `${choice.kind || 'action'}:${normalizeActionKeyPart(choice.target)}`
+  if (choice.label) return `label:${normalizeActionKeyPart(choice.label)}`
+  return null
+}
+
+function wasRecentlyActedOn(label, target, recentActions = [], actionKey = null, recentActionKeys = []) {
+  if (actionKey && recentActionKeys.includes(actionKey)) return true
   if (!recentActions.length) return false
   const labelLower = label.toLowerCase()
   const targetLower = target?.toLowerCase() || ''
@@ -139,6 +154,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
   const knownNpcs = sceneState?.playerKnowledge?.knownNpcs || []
   const activeNpcId = sceneState?.dialogueState?.activeNpcId || null
   const recentActions = sceneState?.recentActions || []
+  const recentActionKeys = sceneState?.recentActionKeys || []
 
   // Exits — navigation options (flag-gated, deprioritize recently used)
   const exitFlags = sceneState?.gmState?.plotFlags || {}
@@ -147,13 +163,15 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
     const exit = exits[i]
     if (!exit.label) continue
     if (exit.requiresFlags?.length && !exit.requiresFlags.every(f => exitFlags[f])) continue
-    const recent = wasRecentlyActedOn(exit.label, null, recentActions)
+    const actionKey = `exit:${normalizeActionKeyPart(exit.id || exit.targetId || exit.label)}`
+    const recent = wasRecentlyActedOn(exit.label, null, recentActions, actionKey, recentActionKeys)
     choices.push({
       id: `exit-${i}`,
       label: exit.label,
       source: 'structured',
       kind: 'exit',
       target: exit.targetId || null,
+      actionKey,
       check: null,
       priority: recent ? 70 + i : 20 + i,
       isFallback: false,
@@ -162,42 +180,22 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
 
   // NPCs — talk to visible, known NPCs (skip dead/fled, deprioritize recently talked to)
   const npcs = section.npcs || []
-  if (isRuntimeModule && npcs.length) {
-    for (let i = 0; i < npcs.length; i++) {
-      const npc = npcs[i]
-      const npcId = section.visibleNpcs?.[i] || npc
-      const npcState = normalizeRuntimeNpcState(sceneState?.gmState?.npcStates?.[npcId])
-      const presence = npcState.state || npcState.status || null
-      if (npcState.currentlyVisible === false) continue
-      if (presence === 'dead' || presence === 'fled') continue
-      if (activeNpcId && activeNpcId.toLowerCase() === npc.toLowerCase()) continue
-      const label = `Mit ${npc} sprechen`
-      const recent = wasRecentlyActedOn(label, npc, recentActions)
-      choices.push({
-        id: `npc-${npcId.toLowerCase().replace(/\s+/g, '-')}`,
-        label,
-        source: 'structured',
-        kind: 'npc',
-        target: npc,
-        check: null,
-        priority: recent ? 65 : 15,
-        isFallback: false,
-      })
-    }
-  } else {
+  if (!isRuntimeModule) {
     for (const npc of npcs) {
       if (!knownNpcs.some(k => k.toLowerCase() === npc.toLowerCase())) continue
       const npcState = inferred.npcStates?.[npc]
       if (npcState === 'dead' || npcState === 'fled') continue
       if (activeNpcId && activeNpcId.toLowerCase() === npc.toLowerCase()) continue
       const label = `Mit ${npc} sprechen`
-      const recent = wasRecentlyActedOn(label, npc, recentActions)
+      const actionKey = `npc:${normalizeActionKeyPart(npc)}`
+      const recent = wasRecentlyActedOn(label, npc, recentActions, actionKey, recentActionKeys)
       choices.push({
         id: `npc-${npc.toLowerCase().replace(/\s+/g, '-')}`,
         label,
         source: 'structured',
         kind: 'npc',
         target: npc,
+        actionKey,
         check: null,
         priority: recent ? 65 : 15,
         isFallback: false,
@@ -219,7 +217,8 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
       const allowedInteractions = getAllowedRuntimeInteractions(section, sceneState)
       for (let i = 0; i < allowedInteractions.length; i++) {
         const intr = allowedInteractions[i]
-        const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions)
+        const actionKey = `intr:${normalizeActionKeyPart(intr.id)}`
+        const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions, actionKey, recentActionKeys)
         if (recent) continue
         usedInteractionIds.add(intr.id)
         choices.push({
@@ -229,6 +228,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
           kind: intr.kind || 'action',
           target: intr.target || null,
           interactionId: intr.id,
+          actionKey,
           check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
           priority: intr.source === 'runtime' ? 5 : 8 + i,
           isFallback: false,
@@ -247,7 +247,8 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
           const objId = intr.availability?.runtimeObjectVisible
           if (!objId || !runtimeObjects[objId]?.visible) continue
         }
-        const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions)
+        const actionKey = `intr:${normalizeActionKeyPart(intr.id)}`
+        const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions, actionKey, recentActionKeys)
         if (recent) continue
         usedInteractionIds.add(intr.id)
         choices.push({
@@ -257,6 +258,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
           kind: intr.kind || 'action',
           target: intr.target || null,
           interactionId: intr.id,
+          actionKey,
           check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
           priority: 8 + i,
           isFallback: false,
@@ -271,7 +273,8 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
         if (objId && !runtimeObjects[objId]?.visible) continue
         if (intr.requiresFlags?.length && !intr.requiresFlags.every(f => plotFlags[f])) continue
         if (intr.blocksIfFlags?.length && intr.blocksIfFlags.some(f => plotFlags[f])) continue
-        const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions)
+        const actionKey = `intr:${normalizeActionKeyPart(intrId)}`
+        const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions, actionKey, recentActionKeys)
         if (recent) continue
         choices.push({
           id: `intr-${intrId}`,
@@ -280,6 +283,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
           kind: intr.kind || 'action',
           target: intr.target || null,
           interactionId: intrId,
+          actionKey,
           check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
           priority: 5,
           isFallback: false,
@@ -293,7 +297,8 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
       const objState = inferred.objectStates?.[obj]
       if (objState === 'destroyed') continue
       const label = `${obj} untersuchen`
-      const recent = wasRecentlyActedOn(label, obj, recentActions)
+      const actionKey = `object:${normalizeActionKeyPart(obj)}`
+      const recent = wasRecentlyActedOn(label, obj, recentActions, actionKey, recentActionKeys)
       if (recent) continue
       choices.push({
         id: `obj-${obj.toLowerCase().replace(/\s+/g, '-')}`,
@@ -301,6 +306,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
         source: 'structured',
         kind: 'object',
         target: obj,
+        actionKey,
         check: inferCheckFromLabel(label),
         priority: 18,
         isFallback: false,
@@ -314,7 +320,8 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
       if (actions.length) {
         for (let i = 0; i < actions.length; i++) {
           const action = actions[i]
-          const recent = wasRecentlyActedOn(action.label, disc.label, recentActions)
+          const actionKey = `reveal:${normalizeActionKeyPart(disc.revealId)}:${i}`
+          const recent = wasRecentlyActedOn(action.label, disc.label, recentActions, actionKey, recentActionKeys)
           if (recent) continue
           choices.push({
             id: `reveal-${disc.revealId}-${i}`,
@@ -322,6 +329,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
             source: 'structured',
             kind: disc.kind || 'object',
             target: disc.label,
+            actionKey,
             check: action.check ? { skillOrAbility: action.check.skill, dc: action.check.dc, advantage: null } : inferCheckFromLabel(action.label),
             priority: 5 + i,
             isFallback: false,
@@ -329,7 +337,8 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
         }
       } else {
         const label = `${disc.label} untersuchen`
-        const recent = wasRecentlyActedOn(label, disc.label, recentActions)
+        const actionKey = `reveal:${normalizeActionKeyPart(disc.revealId)}`
+        const recent = wasRecentlyActedOn(label, disc.label, recentActions, actionKey, recentActionKeys)
         if (!recent) {
           choices.push({
             id: `reveal-${disc.revealId}`,
@@ -337,6 +346,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
             source: 'structured',
             kind: disc.kind || 'object',
             target: disc.label,
+            actionKey,
             check: inferCheckFromLabel(label),
             priority: 5,
             isFallback: false,
@@ -347,15 +357,17 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
   }
 
   // Suggested actions from adventure data (deprioritize recently used)
-  const suggested = section.suggestedActions || []
+  const suggested = isRuntimeModule ? [] : (section.suggestedActions || [])
   for (let i = 0; i < suggested.length; i++) {
-    const recent = wasRecentlyActedOn(suggested[i], null, recentActions)
+    const actionKey = `suggested:${normalizeActionKeyPart(section.id || 'section')}:${i}`
+    const recent = wasRecentlyActedOn(suggested[i], null, recentActions, actionKey, recentActionKeys)
     choices.push({
       id: `suggested-${i}`,
       label: suggested[i],
       source: 'structured',
       kind: 'action',
       target: null,
+      actionKey,
       check: inferCheckFromLabel(suggested[i]),
       priority: recent ? 60 + i : 12 + i,
       isFallback: false,
@@ -450,6 +462,14 @@ function areSemanticallyDuplicate(a, b) {
   if (a.kind === 'free' || b.kind === 'free') return false
   // Exit vs non-exit are fundamentally different intents (movement vs interaction)
   if ((a.kind === 'exit') !== (b.kind === 'exit')) return false
+  // Authored structured interactions are separate affordances, even on the same target.
+  if (
+    a.source === 'structured' &&
+    b.source === 'structured' &&
+    a.interactionId &&
+    b.interactionId &&
+    a.interactionId !== b.interactionId
+  ) return false
 
   const sameExplicitTarget = Boolean(
     a.target &&
@@ -684,7 +704,7 @@ export function buildAvailableChoices({ aiResponse = '', section = null, sceneSt
   }
 
   // Fallbacks if not enough choices
-  if (merged.length < 2) {
+  if (!isRuntimeModule && merged.length < 2) {
     for (const c of fallbackChoices) {
       if (merged.length >= MAX_CHOICES - 1) break
       addUnique(c)

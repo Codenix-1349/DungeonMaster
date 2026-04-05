@@ -79,6 +79,9 @@ export function getAllowedRuntimeInteractions(section, sceneState) {
 
   const currentSectionId = sceneState?.gmState?.currentSectionId
   const runtimeInteractions = sceneState?.gmState?.runtimeInteractions || {}
+  const staticInteractionIds = new Set(
+    (section.interactions || []).map(interaction => interaction?.id).filter(Boolean)
+  )
   const allowed = []
 
   for (const interaction of section.interactions || []) {
@@ -88,6 +91,7 @@ export function getAllowedRuntimeInteractions(section, sceneState) {
 
   for (const [interactionId, interaction] of Object.entries(runtimeInteractions)) {
     if (!interaction?.visible) continue
+    if (staticInteractionIds.has(interactionId)) continue
     if (interaction.sectionId && currentSectionId && interaction.sectionId !== currentSectionId) continue
     if (!isInteractionAllowed({ id: interactionId, ...interaction }, sceneState)) continue
     allowed.push({ id: interactionId, ...interaction, source: 'runtime' })
