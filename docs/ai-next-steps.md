@@ -36,6 +36,18 @@ Key changes: engine-truth over AI-truth, structured data over heuristics.
 - **UI/prompt contract:** runtime UI and prompt context should prefer the player-facing fields over internal objective text.
 - **Validation:** runtime modules should warn when player-facing quest or intro framing is missing.
 
+## Phase 4 start — Reference Runtime Module
+
+- `src/data/adventures/graufurt_reference_runtime_module.txt` is now the architecture-driven reference module.
+- It exists to stress:
+  - two NPCs in one runtime scene
+  - authored dialogue identity
+  - hidden reveal chains
+  - retry reopening after new tools
+  - check and non-check state transitions
+  - backtracking and final gating
+- Prefer extending regression and acceptance coverage around this module before treating a larger authored adventure as the main proof surface.
+
 ## Possible future test additions (not urgent)
 - **CombatTracker integration**: initiative, multi-round, enemy defeat, XP/loot
 - **Adventure parsing**: structured adventure round-trip, legacy format migration

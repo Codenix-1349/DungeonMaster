@@ -1,0 +1,555 @@
+# DUNGEONS & DAGGERS - ARCHITEKTUR-REFERENZMODUL
+# MODUL: Das Glockenarchiv von Graufurt
+# ZWECK: Referenzdaten fuer Phase 4 - zwei NPCs in einer Szene, Reveal-Ketten,
+# Retry-Kontext ueber Item-Gewinn, Check- und Nicht-Check-Interaktionen, Rueckwege.
+
+MODULE_ID: graufurt_reference_runtime
+MODULE_VERSION: 0.1
+SYSTEM: DND5E
+START_SECTION_ID: archive_foyer
+PRIMARY_OBJECTIVE: Finde Mira und sichere die Glockenakte.
+PLAYER_PRIMARY_OBJECTIVE: Finde die Vermisste und bringe Ordnung in das Archiv.
+SECONDARY_OBJECTIVE: Verstehe die Resonanz unter dem Archiv.
+TONE: Feuchtes Stadtarchiv, Glockenresonanz, nervoese Amtshausmysterien
+
+RUNTIME_RULES:
+  - Nur sichtbare oder engine-bestaetigte Runtime-Elemente duerfen in der Szene erscheinen.
+  - Dialogautoritaet liegt bei authored Talk-Interaktionen, nicht bei Namensheuristik.
+  - Checks kommen nur aus expliziten authored Interaction-Checks.
+  - Versteckte Objekte und Interaktionen werden nur ueber authored Reveal-Ketten sichtbar.
+  - Retry-Kontext darf sich durch neue Hinweise, neue Begegnungen oder neue Werkzeuge veraendern.
+
+PLOT_FLAGS:
+  - ELSA_BRIEFED
+  - LENO_BRIEFED
+  - STACKS_OPEN
+  - DESK_INSPECTED
+  - SECRET_DRAWER_OPENED
+  - SERVICE_MAP_READ
+  - CATWALK_CROSSED
+  - CATWALK_SLIPPED
+  - RACK_INSPECTED
+  - GRAPPLING_HOOK_TAKEN
+  - MIRA_TRUSTS
+  - MIRA_ESCORTING
+  - MIRA_WARY
+  - BELL_MECHANISM_UNDERSTOOD
+  - SEAL_TAKEN
+  - RESONANCE_CONTAINED
+  - MIRA_ESCAPED
+
+NPC_REGISTRY:
+  elsa:
+    name: Elsa Dorn
+    firstSeen: archive_foyer
+    currentlyVisible: true
+    relationship: neutral
+    suspicion: low
+    knownFacts: []
+    secretsUnlocked: []
+    lastTopic: null
+    promisesMade: []
+  leno:
+    name: Leno Falk
+    firstSeen: archive_foyer
+    currentlyVisible: true
+    relationship: neutral
+    suspicion: none
+    knownFacts: []
+    secretsUnlocked: []
+    lastTopic: null
+    promisesMade: []
+  mira:
+    name: Mira Sen
+    firstSeen: null
+    currentlyVisible: false
+    relationship: wary
+    suspicion: medium
+    knownFacts: []
+    secretsUnlocked: []
+    lastTopic: null
+    promisesMade: []
+
+CLUE_REGISTRY:
+  mira_went_into_stacks:
+    sourceSectionId: archive_foyer
+    revealConditions:
+      - interactionId: ask_leno_about_mira
+        result: success
+    isRevealed: false
+    isPlayerKnown: false
+    text: Mira folgte den Glockenschlaegen in die versperrten Magazine.
+
+  service_route_map:
+    sourceSectionId: sealed_stacks
+    revealConditions:
+      - interactionId: read_service_map
+        result: success
+    isRevealed: false
+    isPlayerKnown: false
+    text: Eine alte Servicestrecke fuehrt ueber die eingestuerzte Galerie zur inneren Nische.
+
+  mira_fears_reflection:
+    sourceSectionId: witness_alcove
+    revealConditions:
+      - interactionId: calm_mira
+        result: success
+    isRevealed: false
+    isPlayerKnown: false
+    text: Mira fuerchtet nicht die Glocken, sondern das Spiegelbild unter dem Wasser.
+
+  bell_resonance_truth:
+    sourceSectionId: flooded_vault
+    revealConditions:
+      - interactionId: inspect_bell_mechanism
+        result: success
+    isRevealed: false
+    isPlayerKnown: false
+    text: Die Glockenakte laesst sich nur mit dem bleiernen Siegel aus dem Flutschacht binden.
+
+OBJECT_REGISTRY:
+  service_drawer:
+    type: concealed_compartment
+    portable: false
+  service_map:
+    type: document
+    portable: false
+  grappling_hook:
+    type: tool
+    portable: true
+  lead_seal:
+    type: ritual_item
+    portable: true
+  bell_ledger:
+    type: focal_object
+    portable: false
+
+SECTIONS:
+  - id: archive_foyer
+    location: Vorhalle des stillgelegten Glockenarchivs
+    objective: Sprich mit Elsa und Leno und erfahre, warum Mira die Magazine betreten hat.
+    playerObjective: Sprich mit Elsa und Leno und finde einen Weg in die Magazine.
+    introText: Unter kalten Kupferlampen stehen Elsa Dorn am Sperrgitter und der Schreiber Leno Falk an einem schmalen Pult. Regen klopft gegen die Oberlichter, waehrend aus dem Inneren des Archivs ein fernes Nachhallen von Glocken dringt.
+    visibleFeatures:
+      - verriegeltes Sperrgitter
+      - schmaler Schreiberpult
+      - nasse Steinfliesen
+      - ferne Glockenresonanz
+    visibleNpcs:
+      - elsa
+      - leno
+    exits:
+      - id: to_stacks
+        label: Ins abgesperrte Magazin gehen
+        targetSectionId: sealed_stacks
+        requiresFlags: [STACKS_OPEN]
+    interactions:
+      - id: ask_elsa_about_lockdown
+        label: Elsa nach der Sperrung fragen
+        kind: talk
+        target: elsa
+        checkPolicy: none
+        availability:
+          visible: true
+        blocksIfFlags: [ELSA_BRIEFED]
+        results:
+          success:
+            setFlags: [ELSA_BRIEFED]
+            npcUpdates:
+              - npcId: elsa
+                relationshipDelta: +1
+                lastTopic: Sperrung
+        aiNarrationHint: Elsa erklaert knapp, dass seit Mirass Verschwinden niemand allein in die Magazine darf.
+
+      - id: ask_leno_about_mira
+        label: Leno nach Mira fragen
+        kind: talk
+        target: leno
+        checkPolicy: none
+        availability:
+          visible: true
+        blocksIfFlags: [LENO_BRIEFED]
+        results:
+          success:
+            setFlags: [LENO_BRIEFED]
+            npcUpdates:
+              - npcId: leno
+                relationshipDelta: +1
+                lastTopic: Mira
+            revealClues:
+              - mira_went_into_stacks
+        aiNarrationHint: Leno gibt zu, dass Mira den Glockenschlaegen in die Magazine folgte.
+
+      - id: ask_elsa_to_open_stacks
+        label: Elsa bitten, das Magazin zu oeffnen
+        kind: talk
+        target: elsa
+        checkPolicy: none
+        requiresFlags: [LENO_BRIEFED]
+        blocksIfFlags: [STACKS_OPEN]
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [STACKS_OPEN]
+            npcUpdates:
+              - npcId: elsa
+                lastTopic: Magazin
+        aiNarrationHint: Elsa entriegelt widerwillig das Gitter und laesst dich in die Magazine.
+
+  - id: sealed_stacks
+    location: Staubige Magazine des Glockenarchivs
+    objective: Suche nach Spuren der Vermissten zwischen den Regalen und finde einen Weg weiter.
+    playerObjective: Suche nach Spuren der Vermissten zwischen den Regalen.
+    introText: Hohe Registerregale druecken den Gang eng zusammen. Auf einem Schreiberpult liegt Staub in dicken Schichten, waehrend jenseits einer schiefen Bogenoeffnung eine eingestuerzte Galerie ueber dunklem Wasser knarrt.
+    visibleFeatures:
+      - hohe Registerregale
+      - verstaubtes Schreiberpult
+      - schmale Leiter
+      - Bogen zur eingestuerzten Galerie
+    exits:
+      - id: back_to_foyer
+        label: Zurueck in die Vorhalle
+        targetSectionId: archive_foyer
+      - id: to_gallery
+        label: Zur eingestuerzten Galerie weitergehen
+        targetSectionId: collapsed_gallery
+    interactions:
+      - id: inspect_clerk_desk
+        label: Das Schreiberpult nach Spuren durchsuchen
+        kind: inspect
+        target: clerk_desk
+        availability:
+          visible: true
+        blocksIfFlags: [DESK_INSPECTED]
+        check:
+          skill: investigation
+          dc: 12
+          onFail: Du wirbelst nur alten Staub auf und findest keine klare Spur.
+        results:
+          success:
+            setFlags: [DESK_INSPECTED]
+            revealRuntime:
+              objects:
+                - id: service_drawer
+                  sectionId: sealed_stacks
+                  label: Versteckte Schublade im Schreiberpult
+                  kind: concealed_compartment
+                  visible: true
+                  state: sealed
+                  source: inspect_clerk_desk
+                  priority: 100
+              interactions:
+                - id: open_service_drawer
+                  sectionId: sealed_stacks
+                  label: Die versteckte Schublade aufziehen
+                  kind: manipulate
+                  target: service_drawer
+                  visible: true
+                  state: available
+                  source: inspect_clerk_desk
+                  priority: 99
+        aiNarrationHint: Unter einer Staubkante entdeckst du eine schmale Schublade, die nicht zum Pult gehoert.
+
+      - id: open_service_drawer
+        label: Die versteckte Schublade aufziehen
+        kind: manipulate
+        target: service_drawer
+        checkPolicy: none
+        availability:
+          runtimeObjectVisible: service_drawer
+        blocksIfFlags: [SECRET_DRAWER_OPENED]
+        results:
+          success:
+            setFlags: [SECRET_DRAWER_OPENED]
+            objectStateUpdates:
+              - objectId: service_drawer
+                state: opened
+            revealRuntime:
+              objects:
+                - id: service_map
+                  sectionId: sealed_stacks
+                  label: Gefaltete Servicekarte aus der Schublade
+                  kind: document
+                  visible: true
+                  state: folded
+                  source: open_service_drawer
+                  parentId: service_drawer
+                  priority: 98
+              interactions:
+                - id: read_service_map
+                  sectionId: sealed_stacks
+                  label: Die Servicekarte lesen
+                  kind: read
+                  target: service_map
+                  visible: true
+                  state: available
+                  source: open_service_drawer
+                  priority: 97
+        aiNarrationHint: In der Schublade liegt eine sorgfaeltig gefaltete Servicekarte mit Randnotizen.
+
+      - id: read_service_map
+        label: Die Servicekarte lesen
+        kind: read
+        target: service_map
+        checkPolicy: none
+        availability:
+          runtimeObjectVisible: service_map
+        blocksIfFlags: [SERVICE_MAP_READ]
+        results:
+          success:
+            setFlags: [SERVICE_MAP_READ]
+            objectStateUpdates:
+              - objectId: service_map
+                state: read
+            revealClues:
+              - service_route_map
+        aiNarrationHint: Die Karte markiert eine alte Servicestrecke ueber die eingestuerzte Galerie bis zu einer inneren Nische.
+
+  - id: collapsed_gallery
+    location: Eingestuerzte Galerie ueber dem Flutschacht
+    objective: Finde einen sicheren Weg ueber die gebrochene Galerie.
+    playerObjective: Finde einen sicheren Weg ueber die gebrochene Galerie.
+    introText: Bretter haengen ueber schwarzem Wasser, waehrend eine gebrochene Galerie quer durch den Schacht fuehrt. Ein Wartungsgestell lehnt halb umgestuerzt an der Wand, und jenseits des Abgrunds zeichnet sich eine dunkle Nische ab.
+    visibleFeatures:
+      - gebrochene Galerie
+      - schwarzes Wasser unter dir
+      - halb umgestuerztes Wartungsgestell
+      - dunkle Nische jenseits des Schachts
+    exits:
+      - id: back_to_stacks
+        label: Zurueck in die Magazine
+        targetSectionId: sealed_stacks
+      - id: to_witness_alcove
+        label: In die dunkle Nische jenseits der Galerie gehen
+        targetSectionId: witness_alcove
+        requiresFlags: [CATWALK_CROSSED]
+    interactions:
+      - id: cross_broken_catwalk
+        label: Die gebrochene Galerie ueberqueren
+        kind: move
+        target: catwalk
+        availability:
+          visible: true
+        blocksIfFlags: [CATWALK_CROSSED]
+        check:
+          skill: athletics
+          dc: 13
+          onFail: Das Holz gibt unter dir nach und du musst dich im letzten Moment zurueckwerfen.
+        results:
+          success:
+            setFlags: [CATWALK_CROSSED]
+          failure:
+            setFlags: [CATWALK_SLIPPED]
+        aiNarrationHint: Mit einem entschlossenen Satz bringst du dein Gewicht ueber die schwankenden Balken.
+
+      - id: inspect_maintenance_rack
+        label: Das Wartungsgestell untersuchen
+        kind: inspect
+        target: maintenance_rack
+        checkPolicy: none
+        availability:
+          visible: true
+        blocksIfFlags: [RACK_INSPECTED]
+        results:
+          success:
+            setFlags: [RACK_INSPECTED]
+            revealRuntime:
+              objects:
+                - id: grappling_hook
+                  sectionId: collapsed_gallery
+                  label: Schwere Kletterklaue am Wartungsgestell
+                  kind: tool
+                  visible: true
+                  state: hanging
+                  source: inspect_maintenance_rack
+                  priority: 100
+              interactions:
+                - id: take_grappling_hook
+                  sectionId: collapsed_gallery
+                  label: Die Kletterklaue nehmen
+                  kind: take
+                  target: grappling_hook
+                  visible: true
+                  state: available
+                  source: inspect_maintenance_rack
+                  priority: 99
+        aiNarrationHint: Zwischen alten Oeltuchem haengt noch eine schwere Kletterklaue am Gestell.
+
+      - id: take_grappling_hook
+        label: Die Kletterklaue nehmen
+        kind: take
+        target: grappling_hook
+        checkPolicy: none
+        availability:
+          runtimeObjectVisible: grappling_hook
+        blocksIfFlags: [GRAPPLING_HOOK_TAKEN]
+        results:
+          success:
+            setFlags: [GRAPPLING_HOOK_TAKEN]
+        aiNarrationHint: Du nimmst die schwere Kletterklaue an dich.
+
+  - id: witness_alcove
+    location: Verdeckte Nische mit Blick auf den Flutschacht
+    objective: Beruhige Mira und erfahre, was sie im Inneren des Archivs gefunden hat.
+    playerObjective: Beruhige die Vermisste und erfahre, warum sie hier blieb.
+    introText: In der engen Nische kauert Mira Sen neben einer erloschenen Lampe. Sie zuckt bei jedem Nachhallen der Glocken zusammen und beobachtet misstrauisch, wie sich das Wasser unter euch bewegt.
+    visibleFeatures:
+      - enge Steinische
+      - erloschene Lampe
+      - Blick auf den Flutschacht
+      - feuchter Mauerbogen
+    visibleNpcs:
+      - mira
+    exits:
+      - id: back_to_gallery
+        label: Zurueck zur Galerie
+        targetSectionId: collapsed_gallery
+      - id: to_flooded_vault
+        label: Mit Mira tiefer zum Flutschacht gehen
+        targetSectionId: flooded_vault
+        requiresFlags: [MIRA_TRUSTS]
+    interactions:
+      - id: calm_mira
+        label: Mira vorsichtig beruhigen
+        kind: talk
+        target: mira
+        availability:
+          visible: true
+        blocksIfFlags: [MIRA_TRUSTS]
+        check:
+          skill: persuasion
+          dc: 12
+          onFail: Mira zieht sich enger in die Ecke zurueck und vertraut dir noch nicht.
+        results:
+          success:
+            setFlags: [MIRA_TRUSTS, MIRA_ESCORTING]
+            npcUpdates:
+              - npcId: mira
+                currentlyVisible: true
+                relationshipDelta: +1
+                lastTopic: Flucht
+            revealClues:
+              - mira_fears_reflection
+          failure:
+            setFlags: [MIRA_WARY]
+        aiNarrationHint: Mira erkennt, dass du sie nicht ausliefern willst, und nickt mit zitterndem Atem.
+
+  - id: flooded_vault
+    location: Flutschacht unter der Glockenbuehne
+    objective: Verstehe die Resonanz im Flutschacht und sichere das fehlende Siegel.
+    playerObjective: Finde heraus, wie die Resonanz unter dem Archiv gebunden wird.
+    introText: Halb versunkene Stufen fuehren zu einer Glockenbuehne aus geschwaerztem Holz. Zwischen kalten Wellen schimmert ein bleierner Gegenstand, waehrend ueber dir ein schiefes Glockengestell mit jeder Schwingung des Wassers antwortet.
+    visibleFeatures:
+      - halb versunkene Stufen
+      - schiefes Glockengestell
+      - bleierner Schimmer im Wasser
+      - schwarze Wasserflaeche
+    exits:
+      - id: back_to_alcove
+        label: Zurueck in Miras Nische
+        targetSectionId: witness_alcove
+      - id: to_bell_scriptorium
+        label: Zur inneren Glockenkammer gehen
+        targetSectionId: bell_scriptorium
+        requiresFlags: [BELL_MECHANISM_UNDERSTOOD]
+    interactions:
+      - id: inspect_bell_mechanism
+        label: Das Glockengestell und das Wasser untersuchen
+        kind: inspect
+        target: bell_mechanism
+        availability:
+          visible: true
+        blocksIfFlags: [BELL_MECHANISM_UNDERSTOOD]
+        check:
+          skill: investigation
+          dc: 11
+          onFail: Die Schwingungen bleiben unklar und du erkennst nur Gefahr.
+        results:
+          success:
+            setFlags: [BELL_MECHANISM_UNDERSTOOD]
+            revealClues:
+              - bell_resonance_truth
+            revealRuntime:
+              objects:
+                - id: lead_seal
+                  sectionId: flooded_vault
+                  label: Bleiernes Siegel im Wasser
+                  kind: ritual_item
+                  visible: true
+                  state: submerged
+                  source: inspect_bell_mechanism
+                  priority: 100
+              interactions:
+                - id: take_lead_seal
+                  sectionId: flooded_vault
+                  label: Das bleierne Siegel aus dem Wasser ziehen
+                  kind: take
+                  target: lead_seal
+                  visible: true
+                  state: available
+                  source: inspect_bell_mechanism
+                  priority: 99
+        aiNarrationHint: Du erkennst, dass die Resonanz nur mit einem bleiernen Siegel gebunden werden kann.
+
+      - id: take_lead_seal
+        label: Das bleierne Siegel aus dem Wasser ziehen
+        kind: take
+        target: lead_seal
+        checkPolicy: none
+        availability:
+          runtimeObjectVisible: lead_seal
+        blocksIfFlags: [SEAL_TAKEN]
+        results:
+          success:
+            setFlags: [SEAL_TAKEN]
+        aiNarrationHint: Mit kalten Fingern ziehst du das schwere Siegel aus dem Wasser.
+
+  - id: bell_scriptorium
+    location: Innere Glockenkammer mit der Glockenakte
+    objective: Entscheide, ob du die Resonanz bindest oder Mira aus dem Archiv fuehrst.
+    playerObjective: Entscheide, ob du die Resonanz bindest oder Mira zurueckfuehrst.
+    introText: Auf einem Gestell aus Messing schwebt die Glockenakte zwischen vibrierenden Stimmgabeln. Das Metall unter deinen Stiefeln spiegelt verzerrt jedes Licht, waehrend Mira dicht hinter dir stehen bleibt.
+    visibleFeatures:
+      - schwebende Glockenakte
+      - vibrierende Stimmgabeln
+      - spiegelnder Messingboden
+      - enger Rueckweg zum Flutschacht
+    visibleNpcs:
+      - mira
+    exits:
+      - id: back_to_vault
+        label: Zurueck zum Flutschacht
+        targetSectionId: flooded_vault
+    interactions:
+      - id: contain_resonance
+        label: Mit Siegel und Mira die Resonanz binden
+        kind: ritual
+        target: bell_ledger
+        checkPolicy: none
+        requiresFlags:
+          - MIRA_TRUSTS
+          - SEAL_TAKEN
+          - BELL_MECHANISM_UNDERSTOOD
+        blocksIfFlags: [RESONANCE_CONTAINED]
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [RESONANCE_CONTAINED]
+        aiNarrationHint: Gemeinsam zwingt ihr die Glockenresonanz in die bleierne Bindung zurueck.
+
+      - id: retreat_with_mira
+        label: Mit Mira aus dem Archiv zurueckweichen
+        kind: move
+        target: exit
+        checkPolicy: none
+        requiresFlags:
+          - MIRA_ESCORTING
+        blocksIfFlags: [MIRA_ESCAPED]
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [MIRA_ESCAPED]
+        aiNarrationHint: Du entscheidest dich fuer Mira und fuehrst sie aus dem vibrierenden Archiv hinaus.
