@@ -4,6 +4,7 @@ import {
   createPendingChoiceMeta,
   formatAssistantTextForDisplay,
   resolveResponsePendingCheck,
+  resolveVisibleChoiceFromText,
   resolveRuntimeChoiceFromText,
   shouldBuildChoicesAfterResponse,
 } from '../pages/gamePageRuntime.js'
@@ -92,6 +93,29 @@ describe('GamePage runtime check flow helpers', () => {
     expect(choice?.interactionId).toBe('inspect_counter')
   })
 
+  it('matches typed legacy text to a visible probe choice before the AI is asked again', () => {
+    const choice = resolveVisibleChoiceFromText({
+      userText: 'Ich untersuche den Raum nach Fallen.',
+      choices: [
+        {
+          label: 'Den Raum nach Fallen untersuchen',
+          kind: 'action',
+          source: 'ai',
+          check: { skillOrAbility: 'investigation', dc: 12, advantage: null },
+        },
+        {
+          label: 'Die Kapelle verlassen',
+          kind: 'exit',
+          source: 'ai',
+          check: null,
+        },
+      ],
+    })
+
+    expect(choice?.label).toBe('Den Raum nach Fallen untersuchen')
+    expect(choice?.check).toEqual({ skillOrAbility: 'investigation', dc: 12, advantage: null })
+  })
+
   it('matches inflected free text to the parchment read interaction', () => {
     const choice = resolveRuntimeChoiceFromText({
       userText: 'Ich lese das Pergament',
@@ -112,6 +136,26 @@ describe('GamePage runtime check flow helpers', () => {
     })
 
     expect(choice?.interactionId).toBe('read_parchment_note')
+  })
+
+  it('returns null for ambiguous typed text across multiple visible choices', () => {
+    const choice = resolveVisibleChoiceFromText({
+      userText: 'Ich untersuche die Tür.',
+      choices: [
+        {
+          label: 'Die linke Tür untersuchen',
+          kind: 'inspect',
+          source: 'structured',
+        },
+        {
+          label: 'Die rechte Tür untersuchen',
+          kind: 'inspect',
+          source: 'structured',
+        },
+      ],
+    })
+
+    expect(choice).toBeNull()
   })
 
   it('returns null when the free text does not map cleanly to a visible runtime choice', () => {

@@ -68,7 +68,7 @@ function runtimeTokensMatch(a = '', b = '') {
   return shorter.length >= 4 && longer.startsWith(shorter)
 }
 
-export function resolveRuntimeChoiceFromText({ userText = '', choices = [] } = {}) {
+export function resolveVisibleChoiceFromText({ userText = '', choices = [] } = {}) {
   const inputNorm = normalizeRuntimeChoiceText(userText)
   const inputTokens = tokenizeRuntimeChoiceText(userText)
   if (!inputNorm || !inputTokens.length || !Array.isArray(choices) || !choices.length) return null
@@ -116,6 +116,10 @@ export function resolveRuntimeChoiceFromText({ userText = '', choices = [] } = {
   if (ranked.length === 1) return ranked[0].choice
   if (ranked[0].score > ranked[1].score) return ranked[0].choice
   return null
+}
+
+export function resolveRuntimeChoiceFromText(params = {}) {
+  return resolveVisibleChoiceFromText(params)
 }
 
 export function resolveResponsePendingCheck({
