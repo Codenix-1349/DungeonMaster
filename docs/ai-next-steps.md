@@ -19,6 +19,7 @@ Key changes: engine-truth over AI-truth, structured data over heuristics.
 ### Runtime check rule
 - **Runtime modules:** checks are authored in the module via explicit `interaction.check` blocks.
 - **UI contract:** a runtime option may render as check-based only when the resolved authored runtime interaction defines `check`.
+- **Authoring contract:** runtime interactions should declare either `check` or `checkPolicy: none`.
 - **No runtime check heuristics:** the app no longer infers runtime checks from free text or AI tags.
 - **Legacy/prose adventures:** AI `[PROBE:]` / `[PROBE_HINWEIS:]` tags and label-based fallback inference still apply there.
 

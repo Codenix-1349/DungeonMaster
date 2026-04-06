@@ -117,6 +117,11 @@ describe('runtime module parser', () => {
       onFail: expect.any(String),
     })
   })
+
+  it('stores no runtime validation warnings for the audited module', () => {
+    const adv = loadModule()
+    expect(adv.structure.module.validationWarnings).toEqual([])
+  })
 })
 
 // ── 2. Start section ──
@@ -211,6 +216,104 @@ describe('runtime checks', () => {
     })
     expect(breweryChoices.find(choice => choice.interactionId === 'inspect_hidden_plate')?.check).toBeNull()
     expect(breweryChoices.find(choice => choice.interactionId === 'open_hidden_plate')?.check).toBeNull()
+  })
+})
+
+describe('runtime module validation', () => {
+  it('warns when a runtime interaction has no explicit check decision', () => {
+    const adv = normalizeAdventureEntry({
+      id: 'warn-module',
+      title: 'Warn Test',
+      text: `MODULE_ID: warn_test
+MODULE_VERSION: 1
+SYSTEM: dnd5e
+START_SECTION_ID: room
+NPC_REGISTRY: {}
+CLUE_REGISTRY: {}
+OBJECT_REGISTRY: {}
+SECTIONS:
+  - id: room
+    location: Testkammer
+    interactions:
+      - id: inspect_altar
+        label: Den Altar untersuchen
+        kind: inspect
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [ALTAR_SEEN]`,
+    })
+
+    expect(adv.structure.module.validationWarnings).toContainEqual(expect.objectContaining({
+      code: 'runtime-check-decision-missing',
+      sectionId: 'room',
+      interactionId: 'inspect_altar',
+    }))
+  })
+
+  it('does not warn when deterministic runtime interactions declare checkPolicy none', () => {
+    const adv = normalizeAdventureEntry({
+      id: 'deterministic-module',
+      title: 'Deterministic Test',
+      text: `MODULE_ID: deterministic_test
+MODULE_VERSION: 1
+SYSTEM: dnd5e
+START_SECTION_ID: room
+NPC_REGISTRY: {}
+CLUE_REGISTRY: {}
+OBJECT_REGISTRY: {}
+SECTIONS:
+  - id: room
+    location: Testkammer
+    interactions:
+      - id: inspect_altar
+        label: Den Altar untersuchen
+        kind: inspect
+        checkPolicy: none
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [ALTAR_SEEN]`,
+    })
+
+    expect(adv.structure.module.validationWarnings).toEqual([])
+  })
+
+  it('warns when runtime interactions use an unsupported checkPolicy value', () => {
+    const adv = normalizeAdventureEntry({
+      id: 'invalid-policy-module',
+      title: 'Invalid Policy Test',
+      text: `MODULE_ID: invalid_policy_test
+MODULE_VERSION: 1
+SYSTEM: dnd5e
+START_SECTION_ID: room
+NPC_REGISTRY: {}
+CLUE_REGISTRY: {}
+OBJECT_REGISTRY: {}
+SECTIONS:
+  - id: room
+    location: Testkammer
+    interactions:
+      - id: inspect_altar
+        label: Den Altar untersuchen
+        kind: inspect
+        checkPolicy: maybe
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [ALTAR_SEEN]`,
+    })
+
+    expect(adv.structure.module.validationWarnings).toEqual([
+      expect.objectContaining({
+        code: 'runtime-check-policy-invalid',
+        sectionId: 'room',
+        interactionId: 'inspect_altar',
+      }),
+    ])
   })
 })
 
