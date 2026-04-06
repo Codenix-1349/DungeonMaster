@@ -16,7 +16,7 @@ import {
   createPendingChoiceMeta,
   formatAssistantTextForDisplay,
   resolveResponsePendingCheck,
-  resolveRuntimeChoiceFromText,
+  resolveVisibleChoiceFromText,
   shouldBuildChoicesAfterResponse,
 } from './gamePageRuntime'
 
@@ -172,19 +172,23 @@ export default function GamePage() {
     return resolveInteractionOutcome(baseSceneState, intrDef, structure.module, outcome)
   }, [adventure, sceneState])
 
-  const findRuntimeTextChoice = useCallback((userText, activeAdventure = adventure, activeSceneState = sceneState) => {
-    if (!isRuntimeModule(activeAdventure) || !activeSceneState) return null
-    const section = getCurrentSection(activeAdventure, activeSceneState)
-    if (!section) return null
-    const choices = buildAvailableChoices({
-      aiResponse: '',
-      section,
-      sceneState: activeSceneState,
-      combatActive: combat?.active,
-      isRuntimeModule: true,
-    })
-    return resolveRuntimeChoiceFromText({ userText, choices })
-  }, [adventure, sceneState, combat?.active])
+  const findVisibleTextChoice = useCallback((userText, activeAdventure = adventure, activeSceneState = sceneState) => {
+    if (isRuntimeModule(activeAdventure)) {
+      if (!activeSceneState) return null
+      const section = getCurrentSection(activeAdventure, activeSceneState)
+      if (!section) return null
+      const choices = buildAvailableChoices({
+        aiResponse: '',
+        section,
+        sceneState: activeSceneState,
+        combatActive: combat?.active,
+        isRuntimeModule: true,
+      })
+      return resolveVisibleChoiceFromText({ userText, choices })
+    }
+
+    return resolveVisibleChoiceFromText({ userText, choices: dynamicChoices })
+  }, [adventure, sceneState, combat?.active, dynamicChoices])
 
   const handleSend = useCallback(async (userText, options = {}) => {
     const rawText = userText || input.trim()
@@ -203,14 +207,14 @@ export default function GamePage() {
       ? options.historyOverride
       : buildHistory()
 
-    const matchedRuntimeChoice = !options.skipRuntimeChoiceResolution && !options.recentActionKey
-      ? findRuntimeTextChoice(text, activeAdventure, activeSceneState)
+    const matchedVisibleChoice = !options.skipTextChoiceResolution && !options.recentActionKey
+      ? findVisibleTextChoice(text, activeAdventure, activeSceneState)
       : null
 
-    if (matchedRuntimeChoice) {
-      if (matchedRuntimeChoice.check) {
-        pendingChoiceMetaRef.current = createPendingChoiceMeta(matchedRuntimeChoice)
-        setPendingCheck(createPendingCheckFromChoice(matchedRuntimeChoice))
+    if (matchedVisibleChoice) {
+      if (matchedVisibleChoice.check) {
+        pendingChoiceMetaRef.current = createPendingChoiceMeta(matchedVisibleChoice)
+        setPendingCheck(createPendingCheckFromChoice(matchedVisibleChoice))
         setInput('')
         setError('')
         return
@@ -219,12 +223,12 @@ export default function GamePage() {
       const nextOptions = {
         ...options,
         allowEngineCheckInference: false,
-        recentActionKey: matchedRuntimeChoice.actionKey || null,
-        skipRuntimeChoiceResolution: true,
+        recentActionKey: matchedVisibleChoice.actionKey || null,
+        skipTextChoiceResolution: true,
       }
 
-      if (matchedRuntimeChoice.interactionId) {
-        const resolved = resolveInteraction(matchedRuntimeChoice.interactionId, activeSceneState, 'success')
+      if (matchedVisibleChoice.interactionId) {
+        const resolved = resolveInteraction(matchedVisibleChoice.interactionId, activeSceneState, 'success')
         if (resolved?.sceneState) {
           setSceneState(resolved.sceneState)
           for (const itemName of resolved.inventoryAdds || []) addItem(itemName)
@@ -232,7 +236,7 @@ export default function GamePage() {
         }
       }
 
-      return handleSend(matchedRuntimeChoice.label, nextOptions)
+      return handleSend(matchedVisibleChoice.label, nextOptions)
     }
 
     setInput('')
@@ -404,10 +408,11 @@ export default function GamePage() {
     startCombat,
     awardXP,
     gameLog,
-    findRuntimeTextChoice,
+    findVisibleTextChoice,
     resolveInteraction,
     setSceneState,
     addItem,
+    dynamicChoices,
   ])
 
   const handleCombatAction = useCallback(text => handleSend(`[Kampfrunde] ${text}`), [handleSend])
