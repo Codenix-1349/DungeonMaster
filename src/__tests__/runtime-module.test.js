@@ -100,6 +100,23 @@ describe('runtime module parser', () => {
     expect(inspectCounter.results.success.revealRuntime.objects).toHaveLength(1)
     expect(inspectCounter.results.success.revealRuntime.objects[0].id).toBe('hidden_plate')
   })
+
+  it('parses explicit runtime checks for authored investigative interactions', () => {
+    const sections = loadModule().structure.sections
+    const hall = sections.find(s => s.id === 'rear_hall_cellar_door')
+    const ritual = sections.find(s => s.id === 'ritual_cellar')
+
+    expect(hall?.interactions.find(i => i.id === 'inspect_lock')?.check).toEqual({
+      skill: 'investigation',
+      dc: 11,
+      onFail: expect.any(String),
+    })
+    expect(ritual?.interactions.find(i => i.id === 'inspect_kettle')?.check).toEqual({
+      skill: 'investigation',
+      dc: 11,
+      onFail: expect.any(String),
+    })
+  })
 })
 
 // ── 2. Start section ──
@@ -112,6 +129,88 @@ describe('initial scene state', () => {
     expect(state.gmState.runtimeObjects).toEqual({})
     expect(state.gmState.runtimeInteractions).toEqual({})
     expect(state.gmState.revealedClueIds).toEqual([])
+  })
+})
+
+describe('runtime checks', () => {
+  it('rear hall lock inspection is exposed as an explicit probe choice', () => {
+    const adv = loadModule()
+    const section = findSectionById(adv.structure, 'rear_hall_cellar_door')
+    const state = {
+      ...createInitialSceneState(adv),
+      gmState: {
+        ...createInitialSceneState(adv).gmState,
+        currentSectionId: 'rear_hall_cellar_door',
+      },
+    }
+
+    const choices = buildAvailableChoices({ aiResponse: '', section, sceneState: state, isRuntimeModule: true })
+    const inspectLockChoice = choices.find(choice => choice.interactionId === 'inspect_lock')
+
+    expect(inspectLockChoice?.check).toEqual({
+      skillOrAbility: 'investigation',
+      dc: 11,
+      advantage: null,
+    })
+  })
+
+  it('marks runtime choices as check-based only when the authored interaction defines check', () => {
+    const adv = loadModule()
+    const rearHall = findSectionById(adv.structure, 'rear_hall_cellar_door')
+    const rearHallState = {
+      ...createInitialSceneState(adv),
+      gmState: {
+        ...createInitialSceneState(adv).gmState,
+        currentSectionId: 'rear_hall_cellar_door',
+        plotFlags: { HAS_CELLAR_KEY: true },
+      },
+    }
+    const rearHallChoices = buildAvailableChoices({
+      aiResponse: '',
+      section: rearHall,
+      sceneState: rearHallState,
+      isRuntimeModule: true,
+    })
+
+    expect(rearHallChoices.find(choice => choice.interactionId === 'inspect_lock')?.check).toEqual({
+      skillOrAbility: 'investigation',
+      dc: 11,
+      advantage: null,
+    })
+    expect(rearHallChoices.find(choice => choice.interactionId === 'unlock_cellar_door')?.check).toBeNull()
+
+    const brewery = findSectionById(adv.structure, 'old_brewery')
+    const breweryState = {
+      ...createInitialSceneState(adv),
+      gmState: {
+        ...createInitialSceneState(adv).gmState,
+        currentSectionId: 'old_brewery',
+        plotFlags: { HAS_CELLAR_KEY: true, CELLAR_UNLOCKED: true },
+        runtimeObjects: {
+          hidden_plate: {
+            id: 'hidden_plate',
+            sectionId: 'old_brewery',
+            label: 'Vibrierende Metallplatte',
+            visible: true,
+            state: 'sealed',
+          },
+        },
+      },
+    }
+    const breweryChoices = buildAvailableChoices({
+      aiResponse: '',
+      section: brewery,
+      sceneState: breweryState,
+      isRuntimeModule: true,
+    })
+
+    expect(breweryChoices.find(choice => choice.interactionId === 'inspect_counter')?.check).toEqual({
+      skillOrAbility: 'investigation',
+      dc: 12,
+      advantage: null,
+    })
+    expect(breweryChoices.find(choice => choice.interactionId === 'inspect_hidden_plate')?.check).toBeNull()
+    expect(breweryChoices.find(choice => choice.interactionId === 'open_hidden_plate')?.check).toBeNull()
   })
 })
 

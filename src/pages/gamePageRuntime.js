@@ -132,8 +132,7 @@ export function resolveResponsePendingCheck({
 } = {}) {
   if (combatActive) return null
   if (runtimeModule) {
-    if (!allowEngineCheckInference || hasPendingChoiceMeta) return null
-    return inferCheckFromLabel(userText)
+    return null
   }
   if (aiCheckTag) return aiCheckTag
   if (!allowEngineCheckInference || hasPendingChoiceMeta) return null
