@@ -117,7 +117,12 @@ describe('runtime acceptance matrix', () => {
     expectChoiceLabelsContain(surfaces, [askMaraLabel])
     expectChoiceLabelsOmit(surfaces, [rearHallExitLabel])
     expectContextAndPromptContain(surfaces, [askMaraLabel])
-    expectContextAndPromptOmit(surfaces, [rearHallExitLabel, hiddenPlateLabel, parchmentLabel])
+    expectContextAndPromptContain(surfaces, [
+      'Sprich mit Mara und finde heraus, was geschehen ist.',
+      'Der Gastraum ist warm vom Kaminfeuer',
+      'Finde den Vermissten lebend.',
+    ])
+    expectContextAndPromptOmit(surfaces, [rearHallExitLabel, hiddenPlateLabel, parchmentLabel, 'Tomas'])
   })
 
   it('keeps unlocked exits and consumed interactions aligned after talking to Mara', () => {
@@ -131,6 +136,7 @@ describe('runtime acceptance matrix', () => {
     expectChoiceLabelsContain(surfaces, [rearHallExitLabel])
     expectChoiceLabelsOmit(surfaces, [askMaraLabel])
     expectContextAndPromptContain(surfaces, [rearHallExitLabel])
+    expectContextAndPromptContain(surfaces, ['Tomas'])
     expectContextAndPromptOmit(surfaces, [askMaraLabel, hiddenPlateLabel, parchmentLabel])
   })
 

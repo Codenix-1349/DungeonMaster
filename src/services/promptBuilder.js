@@ -180,23 +180,47 @@ function getDialogueNpcDisplayName(sceneState = null, structure = null, runtimeM
   return getRuntimeNpcDisplayName(structure, activeNpcId)
 }
 
+function getRuntimePlayerFacingSceneState(sceneState = null, structure = null) {
+  if (!sceneState || !structure?.sections?.length) {
+    return {
+      currentObjective: sceneState?.currentObjective || '',
+      activeQuest: sceneState?.activeQuest || '',
+      summary: sceneState?.summary || '',
+    }
+  }
+
+  const currentSection = structure.sections.find(section => section.id === sceneState?.gmState?.currentSectionId) || structure.sections[0]
+  return {
+    currentObjective: currentSection?.playerObjective || currentSection?.objective || sceneState.currentObjective || '',
+    activeQuest: structure.module?.playerPrimaryObjective || structure.module?.primaryObjective || sceneState.activeQuest || '',
+    summary: currentSection?.introText || currentSection?.summary || sceneState.summary || '',
+  }
+}
+
 function buildSceneStateContext(sceneState = null, { runtimeModule = false, structure = null } = {}) {
   if (!sceneState) return ''
 
+  const playerFacingSceneState = runtimeModule
+    ? getRuntimePlayerFacingSceneState(sceneState, structure)
+    : {
+      currentObjective: sceneState.currentObjective || '',
+      activeQuest: sceneState.activeQuest || '',
+      summary: sceneState.summary || '',
+    }
   const lines = []
 
   // ── Current scene frame ──
   if (sceneState.currentSectionTitle) lines.push(`**Aktueller Abschnitt:** ${sceneState.currentSectionTitle}`)
   if (sceneState.currentLocation) lines.push(`**Ort:** ${sceneState.currentLocation}`)
-  if (sceneState.currentObjective) lines.push(`**Aktuelles Ziel:** ${sceneState.currentObjective}`)
-  if (!runtimeModule && sceneState.activeQuest) lines.push(`**Aktiver Faden:** ${sceneState.activeQuest}`)
+  if (playerFacingSceneState.currentObjective) lines.push(`**Aktuelles Ziel:** ${playerFacingSceneState.currentObjective}`)
+  if (playerFacingSceneState.activeQuest) lines.push(`**Aktiver Faden:** ${playerFacingSceneState.activeQuest}`)
   if (sceneState.lastPlayerAction) lines.push(`**Letzte Spieleraktion:** ${sceneState.lastPlayerAction}`)
 
   // ── Memory summary (compact history instead of raw summary) ──
   if (sceneState.memorySummary) {
     lines.push(`**Session-Zusammenfassung:** ${sceneState.memorySummary}`)
-  } else if (sceneState.summary) {
-    lines.push(`**Szenenzusammenfassung:** ${sceneState.summary}`)
+  } else if (playerFacingSceneState.summary) {
+    lines.push(`**Szenenzusammenfassung:** ${playerFacingSceneState.summary}`)
   }
 
   if (!runtimeModule && sceneState.openThreads?.length) {

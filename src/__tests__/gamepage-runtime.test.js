@@ -3,6 +3,7 @@ import {
   createPendingCheckFromChoice,
   createPendingChoiceMeta,
   formatAssistantTextForDisplay,
+  rebuildVisibleChoices,
   resolveResponsePendingCheck,
   resolveVisibleChoiceFromText,
   resolveRuntimeChoiceFromText,
@@ -79,6 +80,82 @@ describe('GamePage runtime check flow helpers', () => {
     })).toBe(false)
 
     expect(shouldBuildChoicesAfterResponse({ pendingCheck: null })).toBe(true)
+  })
+
+  it('rebuilds runtime choices from persisted section state without a new AI roundtrip', () => {
+    const choices = rebuildVisibleChoices({
+      section: {
+        id: 'inn_common_room',
+        exits: [],
+        interactions: [
+          {
+            id: 'ask_mara_about_missing_person',
+            label: 'Mara ruhig nach dem Vermissten fragen',
+            kind: 'talk',
+            target: 'mara',
+          },
+        ],
+      },
+      sceneState: {
+        gmState: {
+          currentSectionId: 'inn_common_room',
+          plotFlags: {},
+          runtimeObjects: {},
+          runtimeInteractions: {},
+        },
+        playerKnowledge: {
+          knownNpcs: [],
+          knownPlaces: [],
+          discoveredClues: [],
+          knownFactions: [],
+          knownFacts: [],
+        },
+        dialogueState: { activeNpcId: null, npcRelations: {} },
+        inferred: { npcStates: {}, objectStates: {}, dialogueHints: {} },
+        recentActions: [],
+        recentActionKeys: [],
+        interactionHistory: [],
+      },
+      runtimeModule: true,
+    })
+
+    expect(choices.some(choice => choice.label === 'Mara ruhig nach dem Vermissten fragen')).toBe(true)
+    expect(choices.some(choice => choice.kind === 'free')).toBe(true)
+  })
+
+  it('rebuilds legacy choices from the last visible assistant response', () => {
+    const choices = rebuildVisibleChoices({
+      section: {
+        id: 'chapel',
+        exits: [],
+        interactions: [],
+      },
+      sceneState: {
+        gmState: {
+          currentSectionId: 'chapel',
+          plotFlags: {},
+          runtimeObjects: {},
+          runtimeInteractions: {},
+        },
+        playerKnowledge: {
+          knownNpcs: [],
+          knownPlaces: [],
+          discoveredClues: [],
+          knownFactions: [],
+          knownFacts: [],
+        },
+        dialogueState: { activeNpcId: null, npcRelations: {} },
+        inferred: { npcStates: {}, objectStates: {}, dialogueHints: {} },
+        recentActions: [],
+        recentActionKeys: [],
+        interactionHistory: [],
+      },
+      assistantText: '1. Den Raum nach Fallen untersuchen\n2. Die Kapelle verlassen\n3. Etwas anderes (beschreibe selbst)',
+      runtimeModule: false,
+    })
+
+    expect(choices.some(choice => choice.label === 'Den Raum nach Fallen untersuchen')).toBe(true)
+    expect(choices.some(choice => choice.label === 'Die Kapelle verlassen')).toBe(true)
   })
 
   it('matches free text to an unambiguous runtime inspect choice', () => {

@@ -9,11 +9,21 @@ function buildStructuredAdventureContext(structure, sceneState) {
   if (!section) return { text: 'Kein Abenteuerabschnitt verfügbar.', selectedIndexes: [], sectionTitle: '' }
 
   const isRuntimeModule = isRuntimeStructure(structure)
+  const playerFacingObjective = isRuntimeModule
+    ? (section.playerObjective || section.objective || '')
+    : (section.objective || '')
+  const playerFacingIntro = isRuntimeModule
+    ? (section.introText || section.sceneText || '')
+    : (section.sceneText || '')
+  const playerFacingPrimaryObjective = isRuntimeModule
+    ? (structure.module?.playerPrimaryObjective || structure.module?.primaryObjective || '')
+    : ''
   const allowedExits = getAllowedSectionExits(section, sceneState)
   const lines = []
   lines.push(`## Aktuelle Szene: ${section.title}`)
+  if (playerFacingPrimaryObjective) lines.push(`AUFTRAG: ${playerFacingPrimaryObjective}`)
   if (section.type) lines.push(`TYP: ${section.type}`)
-  if (section.objective) lines.push(`ZIEL: ${section.objective}`)
+  if (playerFacingObjective) lines.push(`ZIEL: ${playerFacingObjective}`)
 
   // Visible elements — ONLY these may be described to the player
   if (section.visibleFeatures?.length) lines.push(`SICHTBAR (nur diese Dinge existieren hier): ${section.visibleFeatures.join(' | ')}`)
@@ -127,7 +137,7 @@ function buildStructuredAdventureContext(structure, sceneState) {
   }
 
   // Scene text as prose for atmosphere
-  if (section.sceneText) lines.push(`\n${section.sceneText}`)
+  if (playerFacingIntro) lines.push(`\n${playerFacingIntro}`)
 
   return {
     text: lines.join('\n'),

@@ -53,6 +53,16 @@ Reason:
 - Runtime narration alone must not invent or switch the active NPC.
 - Legacy / prose adventures may still use name-based dialogue heuristics as fallback.
 
+## Current player-facing runtime contract
+
+- Runtime modules may separate internal truth from player-facing framing.
+- `PRIMARY_OBJECTIVE` may stay internal, but `PLAYER_PRIMARY_OBJECTIVE` is the player-facing quest framing.
+- `section.objective` may stay internal, but `section.playerObjective` is the player-facing section goal.
+- `section.introText` is the authored player-facing scene framing for the active runtime section.
+- UI and prompt context should prefer the player-facing runtime fields over internal runtime objective text.
+- Validation may warn when a runtime module omits `PLAYER_PRIMARY_OBJECTIVE`, `section.playerObjective`, or `section.introText`.
+- Interaction labels remain player-facing authored text; the engine must not rewrite them heuristically.
+
 ## Phase 1 - Runtime Contract and Canonical Model
 
 ### 1. Tighten the runtime contract

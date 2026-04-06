@@ -71,6 +71,7 @@ describe('runtime module parser', () => {
     const m = loadModule().structure.module
     expect(m.startSectionId).toBe('inn_common_room')
     expect(m.primaryObjective).toMatch(/Tomas/)
+    expect(m.playerPrimaryObjective).toBe('Finde den Vermissten lebend.')
     expect(m.plotFlags).toContain('HAS_CELLAR_KEY')
     expect(m.npcRegistry.mara).toBeDefined()
     expect(m.npcRegistry.mara.name).toBe('Mara Birken')
@@ -134,6 +135,27 @@ describe('initial scene state', () => {
     expect(state.gmState.runtimeObjects).toEqual({})
     expect(state.gmState.runtimeInteractions).toEqual({})
     expect(state.gmState.revealedClueIds).toEqual([])
+    expect(state.currentObjective).toBe('Sprich mit Mara und finde heraus, was geschehen ist.')
+    expect(state.activeQuest).toBe('Finde den Vermissten lebend.')
+    expect(state.summary).toContain('Der Gastraum ist warm vom Kaminfeuer')
+  })
+
+  it('prefers authored runtime player-facing text over stale persisted scene-state strings', () => {
+    const adv = loadModule()
+    const base = createInitialSceneState(adv)
+    const prompt = buildSystemPrompt(makeCharacter(), adv, [], null, {
+      ...base,
+      currentObjective: 'Sprich mit Mara und erfahre was mit Tomas geschehen ist.',
+      activeQuest: 'Finde Tomas lebend.',
+      summary: 'Mara erzaehlt dir bereits von Tomas.',
+      memorySummary: '',
+    })
+
+    expect(prompt).toContain('Sprich mit Mara und finde heraus, was geschehen ist.')
+    expect(prompt).toContain('Finde den Vermissten lebend.')
+    expect(prompt).toContain('Der Gastraum ist warm vom Kaminfeuer')
+    expect(prompt).not.toContain('Sprich mit Mara und erfahre was mit Tomas geschehen ist.')
+    expect(prompt).not.toContain('Finde Tomas lebend.')
   })
 })
 
@@ -228,12 +250,15 @@ describe('runtime module validation', () => {
 MODULE_VERSION: 1
 SYSTEM: dnd5e
 START_SECTION_ID: room
+PLAYER_PRIMARY_OBJECTIVE: Finde heraus, was im Raum passiert.
 NPC_REGISTRY: {}
 CLUE_REGISTRY: {}
 OBJECT_REGISTRY: {}
 SECTIONS:
   - id: room
     location: Testkammer
+    playerObjective: Untersuche den Altar.
+    introText: Eine stille Kammer mit einem steinernen Altar.
     interactions:
       - id: inspect_altar
         label: Den Altar untersuchen
@@ -260,12 +285,15 @@ SECTIONS:
 MODULE_VERSION: 1
 SYSTEM: dnd5e
 START_SECTION_ID: room
+PLAYER_PRIMARY_OBJECTIVE: Finde heraus, was im Raum passiert.
 NPC_REGISTRY: {}
 CLUE_REGISTRY: {}
 OBJECT_REGISTRY: {}
 SECTIONS:
   - id: room
     location: Testkammer
+    playerObjective: Untersuche den Altar.
+    introText: Eine stille Kammer mit einem steinernen Altar.
     interactions:
       - id: inspect_altar
         label: Den Altar untersuchen
@@ -289,12 +317,15 @@ SECTIONS:
 MODULE_VERSION: 1
 SYSTEM: dnd5e
 START_SECTION_ID: room
+PLAYER_PRIMARY_OBJECTIVE: Finde heraus, was im Raum passiert.
 NPC_REGISTRY: {}
 CLUE_REGISTRY: {}
 OBJECT_REGISTRY: {}
 SECTIONS:
   - id: room
     location: Testkammer
+    playerObjective: Untersuche den Altar.
+    introText: Eine stille Kammer mit einem steinernen Altar.
     interactions:
       - id: inspect_altar
         label: Den Altar untersuchen
@@ -314,6 +345,45 @@ SECTIONS:
         interactionId: 'inspect_altar',
       }),
     ])
+  })
+
+  it('warns when player-facing runtime framing is missing', () => {
+    const adv = normalizeAdventureEntry({
+      id: 'missing-player-facing',
+      title: 'Missing Player Facing',
+      text: `MODULE_ID: missing_player_facing
+MODULE_VERSION: 1
+SYSTEM: dnd5e
+START_SECTION_ID: room
+NPC_REGISTRY: {}
+CLUE_REGISTRY: {}
+OBJECT_REGISTRY: {}
+SECTIONS:
+  - id: room
+    location: Testkammer
+    interactions:
+      - id: inspect_altar
+        label: Den Altar betrachten
+        kind: inspect
+        checkPolicy: none
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [ALTAR_SEEN]`,
+    })
+
+    expect(adv.structure.module.validationWarnings).toContainEqual(expect.objectContaining({
+      code: 'runtime-player-primary-objective-missing',
+    }))
+    expect(adv.structure.module.validationWarnings).toContainEqual(expect.objectContaining({
+      code: 'runtime-player-objective-missing',
+      sectionId: 'room',
+    }))
+    expect(adv.structure.module.validationWarnings).toContainEqual(expect.objectContaining({
+      code: 'runtime-intro-text-missing',
+      sectionId: 'room',
+    }))
   })
 })
 
@@ -672,12 +742,16 @@ describe('runtime context', () => {
     const adv = loadModule()
     const state = createInitialSceneState(adv)
     const context = buildRelevantAdventureContext({ adventure: adv, sceneState: state, messages: [] })
+    const askMaraLabel = findInteractionDef(adv.structure, 'ask_mara_about_tomas').label
 
     expect(context.runtimeModule).toBe(true)
+    expect(context.text).toContain('ZIEL: Sprich mit Mara und finde heraus, was geschehen ist.')
+    expect(context.text).toContain('Der Gastraum ist warm vom Kaminfeuer')
     expect(context.text).toContain('ANWESENDE NPCS')
     expect(context.text).toContain('Mara Birken')
     expect(context.text).toContain('ERLAUBTE INTERAKTIONEN')
-    expect(context.text).toContain('Mara ruhig nach Tomas fragen')
+    expect(context.text).toContain(askMaraLabel)
+    expect(context.text).not.toContain('Sprich mit Mara und erfahre was mit Tomas geschehen ist.')
     expect(context.text).not.toContain('Zum Hinterflur gehen')
     expect(context.text).not.toContain('Mit Tomas sprechen')
     expect(context.text).not.toContain('NÄCHSTE SZENEN')
@@ -708,6 +782,10 @@ describe('runtime prompt mode', () => {
 
     expect(prompt).toContain('Strukturiertes Modul (STRENG)')
     expect(prompt).toContain('Generiere KEINE nummerierten Optionslisten')
+    expect(prompt).toContain('Sprich mit Mara und finde heraus, was geschehen ist.')
+    expect(prompt).toContain('Der Gastraum ist warm vom Kaminfeuer')
+    expect(prompt).toContain('Finde den Vermissten lebend.')
+    expect(prompt).not.toContain('Finde Tomas lebend.')
     expect(prompt).toContain('ERLAUBTE INTERAKTIONEN')
     expect(prompt).not.toContain('Zum Hinterflur gehen')
     expect(prompt).not.toContain('NÄCHSTE SZENEN')
