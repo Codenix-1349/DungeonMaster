@@ -154,6 +154,17 @@ Done criteria:
 - AI narration cannot create, consume, or restore runtime truth.
 - Choice behavior is consistent across interruptions, retries, and scene transitions.
 
+### Phase 4 reference module
+- Use `src/data/adventures/graufurt_reference_runtime_module.txt` as the architecture-driven reference runtime module.
+- Its purpose is not broad content coverage, but focused stress on:
+  - two visible NPCs in one scene
+  - authored dialogue identity
+  - hidden-object reveal chains
+  - retry reopening after context/tool changes
+  - check and non-check runtime transitions
+  - backtracking and final gating
+- Acceptance and regression tests should continue to grow around this reference module before larger authored adventures become the main validation surface.
+
 ## Recommended execution order
 
 1. Lock the runtime contract and canonical IDs.
@@ -165,9 +176,9 @@ Done criteria:
 
 ## Current next-session starting point
 
-Start with the runtime choice contract and identity model.
+Continue with the reference runtime module and phase-4 acceptance shield.
 
 Reason:
-- It resolves the Mara duplication at the architectural level.
-- It prevents later rework in check flow, clue truth, and prompt scoping.
-- It gives the rest of the roadmap a stable foundation.
+- The runtime architecture is now strong enough that the next risk lies in regression under richer authored content.
+- The reference module provides a compact but architecture-focused stress harness.
+- Larger real adventures should follow only after this acceptance surface feels stable.
