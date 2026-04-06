@@ -385,7 +385,7 @@ function _yParseInline(str) {
   if (!str) return null
   if (str === 'true') return true
   if (str === 'false') return false
-  if (str === 'null' || str === 'none') return null
+  if (str === 'null') return null
   if (/^[+-]?\d+$/.test(str)) return parseInt(str, 10)
   if (str.startsWith('[') && str.endsWith(']')) {
     const inner = str.slice(1, -1).trim()
@@ -474,6 +474,52 @@ function isRuntimeModule(text = '') {
   return /^MODULE_ID:/m.test(text) && /^SECTIONS:/m.test(text)
 }
 
+function validateRuntimeModuleStructure(module, sections = []) {
+  const warnings = []
+
+  for (const section of sections) {
+    for (const interaction of section.interactions || []) {
+      const checkPolicy = typeof interaction.checkPolicy === 'string'
+        ? interaction.checkPolicy.trim()
+        : null
+      if (checkPolicy && checkPolicy !== 'none') {
+        warnings.push({
+          code: 'runtime-check-policy-invalid',
+          sectionId: section.id,
+          interactionId: interaction.id || null,
+          message: `Runtime interaction "${interaction.id || interaction.label || 'unknown'}" uses unsupported checkPolicy "${checkPolicy}". Use "none" or define check.`,
+        })
+        continue
+      }
+
+      if (interaction.check) continue
+      if (checkPolicy === 'none') continue
+
+      warnings.push({
+        code: 'runtime-check-decision-missing',
+        sectionId: section.id,
+        interactionId: interaction.id || null,
+        message: `Runtime interaction "${interaction.id || interaction.label || 'unknown'}" must define check or checkPolicy: none.`,
+      })
+    }
+  }
+
+  return warnings
+}
+
+function attachRuntimeModuleValidation(structure) {
+  if (structure?.format !== 'structured') return structure
+  if (structure?.module?.runtimeMode !== 'engine') return structure
+
+  return {
+    ...structure,
+    module: {
+      ...structure.module,
+      validationWarnings: validateRuntimeModuleStructure(structure.module, structure.sections || []),
+    },
+  }
+}
+
 function parseRuntimeModule(text, title = 'Abenteuer') {
   const doc = parseYamlLike(text)
 
@@ -514,6 +560,7 @@ function parseRuntimeModule(text, title = 'Abenteuer') {
       requiresFlags: Array.isArray(intr.requiresFlags) ? intr.requiresFlags : [],
       blocksIfFlags: Array.isArray(intr.blocksIfFlags) ? intr.blocksIfFlags : [],
       availability: intr.availability || {},
+      checkPolicy: typeof intr.checkPolicy === 'string' ? intr.checkPolicy.trim() : null,
       check: intr.check || null,
       results: intr.results || {},
       aiNarrationHint: intr.aiNarrationHint || '',
@@ -561,13 +608,13 @@ function parseRuntimeModule(text, title = 'Abenteuer') {
 
   const chunks = sections.map((sec, i) => makeChunkBase(i, sec.id, sec.title, sec.sceneText || sec.summary))
 
-  return {
+  return attachRuntimeModuleValidation({
     version: STRUCTURED_ADVENTURE_VERSION,
     format: 'structured',
     module,
     sections,
     chunks,
-  }
+  })
 }
 
 // ─── Adventure Record Building ──────────────────────────────────────────────
@@ -581,7 +628,7 @@ function buildAdventureRecord(entry) {
   if (isRuntimeModule(text)) {
     // Runtime module format (YAML-like, version 3)
     structure = entry.structure?.version === STRUCTURED_ADVENTURE_VERSION && entry.structure?.format === 'structured' && entry.structure?.module?.npcRegistry
-      ? entry.structure
+      ? attachRuntimeModuleValidation(entry.structure)
       : parseRuntimeModule(text, entry.title)
   } else if (isStructuredAdventureText(text)) {
     // Structured adventure format (version 3)

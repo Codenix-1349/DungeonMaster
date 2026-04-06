@@ -139,6 +139,7 @@ SECTIONS:
         label: Mara ruhig nach Tomas fragen
         kind: talk
         target: mara
+        checkPolicy: none
         availability:
           visible: true
         blocksIfFlags: [MARA_BEFRAGT]
@@ -195,6 +196,7 @@ SECTIONS:
         label: Die Kellertuer aufschliessen
         kind: use_item
         target: cellar_door
+        checkPolicy: none
         requiresFlags: [HAS_CELLAR_KEY]
         blocksIfFlags: [CELLAR_UNLOCKED]
         availability:
@@ -276,6 +278,7 @@ SECTIONS:
         label: Die Metallplatte genauer untersuchen
         kind: inspect
         target: hidden_plate
+        checkPolicy: none
         availability:
           runtimeObjectVisible: hidden_plate
         blocksIfFlags: [HIDDEN_PLATE_INSPECTED]
@@ -291,6 +294,7 @@ SECTIONS:
         label: Die Metallplatte oeffnen
         kind: manipulate
         target: hidden_plate
+        checkPolicy: none
         availability:
           runtimeObjectVisible: hidden_plate
         blocksIfFlags: [HIDDEN_PLATE_OPENED]
@@ -336,6 +340,7 @@ SECTIONS:
         label: Das Pergament lesen
         kind: read
         target: parchment_note
+        checkPolicy: none
         availability:
           runtimeObjectVisible: parchment_note
         blocksIfFlags: [PARCHMENT_READ]
@@ -350,6 +355,7 @@ SECTIONS:
         label: Das Pergament nehmen
         kind: take
         target: parchment_note
+        checkPolicy: none
         availability:
           runtimeObjectVisible: parchment_note
         blocksIfFlags: [PARCHMENT_TAKEN]
@@ -419,6 +425,7 @@ SECTIONS:
         label: Das Kraehen-Siegelfragment nehmen
         kind: take
         target: crow_seal
+        checkPolicy: none
         availability:
           runtimeObjectVisible: crow_seal
         blocksIfFlags: [CROW_SEAL_TAKEN]
@@ -451,6 +458,7 @@ SECTIONS:
         label: Tomas beruhigen und mitnehmen
         kind: talk
         target: tomas
+        checkPolicy: none
         availability:
           visible: true
         blocksIfFlags: [TOMAS_BERUHIGT]
@@ -502,6 +510,7 @@ SECTIONS:
         label: Mit dem Kraehensiegelwissen den Fluch eindaemmen
         kind: ritual
         target: golden_kettle
+        checkPolicy: none
         requiresFlags:
           - WELL_CORRUPTION_LEARNED
           - CROW_SEAL_FOUND
@@ -517,6 +526,7 @@ SECTIONS:
         label: Mit Tomas zurueckziehen
         kind: move
         target: exit
+        checkPolicy: none
         requiresFlags:
           - TOMAS_ESCORTING
         blocksIfFlags: [TOMAS_RESCUED]
