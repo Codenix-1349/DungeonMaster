@@ -49,6 +49,23 @@ export function getRuntimeNpcPresence(rawState) {
   return state.state || state.status || null
 }
 
+export function buildInitialRuntimeNpcStates(structure) {
+  if (!isRuntimeStructure(structure)) return {}
+
+  const registry = structure?.module?.npcRegistry || {}
+  const states = {}
+
+  for (const [npcId, definition] of Object.entries(registry)) {
+    if (definition?.currentlyVisible !== true) continue
+    states[npcId] = {
+      currentlyVisible: true,
+      sectionId: definition?.firstSeen || null,
+    }
+  }
+
+  return states
+}
+
 export function getVisibleRuntimeNpcs(structure, section, sceneState) {
   if (!isRuntimeStructure(structure) || !section) return []
 

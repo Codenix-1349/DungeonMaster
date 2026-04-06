@@ -43,6 +43,13 @@ Key changes: engine-truth over AI-truth, structured data over heuristics.
 - **Free-text bridge:** runtime modules may author `aliases` to help free-text resolve to an existing interaction.
 - **Retry contract:** runtime retry/suppression logic should prefer stored `interactionId` / `actionKey` over label or target similarity.
 
+### Runtime state ownership rule
+- **`gmState`:** authoritative world truth only.
+- **`playerKnowledge`:** only player-confirmed knowledge.
+- **`dialogueState`:** only active conversation context.
+- **Runtime registries:** authored definitions, not mutable AI-owned state.
+- **No runtime AI promotion:** assistant narration must not promote NPC/object state into runtime `gmState` or runtime inferred state hints.
+
 ## Current next step — App-level acceptance invariants
 
 - `src/data/adventures/graufurt_reference_runtime_module.txt` is now the architecture-driven reference module.
