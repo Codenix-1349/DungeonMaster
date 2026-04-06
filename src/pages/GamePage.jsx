@@ -454,6 +454,8 @@ export default function GamePage() {
         id: `int-${Date.now()}`,
         sectionId: nextSceneState.gmState?.currentSectionId || null,
         targetId: choiceMeta?.target || null,
+        interactionId: choiceMeta?.interactionId || null,
+        actionKey: choiceMeta?.actionKey || null,
         skill: result.skillOrAbility || null,
         outcome: 'failure',
         turn: nextSceneState.turnCount || 0,

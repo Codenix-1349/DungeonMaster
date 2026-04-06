@@ -225,6 +225,29 @@ describe('GamePage runtime check flow helpers', () => {
     expect(choice?.interactionId).toBe('read_parchment_note')
   })
 
+  it('matches runtime free text through authored aliases instead of the visible label alone', () => {
+    const choice = resolveRuntimeChoiceFromText({
+      userText: 'Elsa das Gitter aufschliessen lassen',
+      choices: [
+        {
+          label: 'Elsa bitten, das Magazin zu oeffnen',
+          aliases: ['Elsa das Gitter aufschliessen lassen'],
+          kind: 'talk',
+          interactionId: 'ask_elsa_to_open_stacks',
+          actionKey: 'intr:ask_elsa_to_open_stacks',
+        },
+        {
+          label: 'Leno nach Mira fragen',
+          kind: 'talk',
+          interactionId: 'ask_leno_about_mira',
+          actionKey: 'intr:ask_leno_about_mira',
+        },
+      ],
+    })
+
+    expect(choice?.interactionId).toBe('ask_elsa_to_open_stacks')
+  })
+
   it('returns null for ambiguous typed text across multiple visible choices', () => {
     const choice = resolveVisibleChoiceFromText({
       userText: 'Ich untersuche die Tür.',

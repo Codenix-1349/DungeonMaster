@@ -577,12 +577,14 @@ function parseRuntimeModule(text, title = 'Abenteuer') {
       id: e.id || '',
       label: e.label || '',
       targetId: e.targetSectionId || '',
+      aliases: Array.isArray(e.aliases) ? e.aliases.map(alias => String(alias || '').trim()).filter(Boolean) : [],
       requiresFlags: Array.isArray(e.requiresFlags) ? e.requiresFlags : [],
     }))
 
     const interactions = (sec.interactions || []).map(intr => ({
       id: intr.id || '',
       label: intr.label || '',
+      aliases: Array.isArray(intr.aliases) ? intr.aliases.map(alias => String(alias || '').trim()).filter(Boolean) : [],
       kind: intr.kind || 'action',
       target: intr.target || null,
       requiresFlags: Array.isArray(intr.requiresFlags) ? intr.requiresFlags : [],

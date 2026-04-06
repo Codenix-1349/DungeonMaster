@@ -36,6 +36,13 @@ Key changes: engine-truth over AI-truth, structured data over heuristics.
 - **UI/prompt contract:** runtime UI and prompt context should prefer the player-facing fields over internal objective text.
 - **Validation:** runtime modules should warn when player-facing quest or intro framing is missing.
 
+### Runtime interaction identity rule
+- **Runtime modules:** interaction behavior is identified by authored `interactionId`, not by visible wording.
+- **UI/runtime transport:** `actionKey` carries that stable identity through retries, remounts, and follow-up handling.
+- **Labels are presentation-only:** changing a visible label must not change runtime truth.
+- **Free-text bridge:** runtime modules may author `aliases` to help free-text resolve to an existing interaction.
+- **Retry contract:** runtime retry/suppression logic should prefer stored `interactionId` / `actionKey` over label or target similarity.
+
 ## Phase 4 start — Reference Runtime Module
 
 - `src/data/adventures/graufurt_reference_runtime_module.txt` is now the architecture-driven reference module.

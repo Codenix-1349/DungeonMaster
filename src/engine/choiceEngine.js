@@ -128,6 +128,12 @@ export function getChoiceActionKey(choice = {}) {
   return null
 }
 
+function getInteractionRecordStableKey(interaction = {}) {
+  if (interaction.actionKey) return interaction.actionKey
+  if (interaction.interactionId) return `intr:${normalizeActionKeyPart(interaction.interactionId)}`
+  return null
+}
+
 function wasRecentlyActedOn(label, target, recentActions = [], actionKey = null, recentActionKeys = []) {
   if (actionKey && recentActionKeys.includes(actionKey)) return true
   if (!recentActions.length) return false
@@ -165,6 +171,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
     choices.push({
       id: `exit-${i}`,
       label: exit.label,
+      aliases: exit.aliases || [],
       source: 'structured',
       kind: 'exit',
       target: exit.targetId || null,
@@ -221,6 +228,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
         choices.push({
           id: `intr-${intr.id}`,
           label: intr.label,
+          aliases: intr.aliases || [],
           source: 'structured',
           kind: intr.kind || 'action',
           target: intr.target || null,
@@ -251,6 +259,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
         choices.push({
           id: `intr-${intr.id}`,
           label: intr.label,
+          aliases: intr.aliases || [],
           source: 'structured',
           kind: intr.kind || 'action',
           target: intr.target || null,
@@ -276,6 +285,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
         choices.push({
           id: `intr-${intrId}`,
           label: intr.label,
+          aliases: intr.aliases || [],
           source: 'structured',
           kind: intr.kind || 'action',
           target: intr.target || null,
@@ -554,7 +564,25 @@ function deduplicateSemantic(choices) {
 //   • ≥5 turns elapsed (fallback)
 
 function findMatchingFailure(choice, failedInteractions) {
+  const choiceActionKey = getChoiceActionKey(choice)
+
   for (const interaction of failedInteractions) {
+    const interactionActionKey = getInteractionRecordStableKey(interaction)
+
+    if (choiceActionKey && interactionActionKey) {
+      if (choiceActionKey === interactionActionKey) {
+        return { interaction, strength: 'strong' }
+      }
+      continue
+    }
+
+    if (choice.interactionId && interaction.interactionId) {
+      if (choice.interactionId === interaction.interactionId) {
+        return { interaction, strength: 'strong' }
+      }
+      continue
+    }
+
     // Strong: same explicit target ID
     if (choice.target && interaction.targetId &&
         choice.target.toLowerCase() === interaction.targetId.toLowerCase()) {
