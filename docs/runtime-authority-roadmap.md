@@ -173,6 +173,7 @@ Done criteria:
   - retry reopening after context/tool changes
   - check and non-check runtime transitions
   - backtracking and final gating
+- App-level runtime invariants should be expressed first; Birkenhain and Graufurt prove that those invariants hold under authored content.
 - Acceptance and regression tests should continue to grow around this reference module before larger authored adventures become the main validation surface.
 
 ## Recommended execution order
@@ -186,9 +187,9 @@ Done criteria:
 
 ## Current next-session starting point
 
-Continue with the reference runtime module and phase-4 acceptance shield.
+Continue with app-level runtime acceptance invariants across Birkenhain and Graufurt.
 
 Reason:
-- The runtime architecture is now strong enough that the next risk lies in regression under richer authored content.
-- The reference module provides a compact but architecture-focused stress harness.
+- The runtime architecture should now be checked through reusable app-side contracts, not adventure-specific intuition.
+- Birkenhain and Graufurt are the proof surface for those contracts, not the source of the architecture.
 - Larger real adventures should follow only after this acceptance surface feels stable.
