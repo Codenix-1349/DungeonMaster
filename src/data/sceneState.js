@@ -7,7 +7,13 @@ import {
   inferDispositionShift, inferSuspicionShift,
   extractNpcStateChanges, extractObjectStateChanges, detectActiveNpc,
 } from './knowledgeModel'
-import { getVisibleRuntimeNpcs, isRuntimeStructure, normalizeRuntimeNpcState, resolveRuntimeNpcId } from './runtimeModule'
+import {
+  buildInitialRuntimeNpcStates,
+  getVisibleRuntimeNpcs,
+  isRuntimeStructure,
+  normalizeRuntimeNpcState,
+  resolveRuntimeNpcId,
+} from './runtimeModule'
 
 export const SCENE_STATE_VERSION = 3
 
@@ -61,6 +67,17 @@ function getStructuredPrimaryQuest(structure, fallback = '') {
     return structure.module.playerPrimaryObjective || structure.module.primaryObjective || fallback || ''
   }
   return structure.module.primaryObjective || fallback || ''
+}
+
+function buildInitialRuntimeKnownNpcNames(structure, section, npcStates) {
+  if (!isRuntimeStructure(structure) || !section) return []
+
+  return getVisibleRuntimeNpcs(structure, section, {
+    gmState: {
+      currentSectionId: section.id,
+      npcStates,
+    },
+  }).map(entry => entry.name)
 }
 
 export function findSectionById(structure, sectionId) {
@@ -382,6 +399,7 @@ function detectTransitionReason(previousSection, currentSection, latestUser = ''
 export function createInitialSceneState(adventure) {
   const normalizedAdventure = normalizeAdventureEntry(adventure)
   const structure = normalizedAdventure?.structure
+  const runtimeStructured = isRuntimeStructure(structure)
 
   // For structured adventures, use startSectionId from module header
   let startSection = null
@@ -403,6 +421,13 @@ export function createInitialSceneState(adventure) {
     for (const flag of firstSection.setsOnEntry) initialFlags[flag] = true
   }
 
+  const initialRuntimeNpcStates = runtimeStructured
+    ? buildInitialRuntimeNpcStates(structure)
+    : {}
+  const initialKnownRuntimeNpcNames = runtimeStructured
+    ? buildInitialRuntimeKnownNpcNames(structure, firstSection, initialRuntimeNpcStates)
+    : []
+
   return {
     version: SCENE_STATE_VERSION,
     turnCount: 0,
@@ -412,7 +437,7 @@ export function createInitialSceneState(adventure) {
       currentSectionId: firstSection?.id || null,
       plotFlags: initialFlags,
       objectStates: {},
-      npcStates: {},
+      npcStates: initialRuntimeNpcStates,
       triggeredEvents: [],
       sectionVisitCounts: firstSection ? { [firstSection.id]: 1 } : {},
       runtimeDiscoveries: [],
@@ -423,7 +448,7 @@ export function createInitialSceneState(adventure) {
 
     // ── Player Knowledge (what the player knows) ──
     playerKnowledge: {
-      knownNpcs: [],
+      knownNpcs: initialKnownRuntimeNpcNames,
       knownPlaces: firstSection ? [firstSection.title] : [],
       discoveredClues: [],
       knownFactions: [],
@@ -583,29 +608,33 @@ function findStructuredExitTarget({
 // - No facts/factions (too close to pseudo-truth, removed in 2.5b)
 // - NPC/object hints scoped to current section, reset on transition
 // - Dialogue hints kept only for active NPC
-function buildInferredHints(previous, latestAssistant, latestUser, currentSection, knownNpcs, activeNpc, isTransition, gmState = {}) {
+function buildInferredHints(previous, latestAssistant, latestUser, currentSection, knownNpcs, activeNpc, isTransition, gmState = {}, runtimeStructured = false) {
   const prevInferred = previous.inferred || {}
 
   // NPC state hints: scoped to current section's NPCs, reset on transition
   // Phase 3: skip NPCs already promoted to gmState (authoritative wins)
-  const authoritativeNpcs = gmState.npcStates || {}
-  const sectionNpcs = new Set((currentSection.npcs || []).map(n => n.toLowerCase()))
-  const prevNpcHints = isTransition ? {} : { ...(prevInferred.npcStates || {}) }
-  const freshNpcChanges = extractNpcStateChanges(latestAssistant, knownNpcs)
   const npcStates = {}
-  for (const [npc, state] of Object.entries({ ...prevNpcHints, ...freshNpcChanges })) {
-    if (sectionNpcs.has(npc.toLowerCase()) && !authoritativeNpcs[npc]) npcStates[npc] = state
+  if (!runtimeStructured) {
+    const authoritativeNpcs = gmState.npcStates || {}
+    const sectionNpcs = new Set((currentSection.npcs || []).map(n => n.toLowerCase()))
+    const prevNpcHints = isTransition ? {} : { ...(prevInferred.npcStates || {}) }
+    const freshNpcChanges = extractNpcStateChanges(latestAssistant, knownNpcs)
+    for (const [npc, state] of Object.entries({ ...prevNpcHints, ...freshNpcChanges })) {
+      if (sectionNpcs.has(npc.toLowerCase()) && !authoritativeNpcs[npc]) npcStates[npc] = state
+    }
   }
 
   // Object state hints: scoped to current section's objects, reset on transition
   // Phase 3: skip objects already promoted to gmState
-  const authoritativeObjects = gmState.objectStates || {}
-  const sectionObjects = new Set((currentSection.interactiveObjects || []).map(o => o.toLowerCase()))
-  const prevObjHints = isTransition ? {} : { ...(prevInferred.objectStates || {}) }
-  const freshObjChanges = extractObjectStateChanges(latestAssistant, currentSection)
   const objectStates = {}
-  for (const [obj, state] of Object.entries({ ...prevObjHints, ...freshObjChanges })) {
-    if (sectionObjects.has(obj.toLowerCase()) && !authoritativeObjects[obj]) objectStates[obj] = state
+  if (!runtimeStructured) {
+    const authoritativeObjects = gmState.objectStates || {}
+    const sectionObjects = new Set((currentSection.interactiveObjects || []).map(o => o.toLowerCase()))
+    const prevObjHints = isTransition ? {} : { ...(prevInferred.objectStates || {}) }
+    const freshObjChanges = extractObjectStateChanges(latestAssistant, currentSection)
+    for (const [obj, state] of Object.entries({ ...prevObjHints, ...freshObjChanges })) {
+      if (sectionObjects.has(obj.toLowerCase()) && !authoritativeObjects[obj]) objectStates[obj] = state
+    }
   }
 
   // Dialogue hints: only for active NPC, all others dropped
@@ -765,18 +794,24 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
 
   // Authoritative NPC/object states: carry forward + promote confirmed changes from AI narrative
   // Phase 3: permanent states (dead, fled, destroyed, open) survive scene transitions
-  const newNpcStates = { ...(prevGm.npcStates || {}) }
-  const confirmedNpcChanges = extractNpcStateChanges(latestAssistant, prevPk.knownNpcs || [])
-  for (const [npc, state] of Object.entries(confirmedNpcChanges)) {
-    // Only promote terminal/significant states to authoritative layer
-    if (state === 'dead' || state === 'fled') newNpcStates[npc] = state
+  const newNpcStates = runtimeStructured
+    ? { ...buildInitialRuntimeNpcStates(structure), ...(prevGm.npcStates || {}) }
+    : { ...(prevGm.npcStates || {}) }
+  if (!runtimeStructured) {
+    const confirmedNpcChanges = extractNpcStateChanges(latestAssistant, prevPk.knownNpcs || [])
+    for (const [npc, state] of Object.entries(confirmedNpcChanges)) {
+      // Only promote terminal/significant states to authoritative layer
+      if (state === 'dead' || state === 'fled') newNpcStates[npc] = state
+    }
   }
 
   const newObjectStates = { ...(prevGm.objectStates || {}) }
-  const confirmedObjChanges = extractObjectStateChanges(latestAssistant, currentSection)
-  for (const [obj, state] of Object.entries(confirmedObjChanges)) {
-    // Only promote persistent states — 'closed' is reversible, skip it
-    if (state === 'open' || state === 'destroyed') newObjectStates[obj] = state
+  if (!runtimeStructured) {
+    const confirmedObjChanges = extractObjectStateChanges(latestAssistant, currentSection)
+    for (const [obj, state] of Object.entries(confirmedObjChanges)) {
+      // Only promote persistent states — 'closed' is reversible, skip it
+      if (state === 'open' || state === 'destroyed') newObjectStates[obj] = state
+    }
   }
 
   // Runtime discoveries: carry forward, scope visibility to current section
@@ -912,7 +947,17 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     memorySummary,
 
     // ── Inferred (AI-derived soft hints, scene-scoped, NOT authoritative truth) ──
-    inferred: buildInferredHints(previous, latestAssistant, latestUser, currentSection, prevPk.knownNpcs || [], activeNpc, shouldTransition, { npcStates: newNpcStates, objectStates: newObjectStates }),
+    inferred: buildInferredHints(
+      previous,
+      latestAssistant,
+      latestUser,
+      currentSection,
+      prevPk.knownNpcs || [],
+      activeNpc,
+      shouldTransition,
+      { npcStates: newNpcStates, objectStates: newObjectStates },
+      runtimeStructured
+    ),
 
     // ── Scene State (current narrative frame) ──
     currentSectionTitle: currentSection.title,
