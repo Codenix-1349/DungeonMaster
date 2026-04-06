@@ -350,6 +350,31 @@ describe('static choices', () => {
     const exitWithFlag = choicesWithFlag.find(c => c.kind === 'exit' && /Hinterflur/i.test(c.label))
     expect(exitWithFlag).toBeDefined()
   })
+
+  it('exits blocked by blocksIfFlags stay hidden', () => {
+    const section = {
+      id: 'test_section',
+      exits: [
+        { id: 'leave_now', label: 'Den Raum verlassen', targetId: 'elsewhere', blocksIfFlags: ['ROOM_CLEARED'] },
+      ],
+      interactions: [],
+      visibleFeatures: [],
+      interactiveObjects: [],
+      npcs: [],
+      suggestedActions: [],
+    }
+    const sceneState = {
+      gmState: { plotFlags: { ROOM_CLEARED: true } },
+      playerKnowledge: { knownNpcs: [] },
+      dialogueState: { activeNpcId: null },
+      recentActions: [],
+      recentActionKeys: [],
+      inferred: {},
+    }
+
+    const choices = buildAvailableChoices({ aiResponse: '', section, sceneState, isRuntimeModule: true })
+    expect(choices.some(choice => choice.kind === 'exit' && /verlassen/i.test(choice.label))).toBe(false)
+  })
 })
 
 describe('npc visibility', () => {
@@ -388,9 +413,25 @@ describe('runtime context', () => {
     expect(context.text).toContain('Mara Birken')
     expect(context.text).toContain('ERLAUBTE INTERAKTIONEN')
     expect(context.text).toContain('Mara ruhig nach Tomas fragen')
+    expect(context.text).not.toContain('Zum Hinterflur gehen')
     expect(context.text).not.toContain('Mit Tomas sprechen')
     expect(context.text).not.toContain('NÄCHSTE SZENEN')
     expect(context.text).not.toContain('Vibrierende Metallplatte')
+  })
+
+  it('runtime context exposes gated exits only after the engine unlocks them', () => {
+    const adv = loadModule()
+    const base = createInitialSceneState(adv)
+    const state = {
+      ...base,
+      gmState: {
+        ...base.gmState,
+        plotFlags: { HAS_CELLAR_KEY: true },
+      },
+    }
+    const context = buildRelevantAdventureContext({ adventure: adv, sceneState: state, messages: [] })
+
+    expect(context.text).toContain('Zum Hinterflur gehen')
   })
 })
 
@@ -403,6 +444,7 @@ describe('runtime prompt mode', () => {
     expect(prompt).toContain('Strukturiertes Modul (STRENG)')
     expect(prompt).toContain('Generiere KEINE nummerierten Optionslisten')
     expect(prompt).toContain('ERLAUBTE INTERAKTIONEN')
+    expect(prompt).not.toContain('Zum Hinterflur gehen')
     expect(prompt).not.toContain('NÄCHSTE SZENEN')
     expect(prompt).not.toContain('Vibrierende Metallplatte')
   })

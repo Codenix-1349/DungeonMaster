@@ -1,6 +1,6 @@
 import { normalizeAdventureEntry, truncateText, tokenizeText } from './adventureParser'
 import { findSectionById, selectRelevantChunks, deriveSceneState, SCENE_STATE_VERSION } from './sceneState'
-import { getAllowedRuntimeInteractions, getVisibleRuntimeNpcs, isRuntimeStructure } from './runtimeModule'
+import { getAllowedRuntimeInteractions, getAllowedSectionExits, getVisibleRuntimeNpcs, isRuntimeStructure } from './runtimeModule'
 
 // ─── Structured adventure: compact AI context builder ────────────────────────
 
@@ -9,6 +9,7 @@ function buildStructuredAdventureContext(structure, sceneState) {
   if (!section) return { text: 'Kein Abenteuerabschnitt verfügbar.', selectedIndexes: [], sectionTitle: '' }
 
   const isRuntimeModule = isRuntimeStructure(structure)
+  const allowedExits = getAllowedSectionExits(section, sceneState)
   const lines = []
   lines.push(`## Aktuelle Szene: ${section.title}`)
   if (section.type) lines.push(`TYP: ${section.type}`)
@@ -39,8 +40,8 @@ function buildStructuredAdventureContext(structure, sceneState) {
   if (absentNpcs.length) lines.push(`NICHT MEHR ANWESEND: ${absentNpcs.map(npc => `${npc} (${npcStates[npc]})`).join(' | ')}`)
 
   if (section.enemies?.length) lines.push(`GEGNER: ${section.enemies.join(' | ')}`)
-  if (section.exits?.length) {
-    lines.push(`AUSGÄNGE: ${section.exits.map(e => e.label).join(' | ')}`)
+  if (allowedExits.length) {
+    lines.push(`AUSGÄNGE: ${allowedExits.map(e => e.label).join(' | ')}`)
   }
   if (section.interactiveObjects?.length) {
     // Phase 3: annotate objects with authoritative state from gmState
@@ -117,7 +118,7 @@ function buildStructuredAdventureContext(structure, sceneState) {
     }
 
     // Neighboring exits — title only (prose only, spoiler risk for runtime modules)
-    const exitSections = section.exits
+    const exitSections = allowedExits
       ?.map(e => structure.sections.find(s => s.id === e.targetId))
       .filter(Boolean) || []
     if (exitSections.length) {

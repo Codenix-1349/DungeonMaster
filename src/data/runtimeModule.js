@@ -53,6 +53,23 @@ export function getVisibleRuntimeNpcs(structure, section, sceneState) {
     .filter(entry => !['dead', 'fled'].includes(entry.presence))
 }
 
+function passesFlagGates(entry, plotFlags = {}) {
+  if (entry?.requiresFlags?.length && !entry.requiresFlags.every(flag => plotFlags[flag])) return false
+  if (entry?.blocksIfFlags?.length && entry.blocksIfFlags.some(flag => plotFlags[flag])) return false
+  return true
+}
+
+export function isSectionExitAllowed(exit, sceneState) {
+  if (!exit?.label) return false
+  const plotFlags = sceneState?.gmState?.plotFlags || {}
+  return passesFlagGates(exit, plotFlags)
+}
+
+export function getAllowedSectionExits(section, sceneState) {
+  if (!section) return []
+  return (section.exits || []).filter(exit => isSectionExitAllowed(exit, sceneState))
+}
+
 function isInteractionAllowed(interaction, sceneState, requireVisibleAvailability = false) {
   if (!interaction?.id || !interaction.label) return false
 
@@ -62,8 +79,7 @@ function isInteractionAllowed(interaction, sceneState, requireVisibleAvailabilit
   const hasAvailability = Object.keys(availability).length > 0
   const isExplicitlyVisible = availability.visible === true || !hasAvailability
 
-  if (interaction.requiresFlags?.length && !interaction.requiresFlags.every(flag => plotFlags[flag])) return false
-  if (interaction.blocksIfFlags?.length && interaction.blocksIfFlags.some(flag => plotFlags[flag])) return false
+  if (!passesFlagGates(interaction, plotFlags)) return false
 
   if (availability.runtimeObjectVisible) {
     if (!runtimeObjects[availability.runtimeObjectVisible]?.visible) return false
