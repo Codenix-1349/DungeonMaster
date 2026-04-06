@@ -178,6 +178,56 @@ describe('buildAvailableChoices — retry filter', () => {
     expect(choices.some(c => c.kind === 'free')).toBe(true)
   })
 
+  it('does not suppress a different runtime interaction that shares target and skill when identity differs', () => {
+    const section = makeSection({
+      npcs: [],
+      visibleNpcs: [],
+      exits: [],
+      interactions: [
+        {
+          id: 'cross-broken-catwalk',
+          label: 'Die gebrochene Galerie ueberqueren',
+          kind: 'move',
+          target: 'catwalk',
+          availability: { visible: true },
+          check: { skill: 'athletics', dc: 13 },
+        },
+        {
+          id: 'secure-rope-and-cross',
+          label: 'Die Galerie mit einem Seil sichern und ueberqueren',
+          kind: 'move',
+          target: 'catwalk',
+          availability: { visible: true },
+          check: { skill: 'athletics', dc: 13 },
+        },
+      ],
+    })
+
+    const choices = buildAvailableChoices({
+      aiResponse: '',
+      section,
+      sceneState: makeSceneState({
+        interactionHistory: [{
+          id: 'int-1',
+          sectionId: 'sec-1',
+          targetId: 'catwalk',
+          interactionId: 'cross-broken-catwalk',
+          actionKey: 'intr:cross-broken-catwalk',
+          skill: 'athletics',
+          outcome: 'failure',
+          turn: 2,
+          label: 'Die gebrochene Galerie ueberqueren',
+          kind: 'move',
+          contextSnapshot: { clueCount: 0, npcCount: 1, itemCount: 0 },
+        }],
+      }),
+      isRuntimeModule: true,
+    })
+
+    expect(choices.some(c => c.interactionId === 'cross-broken-catwalk')).toBe(false)
+    expect(choices.some(c => c.interactionId === 'secure-rope-and-cross')).toBe(true)
+  })
+
   it('suppresses structured choice with exact target match after failure', () => {
     // Structured choices have an explicit target — strong match → suppress
     const section = makeSection({ interactiveObjects: ['Truhe'] })

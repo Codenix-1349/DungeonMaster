@@ -91,6 +91,47 @@ describe('runtime module parser', () => {
     expect(inn.visibleFeatures).toContain('Kaminfeuer')
   })
 
+  it('preserves authored runtime aliases for exits and interactions', () => {
+    const adv = normalizeAdventureEntry({
+      id: 'alias-module',
+      title: 'Alias Module',
+      text: `MODULE_ID: alias_module
+MODULE_VERSION: 1
+SYSTEM: dnd5e
+START_SECTION_ID: room
+PLAYER_PRIMARY_OBJECTIVE: Finde den Zugang.
+NPC_REGISTRY: {}
+CLUE_REGISTRY: {}
+OBJECT_REGISTRY: {}
+SECTIONS:
+  - id: room
+    location: Vorraum
+    playerObjective: Oeffne den Zugang.
+    introText: Ein enger Vorraum mit einer verschlossenen Tuer.
+    exits:
+      - id: to_hall
+        label: In den Flur gehen
+        aliases: [Den Gang betreten]
+        targetSectionId: hall
+    interactions:
+      - id: ask_guard_to_open
+        label: Den Waechter bitten, die Tuer zu oeffnen
+        aliases: [Den Waechter das Schloss aufschliessen lassen]
+        kind: talk
+        target: guard
+        checkPolicy: none
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [OPEN]`,
+    })
+
+    const room = adv.structure.sections.find(section => section.id === 'room')
+    expect(room.exits[0].aliases).toEqual(['Den Gang betreten'])
+    expect(room.interactions[0].aliases).toEqual(['Den Waechter das Schloss aufschliessen lassen'])
+  })
+
   it('parses old_brewery with inspect_counter interaction', () => {
     const sections = loadModule().structure.sections
     const brewery = sections.find(s => s.id === 'old_brewery')

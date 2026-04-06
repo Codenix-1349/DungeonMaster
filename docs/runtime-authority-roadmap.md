@@ -63,6 +63,16 @@ Reason:
 - Validation may warn when a runtime module omits `PLAYER_PRIMARY_OBJECTIVE`, `section.playerObjective`, or `section.introText`.
 - Interaction labels remain player-facing authored text; the engine must not rewrite them heuristically.
 
+## Current runtime interaction identity contract
+
+- In `runtime` modules, authored interaction identity comes from stable structure, not from label similarity.
+- `interactionId` is the canonical identity for a runtime interaction.
+- `actionKey` is the runtime/UI transport key derived from authored identity and must stay stable across retries, remounts, and follow-up actions.
+- Interaction labels are presentation only; changing a label must not change runtime behavior.
+- Runtime retry and suppression logic should prefer stored `interactionId` / `actionKey` over target- or label-based matching.
+- Runtime free-text resolution may use authored `aliases`, but aliases only help select an existing authored interaction; they do not create new behavior.
+- Label/semantic matching remains a fallback bridge, not a runtime truth source.
+
 ## Phase 1 - Runtime Contract and Canonical Model
 
 ### 1. Tighten the runtime contract

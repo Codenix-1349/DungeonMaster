@@ -68,46 +68,58 @@ function runtimeTokensMatch(a = '', b = '') {
   return shorter.length >= 4 && longer.startsWith(shorter)
 }
 
+function getChoiceResolutionTexts(choice = {}) {
+  const texts = [choice.label, ...(Array.isArray(choice.aliases) ? choice.aliases : [])]
+  return texts.map(text => String(text || '').trim()).filter(Boolean)
+}
+
 export function resolveVisibleChoiceFromText({ userText = '', choices = [] } = {}) {
   const inputNorm = normalizeRuntimeChoiceText(userText)
   const inputTokens = tokenizeRuntimeChoiceText(userText)
   if (!inputNorm || !inputTokens.length || !Array.isArray(choices) || !choices.length) return null
 
   const ranked = choices
-    .filter(choice => choice?.label && choice.kind !== 'free')
+    .filter(choice => getChoiceResolutionTexts(choice).length && choice.kind !== 'free')
     .map(choice => {
-      const labelNorm = normalizeRuntimeChoiceText(choice.label)
-      if (!labelNorm) return null
-      if (labelNorm === inputNorm) {
-        return { choice, score: 1000, exact: true }
+      let best = null
+      for (const text of getChoiceResolutionTexts(choice)) {
+        const labelNorm = normalizeRuntimeChoiceText(text)
+        if (!labelNorm) continue
+        if (labelNorm === inputNorm) {
+          const exactScore = text === choice.label ? 1000 : 1100
+          best = { choice, score: exactScore, exact: true }
+          break
+        }
+
+        const labelTokens = tokenizeRuntimeChoiceText(text)
+        if (!labelTokens.length) continue
+
+        const matchedLabelTokens = labelTokens.filter(labelToken => (
+          inputTokens.some(inputToken => runtimeTokensMatch(inputToken, labelToken))
+        ))
+        const matchedInputTokens = inputTokens.filter(inputToken => (
+          labelTokens.some(labelToken => runtimeTokensMatch(inputToken, labelToken))
+        ))
+
+        const labelCoverage = matchedLabelTokens.length / labelTokens.length
+        const inputCoverage = matchedInputTokens.length / inputTokens.length
+
+        let score = null
+        if (matchedLabelTokens.length === labelTokens.length && inputCoverage >= 0.6) {
+          score = 800 + matchedLabelTokens.length
+        } else if (matchedInputTokens.length === inputTokens.length && matchedInputTokens.length >= 2 && labelCoverage >= 0.6) {
+          score = 700 + matchedInputTokens.length
+        } else if (matchedLabelTokens.length >= 2 && labelCoverage >= 0.75 && inputCoverage >= 0.75) {
+          score = 500 + matchedLabelTokens.length
+        }
+
+        if (score == null) continue
+        if (!best || score > best.score) {
+          best = { choice, score, exact: false }
+        }
       }
 
-      const labelTokens = tokenizeRuntimeChoiceText(choice.label)
-      if (!labelTokens.length) return null
-
-      const matchedLabelTokens = labelTokens.filter(labelToken => (
-        inputTokens.some(inputToken => runtimeTokensMatch(inputToken, labelToken))
-      ))
-      const matchedInputTokens = inputTokens.filter(inputToken => (
-        labelTokens.some(labelToken => runtimeTokensMatch(inputToken, labelToken))
-      ))
-
-      const labelCoverage = matchedLabelTokens.length / labelTokens.length
-      const inputCoverage = matchedInputTokens.length / inputTokens.length
-
-      if (matchedLabelTokens.length === labelTokens.length && inputCoverage >= 0.6) {
-        return { choice, score: 800 + matchedLabelTokens.length, exact: false }
-      }
-
-      if (matchedInputTokens.length === inputTokens.length && matchedInputTokens.length >= 2 && labelCoverage >= 0.6) {
-        return { choice, score: 700 + matchedInputTokens.length, exact: false }
-      }
-
-      if (matchedLabelTokens.length >= 2 && labelCoverage >= 0.75 && inputCoverage >= 0.75) {
-        return { choice, score: 500 + matchedLabelTokens.length, exact: false }
-      }
-
-      return null
+      return best
     })
     .filter(Boolean)
     .sort((a, b) => b.score - a.score || a.choice.label.length - b.choice.label.length)
