@@ -23,6 +23,12 @@ Key changes: engine-truth over AI-truth, structured data over heuristics.
 - **No runtime check heuristics:** the app no longer infers runtime checks from free text or AI tags.
 - **Legacy/prose adventures:** AI `[PROBE:]` / `[PROBE_HINWEIS:]` tags and label-based fallback inference still apply there.
 
+### Runtime dialogue rule
+- **Runtime modules:** `activeNpcId` comes from resolved authored interaction intent, not from narration keyword matching.
+- **Carry-forward:** free follow-up input may keep the active runtime NPC only while that NPC stays visibly present in the same section.
+- **No runtime dialogue heuristics:** narration alone must not invent or switch the active runtime dialogue target.
+- **Legacy/prose adventures:** name-based dialogue heuristics remain a fallback there.
+
 ## Possible future test additions (not urgent)
 - **CombatTracker integration**: initiative, multi-round, enemy defeat, XP/loot
 - **Adventure parsing**: structured adventure round-trip, legacy format migration

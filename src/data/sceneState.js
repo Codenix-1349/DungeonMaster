@@ -7,7 +7,7 @@ import {
   inferDispositionShift, inferSuspicionShift,
   extractNpcStateChanges, extractObjectStateChanges, detectActiveNpc,
 } from './knowledgeModel'
-import { getVisibleRuntimeNpcs, isRuntimeStructure, normalizeRuntimeNpcState } from './runtimeModule'
+import { getVisibleRuntimeNpcs, isRuntimeStructure, normalizeRuntimeNpcState, resolveRuntimeNpcId } from './runtimeModule'
 
 export const SCENE_STATE_VERSION = 3
 
@@ -476,6 +476,50 @@ function normalizeStructuredActionKeyPart(value = '') {
   return String(value).trim().toLowerCase()
 }
 
+function extractActionKeyId(actionKey = '', prefix = '') {
+  const normalizedKey = String(actionKey || '').trim().toLowerCase()
+  const normalizedPrefix = `${prefix}:`
+  if (!normalizedKey.startsWith(normalizedPrefix)) return null
+  return normalizedKey.slice(normalizedPrefix.length) || null
+}
+
+function findRuntimeInteractionFromActionKey(structure, previousSceneState, fallbackUserActionKey = '') {
+  const interactionId = extractActionKeyId(fallbackUserActionKey, 'intr')
+  if (!interactionId) return null
+
+  const staticInteraction = findInteractionDef(structure, interactionId)
+  if (staticInteraction) return staticInteraction
+
+  return previousSceneState?.gmState?.runtimeInteractions?.[interactionId] || null
+}
+
+function resolveRuntimeActiveNpcId({
+  structure,
+  previousSceneState,
+  currentSection,
+  visibleRuntimeNpcs = [],
+  fallbackUserActionKey = null,
+  shouldTransition = false,
+} = {}) {
+  if (!isRuntimeStructure(structure)) return null
+  if (shouldTransition) return null
+  if (!currentSection) return null
+
+  const interaction = findRuntimeInteractionFromActionKey(structure, previousSceneState, fallbackUserActionKey)
+  if (interaction) {
+    return resolveRuntimeNpcId(structure, interaction.target) || null
+  }
+
+  if (extractActionKeyId(fallbackUserActionKey, 'exit')) return null
+
+  const previousActiveNpcId = previousSceneState?.dialogueState?.activeNpcId || null
+  if (!previousActiveNpcId) return null
+
+  return visibleRuntimeNpcs.some(entry => entry.id === previousActiveNpcId)
+    ? previousActiveNpcId
+    : null
+}
+
 function findStructuredExitTarget({
   previousSection,
   structure,
@@ -785,10 +829,16 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
   const newFactions = normalizeShortList([...(prevPk.knownFactions || [])], 6)
 
   // Dialogue State: detect active NPC + update disposition/suspicion
-  const activeNpcCandidates = runtimeStructured
-    ? runtimeNpcView.map(entry => entry.name)
-    : newKnownNpcs
-  const activeNpc = detectActiveNpc(recentMessages, activeNpcCandidates)
+  const activeNpc = runtimeStructured
+    ? resolveRuntimeActiveNpcId({
+      structure,
+      previousSceneState: previous,
+      currentSection,
+      visibleRuntimeNpcs: runtimeNpcView,
+      fallbackUserActionKey,
+      shouldTransition,
+    })
+    : detectActiveNpc(recentMessages, newKnownNpcs)
   const npcRelations = { ...(prevDlg.npcRelations || {}) }
   if (activeNpc && !npcRelations[activeNpc]) {
     npcRelations[activeNpc] = { disposition: 'neutral', suspicion: 0, lastTopic: '' }

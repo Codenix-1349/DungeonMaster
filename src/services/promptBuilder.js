@@ -10,7 +10,9 @@ import {
   buildRelevantAdventureContext,
   buildRelevantRulesContext,
   calcSkillBonus,
+  normalizeAdventureEntry,
 } from '../data/srd'
+import { getRuntimeNpcDisplayName } from '../data/runtimeModule'
 
 function getLatestUserText(messages = []) {
   const reversed = [...messages].reverse()
@@ -171,7 +173,14 @@ WICHTIG: Beende JEDE Antwort außerhalb des Kampfes mit 3 bis 5 nummerierten, si
 - Schreibe NIEMALS zwei Optionen auf dieselbe Zeile. IMMER Zeilenumbruch vor jeder Nummer.`
 }
 
-function buildSceneStateContext(sceneState = null, { runtimeModule = false } = {}) {
+function getDialogueNpcDisplayName(sceneState = null, structure = null, runtimeModule = false) {
+  const activeNpcId = sceneState?.dialogueState?.activeNpcId || ''
+  if (!activeNpcId) return ''
+  if (!runtimeModule) return activeNpcId
+  return getRuntimeNpcDisplayName(structure, activeNpcId)
+}
+
+function buildSceneStateContext(sceneState = null, { runtimeModule = false, structure = null } = {}) {
   if (!sceneState) return ''
 
   const lines = []
@@ -201,57 +210,59 @@ function buildSceneStateContext(sceneState = null, { runtimeModule = false } = {
     lines.push(`**Bekannte Hinweise:** ${clues.slice(0, 4).join(' | ')}`)
   }
 
-  if (runtimeModule) {
-    if (lines.length === 0) return ''
-    return `## Aktueller Szenenstatus\n${lines.join('\n')}`
-  }
-
-  const knownPlaces = pk?.knownPlaces
-  if (knownPlaces?.length > 1) {
-    lines.push(`**Bekannte Orte:** ${knownPlaces.slice(0, 6).join(' | ')}`)
-  }
-
-  // Authoritative facts/factions (only if set by engine/adventure)
-  const facts = pk?.knownFacts
-  if (facts?.length) {
-    lines.push(`**Bekannte Fakten:** ${facts.slice(0, 4).join(' | ')}`)
-  }
-  const factions = pk?.knownFactions
-  if (factions?.length) {
-    lines.push(`**Bekannte Fraktionen:** ${factions.slice(0, 4).join(' | ')}`)
-  }
-
-  if (sceneState.notableElements?.length) {
-    lines.push(`**Wichtige Elemente:** ${sceneState.notableElements.slice(0, 4).join(' | ')}`)
-  }
-
   // ── Active dialogue context ──
   const dlg = sceneState.dialogueState
   if (dlg?.activeNpcId) {
+    const activeNpcLabel = getDialogueNpcDisplayName(sceneState, structure, runtimeModule)
     const rel = dlg.npcRelations?.[dlg.activeNpcId]
-    const dlgParts = [`Aktiver Gesprächspartner: ${dlg.activeNpcId}`]
+    const dlgParts = [`Aktiver Gesprächspartner: ${activeNpcLabel}`]
     if (rel?.disposition) dlgParts.push(`Haltung: ${rel.disposition}`)
     if (rel?.suspicion > 0) dlgParts.push(`Misstrauen: ${rel.suspicion}/10`)
     lines.push(`**Dialog:** ${dlgParts.join(' · ')}`)
   }
 
+  if (!runtimeModule) {
+    const knownPlaces = pk?.knownPlaces
+    if (knownPlaces?.length > 1) {
+      lines.push(`**Bekannte Orte:** ${knownPlaces.slice(0, 6).join(' | ')}`)
+    }
+
+    // Authoritative facts/factions (only if set by engine/adventure)
+    const facts = pk?.knownFacts
+    if (facts?.length) {
+      lines.push(`**Bekannte Fakten:** ${facts.slice(0, 4).join(' | ')}`)
+    }
+    const factions = pk?.knownFactions
+    if (factions?.length) {
+      lines.push(`**Bekannte Fraktionen:** ${factions.slice(0, 4).join(' | ')}`)
+    }
+
+    if (sceneState.notableElements?.length) {
+      lines.push(`**Wichtige Elemente:** ${sceneState.notableElements.slice(0, 4).join(' | ')}`)
+    }
+  }
+
   // ── Active plot flags (GM info for consistency) ──
-  const flags = sceneState.gmState?.plotFlags
-  if (flags) {
-    const activeFlags = Object.entries(flags).filter(([, v]) => v).map(([k]) => k)
-    if (activeFlags.length) {
-      lines.push(`**Aktive Plot-Flags:** ${activeFlags.join(' | ')}`)
+  if (!runtimeModule) {
+    const flags = sceneState.gmState?.plotFlags
+    if (flags) {
+      const activeFlags = Object.entries(flags).filter(([, v]) => v).map(([k]) => k)
+      if (activeFlags.length) {
+        lines.push(`**Aktive Plot-Flags:** ${activeFlags.join(' | ')}`)
+      }
     }
   }
 
   // ── Phase 3: Authoritative NPC/Object states from gmState ──
-  const gmNpcStates = Object.entries(sceneState.gmState?.npcStates || {})
-  const gmObjStates = Object.entries(sceneState.gmState?.objectStates || {})
-  if (gmNpcStates.length || gmObjStates.length) {
-    const stateParts = []
-    if (gmNpcStates.length) stateParts.push(`NPCs: ${gmNpcStates.map(([n, s]) => `${n} (${s})`).join(', ')}`)
-    if (gmObjStates.length) stateParts.push(`Objekte: ${gmObjStates.map(([o, s]) => `${o} (${s})`).join(', ')}`)
-    lines.push(`**Bestätigter Weltzustand:** ${stateParts.join(' | ')}`)
+  if (!runtimeModule) {
+    const gmNpcStates = Object.entries(sceneState.gmState?.npcStates || {})
+    const gmObjStates = Object.entries(sceneState.gmState?.objectStates || {})
+    if (gmNpcStates.length || gmObjStates.length) {
+      const stateParts = []
+      if (gmNpcStates.length) stateParts.push(`NPCs: ${gmNpcStates.map(([n, s]) => `${n} (${s})`).join(', ')}`)
+      if (gmObjStates.length) stateParts.push(`Objekte: ${gmObjStates.map(([o, s]) => `${o} (${s})`).join(', ')}`)
+      lines.push(`**Bestätigter Weltzustand:** ${stateParts.join(' | ')}`)
+    }
   }
 
   // ── Inferred hints (scene-scoped, AI-derived, NOT authoritative) ──
@@ -273,12 +284,13 @@ function buildSceneStateContext(sceneState = null, { runtimeModule = false } = {
     // Dialogue trend for active NPC only
     if (dlg?.activeNpcId && inf.dialogueHints?.[dlg.activeNpcId]) {
       const hint = inf.dialogueHints[dlg.activeNpcId]
+      const activeNpcLabel = getDialogueNpcDisplayName(sceneState, structure, runtimeModule)
       const parts = []
       if (hint.dispositionTrend > 0) parts.push('Tendenz: freundlicher')
       else if (hint.dispositionTrend < 0) parts.push('Tendenz: feindseliger')
       if (hint.suspicionTrend > 0) parts.push('Misstrauen steigt')
       else if (hint.suspicionTrend < 0) parts.push('Misstrauen sinkt')
-      if (parts.length) softLines.push(`Gesprächseindruck ${dlg.activeNpcId}: ${parts.join(', ')}`)
+      if (parts.length) softLines.push(`Gesprächseindruck ${activeNpcLabel}: ${parts.join(', ')}`)
     }
 
     if (softLines.length) {
@@ -287,15 +299,17 @@ function buildSceneStateContext(sceneState = null, { runtimeModule = false } = {
   }
 
   // ── Failed interactions (soft hint — real enforcement is in Choice Layer) ──
-  const failedRecent = (sceneState.interactionHistory || [])
-    .filter(i => i.outcome === 'failure' &&
-      i.sectionId === sceneState.gmState?.currentSectionId &&
-      (sceneState.turnCount || 0) - (i.turn || 0) < 5)
-  if (failedRecent.length) {
-    const failLines = failedRecent.map(i =>
-      `${i.label || 'Aktion'}${i.skill ? ` (${i.skill})` : ''} → fehlgeschlagen (Runde ${i.turn})`
-    )
-    lines.push(`\n**Kürzlich fehlgeschlagene Proben (biete diese NICHT erneut identisch an):**\n${failLines.join('\n')}`)
+  if (!runtimeModule) {
+    const failedRecent = (sceneState.interactionHistory || [])
+      .filter(i => i.outcome === 'failure' &&
+        i.sectionId === sceneState.gmState?.currentSectionId &&
+        (sceneState.turnCount || 0) - (i.turn || 0) < 5)
+    if (failedRecent.length) {
+      const failLines = failedRecent.map(i =>
+        `${i.label || 'Aktion'}${i.skill ? ` (${i.skill})` : ''} → fehlgeschlagen (Runde ${i.turn})`
+      )
+      lines.push(`\n**Kürzlich fehlgeschlagene Proben (biete diese NICHT erneut identisch an):**\n${failLines.join('\n')}`)
+    }
   }
 
   if (lines.length === 0) return ''
@@ -345,9 +359,11 @@ function formatCurrencyForPrompt(character) {
  */
 export function buildSystemPrompt(character, adventure, messages = [], combat = null, sceneState = null) {
   const userText = getLatestUserText(messages)
+  const normalizedAdventure = normalizeAdventureEntry(adventure)
+  const structure = normalizedAdventure?.structure || null
   const rulesContext = buildRelevantRulesContext({ character, combat, userText })
   const adventureContext = buildRelevantAdventureContext({
-    adventure,
+    adventure: normalizedAdventure,
     sceneState,
     messages,
     combat,
@@ -387,7 +403,7 @@ ${rulesContext.text || 'Nutze die SRD-Grundlogik fair, simpel und konsistent.'}
 
 ${buildChoiceStyleInstruction(userText, Boolean(combat?.active), runtimeModule)}`
 
-  const sceneContext = buildSceneStateContext(sceneState, { runtimeModule })
+  const sceneContext = buildSceneStateContext(sceneState, { runtimeModule, structure })
   if (sceneContext) {
     prompt += `\n\n${sceneContext}`
   }

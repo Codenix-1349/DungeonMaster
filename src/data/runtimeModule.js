@@ -19,6 +19,31 @@ export function normalizeRuntimeNpcState(rawState) {
     : rawState
 }
 
+export function resolveRuntimeNpcId(structure, npcIdOrName = '') {
+  const registry = structure?.module?.npcRegistry || {}
+  const raw = String(npcIdOrName || '').trim()
+  if (!raw) return null
+  if (registry[raw]) return raw
+
+  const normalized = raw.toLowerCase()
+  const match = Object.entries(registry).find(([npcId, def]) => (
+    npcId.toLowerCase() === normalized ||
+    String(def?.name || '').toLowerCase() === normalized
+  ))
+
+  return match?.[0] || null
+}
+
+export function getRuntimeNpcDisplayName(structure, npcIdOrName = '') {
+  const registry = structure?.module?.npcRegistry || {}
+  const raw = String(npcIdOrName || '').trim()
+  if (!raw) return ''
+  if (registry[raw]?.name) return registry[raw].name
+
+  const resolvedId = resolveRuntimeNpcId(structure, raw)
+  return resolvedId ? (registry[resolvedId]?.name || resolvedId) : raw
+}
+
 export function getRuntimeNpcPresence(rawState) {
   const state = normalizeRuntimeNpcState(rawState)
   return state.state || state.status || null
