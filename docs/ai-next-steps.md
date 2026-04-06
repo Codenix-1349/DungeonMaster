@@ -7,7 +7,7 @@ The current runtime-module implementation roadmap is tracked in:
 
 Resume future work from that document first. It is the canonical plan for the runtime cleanup and authority model.
 
-## Phase 3 complete — Adventure Runtime Hardened
+## Phase 3 late hardening — Runtime Acceptance Shield
 
 Key changes: engine-truth over AI-truth, structured data over heuristics.
 - NPC/object states promoted to gmState (permanent, survive transitions)
@@ -43,9 +43,11 @@ Key changes: engine-truth over AI-truth, structured data over heuristics.
 - **Free-text bridge:** runtime modules may author `aliases` to help free-text resolve to an existing interaction.
 - **Retry contract:** runtime retry/suppression logic should prefer stored `interactionId` / `actionKey` over label or target similarity.
 
-## Phase 4 start — Reference Runtime Module
+## Current next step — App-level acceptance invariants
 
 - `src/data/adventures/graufurt_reference_runtime_module.txt` is now the architecture-driven reference module.
+- `src/data/adventures/birkenhain_minimal_runtime_module.txt` remains the compact leak/reveal/gating reference module.
+- Runtime acceptance should now be expressed as reusable app-side invariants first.
 - It exists to stress:
   - two NPCs in one runtime scene
   - authored dialogue identity
@@ -53,7 +55,8 @@ Key changes: engine-truth over AI-truth, structured data over heuristics.
   - retry reopening after new tools
   - check and non-check state transitions
   - backtracking and final gating
-- Prefer extending regression and acceptance coverage around this module before treating a larger authored adventure as the main proof surface.
+- Birkenhain and Graufurt should prove the invariants; they should not define the model.
+- Prefer extending regression and acceptance coverage around these modules before treating a larger authored adventure as the main proof surface.
 
 ## Possible future test additions (not urgent)
 - **CombatTracker integration**: initiative, multi-round, enemy defeat, XP/loot
@@ -63,7 +66,7 @@ Key changes: engine-truth over AI-truth, structured data over heuristics.
 
 ## How to continue after an interruption
 1. `cd C:\Apps\DungeonsDaggers\DungeonMaster`
-2. `git checkout feature/phase3-adventure-runtime` (or `main` if merged)
-3. `npm test` — verify all 70 tests pass
+2. `git checkout main` (or the current feature branch if work is still in progress)
+3. `npm test -- --run` — verify the full suite passes
 4. `npm run build` — verify build succeeds
-5. Read this file + `ai-progress.md` for context
+5. Read this file + `docs/runtime-authority-roadmap.md` for context
