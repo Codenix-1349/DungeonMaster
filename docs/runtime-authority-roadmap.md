@@ -1,6 +1,6 @@
 # Runtime Authority Roadmap
 
-Last updated: 2026-04-05
+Last updated: 2026-04-06
 
 ## Workflow rule
 
@@ -26,6 +26,22 @@ Runtime modules must be engine-authoritative.
 - No UI-only workaround for duplicate or confusing choices.
 - No label-based patch targeted only at Mara or a single module.
 - No broader text heuristics as a substitute for stable runtime identities.
+
+## Current runtime check contract
+
+- In `runtime` modules, checks come from explicit module data only.
+- A runtime interaction triggers a check only when the authored interaction defines `check`.
+- UI may render a runtime choice as check-based only when the resolved authored runtime interaction defines `check`.
+- If a runtime interaction has no `check`, it is a deterministic non-check action and resolves engine-side.
+- The AI must not author runtime `[PROBE:]` or `[PROBE_HINWEIS:]` tags.
+- The engine must not infer runtime checks from free text or label heuristics.
+- In `legacy` / prose adventures, AI check tags and label-based inference remain allowed as fallback behavior.
+
+Reason:
+- It keeps probe authority in the same place as interaction authority.
+- It makes every runtime check traceable to adventure data.
+- It prevents prompt wording or typed free text from silently changing runtime rules.
+- Blue probe styling therefore means "authored runtime check", never "this label sounds risky".
 
 ## Phase 1 - Runtime Contract and Canonical Model
 

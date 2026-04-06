@@ -16,8 +16,11 @@ Key changes: engine-truth over AI-truth, structured data over heuristics.
 - Clue discovery: cross-referenced with section clues, assistant-only
 - Prompt leakage reduced (hidden NPCs/clues limited, engine-truth block added)
 
-### Known open issue
-- **Proben ([PROBE:]-Tags) fire inconsistently** — skill checks sometimes don't trigger. Likely a prompt-level issue (see memory: project_proben_broken.md).
+### Runtime check rule
+- **Runtime modules:** checks are authored in the module via explicit `interaction.check` blocks.
+- **UI contract:** a runtime option may render as check-based only when the resolved authored runtime interaction defines `check`.
+- **No runtime check heuristics:** the app no longer infers runtime checks from free text or AI tags.
+- **Legacy/prose adventures:** AI `[PROBE:]` / `[PROBE_HINWEIS:]` tags and label-based fallback inference still apply there.
 
 ## Possible future test additions (not urgent)
 - **CombatTracker integration**: initiative, multi-round, enemy defeat, XP/loot

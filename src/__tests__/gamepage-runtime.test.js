@@ -54,6 +54,16 @@ describe('GamePage runtime check flow helpers', () => {
     expect(pendingCheck).toBeNull()
   })
 
+  it('does not infer runtime checks from free text without an explicit module check', () => {
+    const pendingCheck = resolveResponsePendingCheck({
+      userText: 'Ich untersuche das Schloss und die Kratzspuren.',
+      allowEngineCheckInference: true,
+      runtimeModule: true,
+    })
+
+    expect(pendingCheck).toBeNull()
+  })
+
   it('does not infer a second check for app-driven follow-up actions', () => {
     const pendingCheck = resolveResponsePendingCheck({
       userText: 'Die Metallplatte öffnen',

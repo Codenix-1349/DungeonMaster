@@ -180,6 +180,10 @@ SECTIONS:
         availability:
           visible: true
         blocksIfFlags: [SCHLOSS_INSPIZIERT]
+        check:
+          skill: investigation
+          dc: 11
+          onFail: Du erkennst Abnutzung am alten Schloss, aber die Kratzspuren ergeben noch kein klares Bild.
         results:
           success:
             setFlags: [SCHLOSS_INSPIZIERT]
@@ -483,6 +487,10 @@ SECTIONS:
         availability:
           visible: true
         blocksIfFlags: [KETTLE_INSPECTED]
+        check:
+          skill: investigation
+          dc: 11
+          onFail: Der Kessel wirkt bedrohlich, aber sein Zweck bleibt aus dieser Distanz unklar.
         results:
           success:
             setFlags: [KETTLE_INSPECTED]
