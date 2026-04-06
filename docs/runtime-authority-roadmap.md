@@ -45,6 +45,14 @@ Reason:
 - Blue probe styling therefore means "authored runtime check", never "this label sounds risky".
 - Validation may warn when neither `check` nor `checkPolicy: none` is authored.
 
+## Current runtime dialogue contract
+
+- In `runtime` modules, the active dialogue target is derived from the resolved authored interaction, not from text heuristics.
+- A runtime talk interaction may set the active NPC context.
+- Free follow-up input may keep the active runtime NPC only while that NPC remains visibly present in the same section.
+- Runtime narration alone must not invent or switch the active NPC.
+- Legacy / prose adventures may still use name-based dialogue heuristics as fallback.
+
 ## Phase 1 - Runtime Contract and Canonical Model
 
 ### 1. Tighten the runtime contract

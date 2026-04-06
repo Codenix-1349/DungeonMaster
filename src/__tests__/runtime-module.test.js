@@ -604,6 +604,69 @@ describe('npc visibility', () => {
   })
 })
 
+describe('runtime dialogue authority', () => {
+  it('sets activeNpcId from the authored talk interaction, not from narration keywords', () => {
+    const adv = loadModule()
+    const interaction = findInteractionDef(adv.structure, 'ask_mara_about_tomas')
+
+    const next = deriveSceneState({
+      adventure: adv,
+      previousSceneState: createInitialSceneState(adv),
+      messages: [
+        msg('user', interaction.label),
+        msg('assistant', 'Mara antwortet leise, waehrend Tomas unten im Keller gegen etwas Eisenernes schlaegt.'),
+      ],
+      fallbackUserText: interaction.label,
+      fallbackUserActionKey: 'intr:ask_mara_about_tomas',
+    })
+
+    expect(next.dialogueState.activeNpcId).toBe('mara')
+  })
+
+  it('does not guess a runtime activeNpcId from narration alone', () => {
+    const adv = loadModule()
+
+    const next = deriveSceneState({
+      adventure: adv,
+      previousSceneState: createInitialSceneState(adv),
+      messages: [
+        msg('user', 'Ich lausche in den Raum.'),
+        msg('assistant', 'Du hoerst Mara an der Theke und irgendwo faellt auch der Name Tomas.'),
+      ],
+      fallbackUserText: 'Ich lausche in den Raum.',
+    })
+
+    expect(next.dialogueState.activeNpcId).toBeNull()
+  })
+
+  it('keeps the runtime activeNpcId across free follow-up input while the npc stays visible', () => {
+    const adv = loadModule()
+    const base = createInitialSceneState(adv)
+    const previous = {
+      ...base,
+      dialogueState: {
+        activeNpcId: 'mara',
+        npcRelations: {
+          mara: { disposition: 'neutral', suspicion: 0, lastTopic: 'Tomas' },
+        },
+      },
+    }
+
+    const next = deriveSceneState({
+      adventure: adv,
+      previousSceneState: previous,
+      messages: [
+        msg('user', 'Warum hat Tomas den Schluessel genommen?'),
+        msg('assistant', 'Mara sieht dich ernst an und senkt die Stimme noch weiter.'),
+      ],
+      fallbackUserText: 'Warum hat Tomas den Schluessel genommen?',
+    })
+
+    expect(next.dialogueState.activeNpcId).toBe('mara')
+    expect(next.dialogueState.npcRelations.mara?.lastTopic).toContain('Warum hat Tomas')
+  })
+})
+
 describe('runtime context', () => {
   it('adventure context exposes only visible runtime state and allowed interactions', () => {
     const adv = loadModule()
@@ -649,6 +712,30 @@ describe('runtime prompt mode', () => {
     expect(prompt).not.toContain('Zum Hinterflur gehen')
     expect(prompt).not.toContain('NÄCHSTE SZENEN')
     expect(prompt).not.toContain('Vibrierende Metallplatte')
+  })
+
+  it('renders runtime dialogue context with NPC display names instead of runtime IDs', () => {
+    const adv = loadModule()
+    const base = createInitialSceneState(adv)
+    const prompt = buildSystemPrompt(makeCharacter(), adv, [], null, {
+      ...base,
+      dialogueState: {
+        activeNpcId: 'mara',
+        npcRelations: {
+          mara: { disposition: 'neutral', suspicion: 0, lastTopic: 'Tomas' },
+        },
+      },
+      inferred: {
+        ...base.inferred,
+        dialogueHints: {
+          mara: { dispositionTrend: 1, suspicionTrend: 0 },
+        },
+      },
+    })
+
+    expect(prompt).toContain('Aktiver Gesprächspartner: Mara Birken')
+    expect(prompt).toContain('Gesprächseindruck Mara Birken')
+    expect(prompt).not.toContain('Aktiver Gesprächspartner: mara')
   })
 })
 
