@@ -1,4 +1,4 @@
-import { getChoiceActionKey, inferCheckFromLabel } from '../engine/choiceEngine'
+import { buildAvailableChoices, getChoiceActionKey, inferCheckFromLabel } from '../engine/choiceEngine'
 import { formatProbeHinweisTags, stripCheckTags, stripProbeHintTags } from '../services/openrouter'
 
 export function createPendingChoiceMeta(choice) {
@@ -143,6 +143,30 @@ export function formatAssistantTextForDisplay(rawText = '', getLabel, { runtimeM
   const withoutCheckTags = stripCheckTags(rawText)
   if (runtimeModule) return stripProbeHintTags(withoutCheckTags)
   return formatProbeHinweisTags(withoutCheckTags, getLabel)
+}
+
+export function rebuildVisibleChoices({
+  section = null,
+  sceneState = null,
+  assistantText = '',
+  combatActive = false,
+  runtimeModule = false,
+  inventoryCount = 0,
+} = {}) {
+  if (!section || !sceneState || combatActive) return []
+
+  const sceneWithItemCount = {
+    ...sceneState,
+    _currentItemCount: inventoryCount || 0,
+  }
+
+  return buildAvailableChoices({
+    aiResponse: runtimeModule ? '' : assistantText,
+    section,
+    sceneState: sceneWithItemCount,
+    combatActive,
+    isRuntimeModule: runtimeModule,
+  })
 }
 
 export function shouldBuildChoicesAfterResponse({ combatActive = false, pendingCheck = null } = {}) {

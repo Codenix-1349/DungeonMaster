@@ -9,12 +9,12 @@ import SkillCheckPanel from '../components/SkillCheckPanel'
 import MessageBubble, { TypingIndicator } from '../components/game/MessageBubble'
 import SessionCard from '../components/game/SessionCard'
 import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById, resolveReveals, applyReveals, findInteractionDef, resolveInteractionOutcome } from '../data/srd'
-import { buildAvailableChoices } from '../engine/choiceEngine'
 import { isRuntimeStructure } from '../data/runtimeModule'
 import {
   createPendingCheckFromChoice,
   createPendingChoiceMeta,
   formatAssistantTextForDisplay,
+  rebuildVisibleChoices,
   resolveResponsePendingCheck,
   resolveVisibleChoiceFromText,
   shouldBuildChoicesAfterResponse,
@@ -40,6 +40,21 @@ function getCurrentSection(adventureData, currentSceneState) {
 function isRuntimeModule(adventureData) {
   const normalized = normalizeAdventureEntry(adventureData)
   return isRuntimeStructure(normalized?.structure)
+}
+
+function getPlayerFacingRuntimeFrame(adventureData, currentSceneState, section = null) {
+  const normalized = normalizeAdventureEntry(adventureData)
+  const structure = normalized?.structure
+  if (!isRuntimeStructure(structure)) return null
+
+  const currentSection = section || getCurrentSection(normalized, currentSceneState)
+  if (!currentSection) return null
+
+  return {
+    summary: currentSection.introText || currentSection.summary || currentSceneState?.summary || '',
+    currentObjective: currentSection.playerObjective || currentSection.objective || currentSceneState?.currentObjective || '',
+    activeQuest: structure.module?.playerPrimaryObjective || structure.module?.primaryObjective || currentSceneState?.activeQuest || '',
+  }
 }
 
 function SelectionTile({ title, subtitle, active, disabled = false, onClick, children }) {
@@ -134,6 +149,16 @@ export default function GamePage() {
     () => adventures.find(entry => entry.id === selectedAdventureId) || null,
     [adventures, selectedAdventureId]
   )
+  const runtimeModule = useMemo(() => isRuntimeModule(adventure), [adventure])
+  const currentSection = useMemo(() => getCurrentSection(adventure, sceneState), [adventure, sceneState])
+  const playerFacingRuntimeFrame = useMemo(
+    () => getPlayerFacingRuntimeFrame(adventure, sceneState, currentSection),
+    [adventure, sceneState, currentSection]
+  )
+  const latestAssistantText = useMemo(() => {
+    const latestAssistant = [...gameLog].reverse().find(message => message.role === 'assistant')
+    return latestAssistant?.content || ''
+  }, [gameLog])
 
   const enrichedSessions = useMemo(() => {
     return sessions.map(session => ({
@@ -177,12 +202,12 @@ export default function GamePage() {
       if (!activeSceneState) return null
       const section = getCurrentSection(activeAdventure, activeSceneState)
       if (!section) return null
-      const choices = buildAvailableChoices({
-        aiResponse: '',
+      const choices = rebuildVisibleChoices({
         section,
         sceneState: activeSceneState,
+        assistantText: '',
         combatActive: combat?.active,
-        isRuntimeModule: true,
+        runtimeModule: true,
       })
       return resolveVisibleChoiceFromText({ userText, choices })
     }
@@ -371,16 +396,13 @@ export default function GamePage() {
       // Build choices from choice engine (structured + AI + fallback)
       if (shouldBuildChoicesAfterResponse({ combatActive: combat?.active, pendingCheck: responsePendingCheck })) {
         const section = getCurrentSection(activeAdventure, updatedSceneState)
-        // Inject current item count so retry filter can detect new tools/items
-        const sceneWithItemCount = updatedSceneState
-          ? { ...updatedSceneState, _currentItemCount: activeCharacter?.inventory?.length || 0 }
-          : null
-        const choices = buildAvailableChoices({
-          aiResponse: full,
+        const choices = rebuildVisibleChoices({
           section,
-          sceneState: sceneWithItemCount,
+          sceneState: updatedSceneState,
+          assistantText: full,
           combatActive: combat?.active,
-          isRuntimeModule: isRuntimeModule(activeAdventure),
+          runtimeModule: isRuntimeModule(activeAdventure),
+          inventoryCount: activeCharacter?.inventory?.length || 0,
         })
         setDynamicChoices(choices)
       }
@@ -570,6 +592,36 @@ export default function GamePage() {
   const showContinueSelection = mode === 'continue'
   const showTranscript = !showNewSessionSetup && !showContinueSelection
 
+  useEffect(() => {
+    if (!showTranscript || !adventure || !sceneState || !currentSection || gameLog.length === 0) {
+      setDynamicChoices(prev => (prev.length ? [] : prev))
+      return
+    }
+    if (streaming || pendingCheck) return
+
+    const rebuiltChoices = rebuildVisibleChoices({
+      section: currentSection,
+      sceneState,
+      assistantText: latestAssistantText,
+      combatActive: combat?.active,
+      runtimeModule,
+      inventoryCount: character?.inventory?.length || 0,
+    })
+    setDynamicChoices(rebuiltChoices)
+  }, [
+    showTranscript,
+    adventure,
+    sceneState,
+    currentSection,
+    gameLog.length,
+    latestAssistantText,
+    streaming,
+    pendingCheck,
+    combat?.active,
+    runtimeModule,
+    character?.inventory?.length,
+  ])
+
   // Derive ambient music track from scene context + recent AI messages
   const sceneTrack = useMemo(() => {
     // Collect all context: sceneState fields + last few AI messages
@@ -577,7 +629,7 @@ export default function GamePage() {
     if (sceneState) {
       parts.push(sceneState.currentLocation || '')
       parts.push(sceneState.currentSectionTitle || '')
-      parts.push(sceneState.summary || '')
+      parts.push(playerFacingRuntimeFrame?.summary || sceneState.summary || '')
       parts.push(sceneState.lastOutcome || '')
     }
     // Recent AI messages are the most reliable source for current scene
@@ -595,7 +647,7 @@ export default function GamePage() {
     if (/wald|forest|lichtung|wiese|pfad|draußen|outdoor|hain|fluss|see|bach|ufer|berg|hügel|tal|steppe|moor|sumpf|küste|strand|garten|feld|weide|straße|landstraße|reise|wanderung|camp|lager(?!raum)/.test(text)) return 'forest'
     // Default: dungeon/indoor (caves, ruins, temples, dungeons, buildings)
     return 'dungeon'
-  }, [sceneState, gameLog])
+  }, [sceneState, playerFacingRuntimeFrame, gameLog])
 
   // Music: landing on pre-game, battle during combat, scene-aware ambient otherwise
   useEffect(() => {
@@ -971,17 +1023,17 @@ export default function GamePage() {
               {sceneState.currentLocation && (
                 <p className="font-body text-xs text-stone-600 mt-1">Ort: {sceneState.currentLocation}</p>
               )}
-              <p className="font-body text-xs text-stone-500 italic mt-1">{sceneState.summary}</p>
-              {sceneState.currentObjective && (
+              <p className="font-body text-xs text-stone-500 italic mt-1">{playerFacingRuntimeFrame?.summary || sceneState.summary}</p>
+              {(playerFacingRuntimeFrame?.currentObjective || sceneState.currentObjective) && (
                 <div className="mt-3">
                   <p className="section-subtitle mb-1">Aktuelles Ziel</p>
-                  <p className="font-body text-xs text-stone-400">{sceneState.currentObjective}</p>
+                  <p className="font-body text-xs text-stone-400">{playerFacingRuntimeFrame?.currentObjective || sceneState.currentObjective}</p>
                 </div>
               )}
-              {sceneState.activeQuest && (
+              {(playerFacingRuntimeFrame?.activeQuest || sceneState.activeQuest) && (
                 <div className="mt-3">
                   <p className="section-subtitle mb-1">Aktiver Faden</p>
-                  <p className="font-body text-xs text-stone-400">{sceneState.activeQuest}</p>
+                  <p className="font-body text-xs text-stone-400">{playerFacingRuntimeFrame?.activeQuest || sceneState.activeQuest}</p>
                 </div>
               )}
               {sceneState.lastPlayerAction && (

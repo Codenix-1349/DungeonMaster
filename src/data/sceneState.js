@@ -47,6 +47,22 @@ function mergeNotableElements(section = null, recentText = '') {
   return [...new Set([...sectionKeywords, ...recentKeywords])].slice(0, 6)
 }
 
+function getStructuredSectionPlayerObjective(structure, section, fallback = '') {
+  if (!section) return fallback || ''
+  if (isRuntimeStructure(structure)) {
+    return section.playerObjective || section.objective || fallback || ''
+  }
+  return section.objective || fallback || ''
+}
+
+function getStructuredPrimaryQuest(structure, fallback = '') {
+  if (!structure?.module) return fallback || ''
+  if (isRuntimeStructure(structure)) {
+    return structure.module.playerPrimaryObjective || structure.module.primaryObjective || fallback || ''
+  }
+  return structure.module.primaryObjective || fallback || ''
+}
+
 export function findSectionById(structure, sectionId) {
   return structure?.sections?.find(section => section.id === sectionId) || null
 }
@@ -431,8 +447,8 @@ export function createInitialSceneState(adventure) {
     currentLocation: (isStructured ? firstSection?.location : firstSection?.title) || normalizedAdventure?.title || 'Unbekannter Ort',
     relevantChunkIndexes: firstChunks,
     visitedSectionIds: firstSection ? [firstSection.id] : [],
-    currentObjective: (isStructured ? firstSection?.objective : null) || 'Die erste Szene betreten und Informationen sammeln.',
-    activeQuest: (isStructured ? structure.module?.primaryObjective : null) || firstSection?.summary || 'Das Abenteuer beginnen und die Lage erfassen.',
+    currentObjective: (isStructured ? getStructuredSectionPlayerObjective(structure, firstSection) : null) || 'Die erste Szene betreten und Informationen sammeln.',
+    activeQuest: (isStructured ? getStructuredPrimaryQuest(structure) : null) || firstSection?.summary || 'Das Abenteuer beginnen und die Lage erfassen.',
     lastPlayerAction: '',
     recentActions: [],
     recentActionKeys: [],
@@ -717,9 +733,14 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
 
   // Structured adventures: use section's objective on transition, otherwise derive from user text
   const isStructured = structure.format === 'structured'
-  const objective = (isStructured && shouldTransition && currentSection.objective)
-    ? currentSection.objective
-    : deriveObjectiveFromUserText(latestUser, isStructured ? (currentSection.objective || previous.currentObjective) : previous.currentObjective)
+  const structuredSectionObjective = isStructured
+    ? getStructuredSectionPlayerObjective(structure, currentSection, previous.currentObjective)
+    : ''
+  const objective = runtimeStructured
+    ? (structuredSectionObjective || previous.currentObjective || 'Die aktuelle Szene weiterverfolgen.')
+    : ((isStructured && shouldTransition && structuredSectionObjective)
+      ? structuredSectionObjective
+      : deriveObjectiveFromUserText(latestUser, isStructured ? (structuredSectionObjective || previous.currentObjective) : previous.currentObjective))
   const transitionReason = shouldTransition
     ? detectTransitionReason(previousSection, currentSection, latestUser, latestAssistant)
     : (previous.lastTransitionReason || 'Abschnitt bleibt stabil.')
@@ -899,7 +920,7 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
     relevantChunkIndexes: relevantChunks.map(chunk => chunk.index),
     visitedSectionIds: [...visited],
     currentObjective: objective,
-    activeQuest: truncateText(previous.activeQuest || objective || summaryBase, 160),
+    activeQuest: truncateText(previous.activeQuest || getStructuredPrimaryQuest(structure) || objective || summaryBase, 160),
     lastPlayerAction: truncateText(latestUser || previous.lastPlayerAction || '', 160),
     recentActions: buildRecentActions(previous.recentActions, latestUser, shouldTransition),
     recentActionKeys: buildRecentActionKeys(previous.recentActionKeys, fallbackUserActionKey, shouldTransition),

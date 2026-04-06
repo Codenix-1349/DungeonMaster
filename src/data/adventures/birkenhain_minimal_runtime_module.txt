@@ -7,6 +7,7 @@ MODULE_VERSION: 0.2
 SYSTEM: DND5E
 START_SECTION_ID: inn_common_room
 PRIMARY_OBJECTIVE: Finde Tomas lebend.
+PLAYER_PRIMARY_OBJECTIVE: Finde den Vermissten lebend.
 SECONDARY_OBJECTIVE: Erfahre den Ursprung des Kellerfluchs.
 TONE: Dorfmysterium, feuchter Kellerhorror, Versuchung durch Reichtum
 
@@ -122,6 +123,8 @@ SECTIONS:
   - id: inn_common_room
     location: Gastraum des Gasthauses Zur Grauen Birke
     objective: Sprich mit Mara und erfahre was mit Tomas geschehen ist.
+    playerObjective: Sprich mit Mara und finde heraus, was geschehen ist.
+    introText: Der Gastraum ist warm vom Kaminfeuer. Regen trommelt gegen die Fensterlaeden, waehrend Mara Birken hinter der Theke ein Glas abwischt. Die Tuer zum Hinterflur steht einen Spalt offen und laesst Kraeutergeruch herein.
     visibleFeatures:
       - Kaminfeuer
       - regengeschlagene Fensterlaeden
@@ -136,7 +139,7 @@ SECTIONS:
         requiresFlags: [HAS_CELLAR_KEY]
     interactions:
       - id: ask_mara_about_tomas
-        label: Mara ruhig nach Tomas fragen
+        label: Mara ruhig nach dem Vermissten fragen
         kind: talk
         target: mara
         checkPolicy: none
@@ -160,6 +163,8 @@ SECTIONS:
   - id: rear_hall_cellar_door
     location: Hinterflur vor der Kellertuer
     objective: Oeffne den Keller und untersuche die Spuren.
+    playerObjective: Oeffne den Keller und untersuche die Spuren.
+    introText: Der enge Hinterflur riecht nach feuchtem Stein und kalter Asche. Vor dir wartet eine schwere Kellertuer mit verrostetem Schloss, und Kratzspuren ziehen sich ueber den Boden.
     visibleFeatures:
       - feuchte Steinwaende
       - schwere eisenbeschlagene Kellertuer
@@ -209,6 +214,8 @@ SECTIONS:
   - id: old_brewery
     location: Verlassener Braukeller
     objective: Folge Tomas' Spur und untersuche den gestoerten Bereich.
+    playerObjective: Folge der frischen Spur und untersuche den gestoerten Bereich.
+    introText: Zwischen verrotteten Faessern und zerbrochenen Bottichen haengt ein modriger Braugeruch in der Luft. Feuchte Kupferrohre tropfen in die Stille, und eine gestoerte Schleimspur fuehrt tiefer in den Keller.
     visibleFeatures:
       - verfaulte Faesser
       - zerbrochene Bottiche
@@ -370,6 +377,8 @@ SECTIONS:
   - id: well_chamber
     location: Runde Kammer mit dem alten Brunnen
     objective: Erfahre den Ursprung der Verderbnis.
+    playerObjective: Finde heraus, woher die Verderbnis kommt.
+    introText: Die runde Kammer wird vom schwarzen Wasser eines alten Steinbrunnens beherrscht. Eine eiserne Kurbel knarzt leise, und Kraehenschnitzereien ziehen sich ueber das feuchte Mauerwerk.
     visibleFeatures:
       - Steinbrunnen
       - eiserne Kurbel
@@ -440,6 +449,8 @@ SECTIONS:
   - id: tomas_hideout
     location: Versteckte Nische hinter umgesteurzten Faessern
     objective: Finde Tomas und bringe ihn in Bewegung.
+    playerObjective: Bringe den veraengstigten Jungen in Bewegung.
+    introText: Hinter umgestuerzten Faessern liegt eine enge Nische im Halbdunkel. Ein veraengstigter Junge kauert neben einem abgebrannten Kerzenstummel und beobachtet jede deiner Bewegungen.
     visibleFeatures:
       - eingestuerzte Faesser
       - abgebrannter Kerzenstummel
@@ -474,6 +485,8 @@ SECTIONS:
   - id: ritual_cellar
     location: Verkettete Kammer mit dem goldenen Kessel
     objective: Stelle dich der Quelle des Fluchs und waehle Eindaemmung oder Rueckzug.
+    playerObjective: Stelle dich der Quelle des Fluchs und triff eine Entscheidung.
+    introText: In der verketteten Kammer dominiert ein massiver goldener Kessel das fahle Licht. Nasse Rinnen schneiden durch den Steinboden, waehrend ein schlurfender Stammwaechter zwischen den Ketten wacht.
     visibleFeatures:
       - massiver goldener Kessel
       - drei schwere Ketten

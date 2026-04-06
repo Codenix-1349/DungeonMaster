@@ -477,7 +477,34 @@ function isRuntimeModule(text = '') {
 function validateRuntimeModuleStructure(module, sections = []) {
   const warnings = []
 
+  if (!String(module?.playerPrimaryObjective || '').trim()) {
+    warnings.push({
+      code: 'runtime-player-primary-objective-missing',
+      sectionId: null,
+      interactionId: null,
+      message: 'Runtime module should define PLAYER_PRIMARY_OBJECTIVE for player-facing quest framing.',
+    })
+  }
+
   for (const section of sections) {
+    if (!String(section.playerObjective || '').trim()) {
+      warnings.push({
+        code: 'runtime-player-objective-missing',
+        sectionId: section.id,
+        interactionId: null,
+        message: `Runtime section "${section.id || section.title || 'unknown'}" should define playerObjective for player-facing objective text.`,
+      })
+    }
+
+    if (!String(section.introText || '').trim()) {
+      warnings.push({
+        code: 'runtime-intro-text-missing',
+        sectionId: section.id,
+        interactionId: null,
+        message: `Runtime section "${section.id || section.title || 'unknown'}" should define introText for player-facing scene framing.`,
+      })
+    }
+
     for (const interaction of section.interactions || []) {
       const checkPolicy = typeof interaction.checkPolicy === 'string'
         ? interaction.checkPolicy.trim()
@@ -530,6 +557,7 @@ function parseRuntimeModule(text, title = 'Abenteuer') {
     runtimeMode: 'engine',
     startSectionId: doc.START_SECTION_ID || '',
     primaryObjective: doc.PRIMARY_OBJECTIVE || '',
+    playerPrimaryObjective: doc.PLAYER_PRIMARY_OBJECTIVE || '',
     secondaryObjective: doc.SECONDARY_OBJECTIVE || '',
     tone: doc.TONE || '',
     globalRules: doc.RUNTIME_RULES || [],
@@ -578,12 +606,14 @@ function parseRuntimeModule(text, title = 'Abenteuer') {
 
     const setsOnEntry = sec.onEntry?.setFlags || sec.setsOnEntry || []
 
-    const allText = `${titleStr} ${location} ${sec.objective || ''} ${(sec.visibleFeatures || []).join(' ')} ${npcs.join(' ')}`
+    const allText = `${titleStr} ${location} ${sec.objective || ''} ${sec.playerObjective || ''} ${sec.introText || ''} ${(sec.visibleFeatures || []).join(' ')} ${npcs.join(' ')}`
+    const playerFacingSummarySource = sec.introText || sec.playerObjective || sec.objective || titleStr
 
     return {
       id, index: i, title: titleStr, location,
       type: sec.type || '',
       objective: sec.objective || '',
+      playerObjective: sec.playerObjective || '',
       requiresFlags: sec.requiresFlags || [],
       blocksIfFlags: sec.blocksIfFlags || [],
       setsOnEntry,
@@ -598,8 +628,9 @@ function parseRuntimeModule(text, title = 'Abenteuer') {
       openThreads: sec.openThreads || [],
       clues: sec.clues || [],
       suggestedActions: sec.suggestedActions || [],
+      introText: sec.introText || '',
       sceneText: sec.sceneText || '',
-      summary: sec.objective || firstSentences(titleStr, 220),
+      summary: firstSentences(playerFacingSummarySource, 220),
       keywords: extractKeywords(allText, 10),
       searchText: allText.toLowerCase(),
       chunkIndexes: [i],
