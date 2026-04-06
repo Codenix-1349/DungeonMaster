@@ -10,7 +10,7 @@
 //
 // The UI consumes only normalized Choice objects — never raw AI text.
 
-import { getAllowedRuntimeInteractions } from '../data/runtimeModule'
+import { getAllowedRuntimeInteractions, getAllowedSectionExits } from '../data/runtimeModule'
 
 // ─── Choice Schema ──────────────────────────────────────────────────────────
 // {
@@ -157,12 +157,9 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
   const recentActionKeys = sceneState?.recentActionKeys || []
 
   // Exits — navigation options (flag-gated, deprioritize recently used)
-  const exitFlags = sceneState?.gmState?.plotFlags || {}
-  const exits = section.exits || []
+  const exits = getAllowedSectionExits(section, sceneState)
   for (let i = 0; i < exits.length; i++) {
     const exit = exits[i]
-    if (!exit.label) continue
-    if (exit.requiresFlags?.length && !exit.requiresFlags.every(f => exitFlags[f])) continue
     const actionKey = `exit:${normalizeActionKeyPart(exit.id || exit.targetId || exit.label)}`
     const recent = wasRecentlyActedOn(exit.label, null, recentActions, actionKey, recentActionKeys)
     choices.push({
