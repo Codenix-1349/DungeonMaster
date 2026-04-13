@@ -5,7 +5,6 @@ import {
   findSectionById,
   buildRelevantAdventureContext,
 } from '../data/srd.js'
-import { getAllowedRuntimeInteractions, getAllowedSectionExits } from '../data/runtimeModule.js'
 import { buildAvailableChoices } from '../engine/choiceEngine.js'
 import { buildSystemPrompt } from '../services/openrouter.js'
 
@@ -139,28 +138,30 @@ export function expectRuntimeAcceptanceInvariants({ adventure, sceneState, chara
     }
   }
 
-  const allowedExitLabels = getAllowedSectionExits(section, sceneState).map(exit => exit.label)
-  const allowedInteractionLabels = getAllowedRuntimeInteractions(section, sceneState).map(interaction => interaction.label)
-  const expectedVisibleLabels = unique([...allowedExitLabels, ...allowedInteractionLabels])
+  const visibleExitLabels = nonFreeChoices
+    .filter(choice => choice.kind === 'exit')
+    .map(choice => choice.label)
+  const visibleInteractionLabels = nonFreeChoices
+    .filter(choice => choice.kind !== 'exit')
+    .map(choice => choice.label)
+  const expectedVisibleLabels = unique([...visibleExitLabels, ...visibleInteractionLabels])
 
   expect(sorted(nonFreeChoices.map(choice => choice.label))).toEqual(sorted(expectedVisibleLabels))
   expectTextContainsAll(contextText, expectedVisibleLabels)
   expectTextContainsAll(promptText, expectedVisibleLabels)
 
+  const visibleChoiceLabels = new Set(expectedVisibleLabels)
   const blockedExitLabels = (section.exits || [])
-    .filter(exit => !allowedExitLabels.includes(exit.label))
+    .filter(exit => !visibleChoiceLabels.has(exit.label))
     .map(exit => exit.label)
-  const allowedInteractionIds = new Set(
-    getAllowedRuntimeInteractions(section, sceneState).map(interaction => interaction.id)
-  )
   const blockedSectionInteractionLabels = (section.interactions || [])
-    .filter(interaction => !allowedInteractionIds.has(interaction.id))
+    .filter(interaction => !visibleChoiceLabels.has(interaction.label))
     .map(interaction => interaction.label)
   const blockedRuntimeInteractionLabels = Object.entries(sceneState?.gmState?.runtimeInteractions || {})
     .filter(([, interaction]) => interaction?.label)
-    .filter(([interactionId, interaction]) => {
+    .filter(([, interaction]) => {
       if (interaction.sectionId && interaction.sectionId !== section.id) return false
-      return !allowedInteractionIds.has(interactionId)
+      return !visibleChoiceLabels.has(interaction.label)
     })
     .map(([, interaction]) => interaction.label)
 

@@ -70,6 +70,15 @@ Reason:
 - Runtime narration alone must not invent or switch the active NPC.
 - Legacy/prose adventures may still use name-based dialogue heuristics as fallback.
 
+## Current runtime state ownership contract
+
+- `gmState` is authoritative world truth.
+- `playerKnowledge` holds only player-confirmed knowledge.
+- `dialogueState` holds only active conversation context.
+- Runtime registries stay authored definitions; they are not mutated by AI narration.
+- In runtime modules, assistant narration must not promote NPC or object state into `gmState`.
+- In runtime modules, assistant narration must not create NPC/object state hints that masquerade as runtime truth.
+
 ## Current player-facing runtime contract
 
 - Runtime modules may separate internal truth from player-facing framing.

@@ -1,6 +1,7 @@
-import { describe, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { applyInteractionSuccess, createInitialSceneState, findInteractionDef, resolveInteractionOutcome } from '../data/srd.js'
 import {
+  collectRuntimeSurfaces,
   expectRuntimeAcceptanceInvariants,
   loadRuntimeModuleFixture,
 } from './runtimeAcceptanceHarness.js'
@@ -114,6 +115,64 @@ describe('runtime acceptance invariants', () => {
       expectRuntimeAcceptanceInvariants({
         adventure,
         sceneState: afterRead,
+      })
+    })
+
+    it('keeps retry suppression and tool-based reopening aligned across choices, context, and prompt', () => {
+      const galleryState = makeSectionState(adventure, 'collapsed_gallery')
+      const afterInspectRack = applyInteractionSuccess(
+        galleryState,
+        findInteractionDef(structure, 'inspect_maintenance_rack'),
+        structure.module
+      )
+      const crossCatwalk = findInteractionDef(structure, 'cross_broken_catwalk')
+      const failedOutcome = resolveInteractionOutcome(
+        afterInspectRack,
+        crossCatwalk,
+        structure.module,
+        'failure'
+      ).sceneState
+
+      const failedState = {
+        ...failedOutcome,
+        interactionHistory: [{
+          id: 'fail-catwalk',
+          sectionId: 'collapsed_gallery',
+          targetId: 'catwalk',
+          skill: 'athletics',
+          outcome: 'failure',
+          turn: failedOutcome.turnCount || 0,
+          label: crossCatwalk.label,
+          kind: 'move',
+          contextSnapshot: {
+            clueCount: failedOutcome.playerKnowledge?.discoveredClues?.length || 0,
+            npcCount: failedOutcome.playerKnowledge?.knownNpcs?.length || 0,
+            itemCount: 0,
+          },
+        }],
+        _currentItemCount: 0,
+      }
+
+      expect(collectRuntimeSurfaces(adventure, failedState).choiceLabels).not.toContain(crossCatwalk.label)
+      expectRuntimeAcceptanceInvariants({
+        adventure,
+        sceneState: failedState,
+      })
+
+      const reopenedState = {
+        ...resolveInteractionOutcome(
+          failedState,
+          findInteractionDef(structure, 'take_grappling_hook'),
+          structure.module,
+          'success'
+        ).sceneState,
+        _currentItemCount: 1,
+      }
+
+      expect(collectRuntimeSurfaces(adventure, reopenedState).choiceLabels).toContain(crossCatwalk.label)
+      expectRuntimeAcceptanceInvariants({
+        adventure,
+        sceneState: reopenedState,
       })
     })
 

@@ -62,6 +62,13 @@ They should not define the architecture.
 - `actionKey` must carry that stable identity through retries, remounts, and follow-up handling.
 - `aliases` may help free text resolve to an existing authored interaction, but must not create new behavior.
 
+### State ownership rule
+- `gmState` is authoritative world truth only.
+- `playerKnowledge` contains only player-confirmed knowledge.
+- `dialogueState` contains only active conversation context.
+- Runtime registries stay authored definitions, not mutable AI-owned state.
+- Assistant narration must not promote NPC/object state into runtime `gmState` or inferred runtime hints.
+
 ## Resume checklist after an interruption
 
 1. `cd C:\Apps\DungeonsDaggers\DungeonMaster`

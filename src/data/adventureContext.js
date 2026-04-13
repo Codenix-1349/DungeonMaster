@@ -1,8 +1,33 @@
 import { normalizeAdventureEntry, truncateText, tokenizeText } from './adventureParser'
 import { findSectionById, selectRelevantChunks, deriveSceneState, SCENE_STATE_VERSION } from './sceneState'
-import { getAllowedRuntimeInteractions, getAllowedSectionExits, getVisibleRuntimeNpcs, isRuntimeStructure } from './runtimeModule'
+import { getAllowedSectionExits, getVisibleRuntimeNpcs, isRuntimeStructure } from './runtimeModule'
+import { buildAvailableChoices } from '../engine/choiceEngine'
 
 // ─── Structured adventure: compact AI context builder ────────────────────────
+
+function collectVisibleRuntimeChoiceLabels(section, sceneState) {
+  const choices = buildAvailableChoices({
+    aiResponse: '',
+    section,
+    sceneState,
+    isRuntimeModule: true,
+  })
+  const structuredChoices = choices.filter(choice => choice.source === 'structured' && choice.kind !== 'free')
+
+  return {
+    exitLabels: structuredChoices
+      .filter(choice => choice.kind === 'exit')
+      .map(choice => choice.label),
+    interactionLabels: structuredChoices
+      .filter(choice => choice.kind !== 'exit')
+      .map(choice => choice.label),
+  }
+}
+
+function getAllowedRuntimeInteractions(section, sceneState) {
+  return collectVisibleRuntimeChoiceLabels(section, sceneState).interactionLabels
+    .map(label => ({ label }))
+}
 
 function buildStructuredAdventureContext(structure, sceneState) {
   const section = findSectionById(structure, sceneState?.gmState?.currentSectionId) || structure.sections[0]
