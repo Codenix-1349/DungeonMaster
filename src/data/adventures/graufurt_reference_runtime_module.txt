@@ -146,6 +146,7 @@ SECTIONS:
     interactions:
       - id: ask_elsa_about_lockdown
         label: Elsa nach der Sperrung fragen
+        aliases: [rede mit Elsa, sprich mit Elsa, was ist hier passiert]
         kind: talk
         target: elsa
         checkPolicy: none
@@ -163,6 +164,7 @@ SECTIONS:
 
       - id: ask_leno_about_mira
         label: Leno nach Mira fragen
+        aliases: [rede mit Leno, sprich mit Leno, frag Leno]
         kind: talk
         target: leno
         checkPolicy: none
@@ -217,6 +219,7 @@ SECTIONS:
     interactions:
       - id: inspect_clerk_desk
         label: Das Schreiberpult nach Spuren durchsuchen
+        aliases: [Schreibtisch untersuchen, Pult durchsuchen, Schreibtisch inspizieren]
         kind: inspect
         target: clerk_desk
         availability:
@@ -327,6 +330,7 @@ SECTIONS:
     interactions:
       - id: cross_broken_catwalk
         label: Die gebrochene Galerie ueberqueren
+        aliases: [rueber klettern, Galerie ueberqueren, hinueber balancieren]
         kind: move
         target: catwalk
         availability:
@@ -412,6 +416,7 @@ SECTIONS:
     interactions:
       - id: calm_mira
         label: Mira vorsichtig beruhigen
+        aliases: [mit Mira reden, Mira ansprechen, Mira beruhigen]
         kind: talk
         target: mira
         availability:

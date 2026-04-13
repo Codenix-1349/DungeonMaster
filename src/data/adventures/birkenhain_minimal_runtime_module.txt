@@ -140,6 +140,7 @@ SECTIONS:
     interactions:
       - id: ask_mara_about_tomas
         label: Mara ruhig nach dem Vermissten fragen
+        aliases: [mit Mara reden, sprich mit Mara, frag Mara, Mara ansprechen]
         kind: talk
         target: mara
         checkPolicy: none
@@ -181,6 +182,7 @@ SECTIONS:
     interactions:
       - id: inspect_lock
         label: Das Schloss und die Kratzspuren untersuchen
+        aliases: [Schloss untersuchen, Tuer inspizieren, Kratzspuren ansehen]
         kind: inspect
         target: cellar_door
         availability:
@@ -238,6 +240,7 @@ SECTIONS:
     interactions:
       - id: inspect_counter
         label: Den beschaedigten Tresen untersuchen
+        aliases: [Tresen anschauen, Theke untersuchen, Tresen inspizieren]
         kind: inspect
         target: counter
         availability:
@@ -467,6 +470,7 @@ SECTIONS:
     interactions:
       - id: calm_tomas
         label: Tomas beruhigen und mitnehmen
+        aliases: [mit Tomas reden, Tomas ansprechen, Tomas beruhigen]
         kind: talk
         target: tomas
         checkPolicy: none

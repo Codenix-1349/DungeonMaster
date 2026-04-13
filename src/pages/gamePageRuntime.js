@@ -156,8 +156,37 @@ const RUNTIME_MATCH_STOPWORDS = new Set([
   'ein', 'eine', 'einen', 'einem', 'einer',
   'und', 'oder', 'mit', 'ohne', 'zu', 'zum', 'zur',
   'im', 'in', 'am', 'an', 'auf', 'aus', 'von', 'vom',
-  'bitte', 'mal', 'doch', 'nur',
+  'bitte', 'mal', 'doch', 'nur', 'will', 'moecht', 'wuerd',
 ])
+
+// Verb synonym groups — stems in the same group are treated as equivalent during matching.
+const VERB_SYNONYM_GROUPS = [
+  ['untersuch', 'inspizier', 'pruef', 'schau', 'betracht', 'anschau', 'ansehen', 'durchsuch'],
+  ['sprich', 'red', 'frag', 'unterhal', 'befrag', 'ansprech'],
+  ['oeffn', 'aufmach', 'aufzieh', 'aufbrech'],
+  ['nimm', 'greif', 'aufheb', 'einsteck', 'mitnehm'],
+  ['kletter', 'erklimm', 'hinauf', 'hochklett'],
+  ['ueberzeug', 'beruhig', 'ueberred', 'besaenftig', 'zureden'],
+  ['schleich', 'versteck', 'heimlich', 'anschleich', 'leise'],
+]
+
+// Pre-build a stem → group-index lookup for O(1) synonym checks.
+const _synonymLookup = new Map()
+for (let gi = 0; gi < VERB_SYNONYM_GROUPS.length; gi++) {
+  for (const stem of VERB_SYNONYM_GROUPS[gi]) _synonymLookup.set(stem, gi)
+}
+
+function areSynonymStems(a, b) {
+  if (!a || !b) return false
+  const gA = _synonymLookup.get(a)
+  if (gA == null) return false
+  const gB = _synonymLookup.get(b)
+  return gA === gB
+}
+
+function findSynonymGroup(stem) {
+  return _synonymLookup.get(stem) ?? null
+}
 
 function normalizeRuntimeChoiceText(text = '') {
   return String(text)
@@ -200,12 +229,37 @@ function runtimeTokensMatch(a = '', b = '') {
   if (a === b) return true
   const shorter = a.length <= b.length ? a : b
   const longer = a.length <= b.length ? b : a
-  return shorter.length >= 4 && longer.startsWith(shorter)
+  if (shorter.length >= 4 && longer.startsWith(shorter)) return true
+  // Check verb synonym groups — e.g. "schau" matches "untersuch"
+  if (areSynonymStems(a, b)) return true
+  // Check prefix overlap with synonym stems
+  const gA = findSynonymGroup(a)
+  const gB = findSynonymGroup(b)
+  if (gA != null && gB == null) {
+    return VERB_SYNONYM_GROUPS[gA].some(syn => syn.length >= 4 && (b.startsWith(syn) || syn.startsWith(b)))
+  }
+  if (gB != null && gA == null) {
+    return VERB_SYNONYM_GROUPS[gB].some(syn => syn.length >= 4 && (a.startsWith(syn) || syn.startsWith(a)))
+  }
+  return false
 }
 
 function getChoiceResolutionTexts(choice = {}) {
   const texts = [choice.label, ...(Array.isArray(choice.aliases) ? choice.aliases : [])]
   return texts.map(text => String(text || '').trim()).filter(Boolean)
+}
+
+// Target-based fallback: match input against choice target names + action verbs.
+// "untersuche Schreibtisch" → finds interaction with target label containing "Schreibtisch".
+function scoreTargetMatch(choice, inputTokens) {
+  if (!choice.target) return 0
+  const targetTokens = tokenizeRuntimeChoiceText(choice.label)
+  // At least one input token must match a target-related token in the label
+  const targetHit = inputTokens.some(it => targetTokens.some(tt => runtimeTokensMatch(it, tt)))
+  if (!targetHit) return 0
+  // At least one input token should be an action verb (synonym-aware)
+  const hasVerb = inputTokens.some(it => findSynonymGroup(it) != null)
+  return hasVerb ? 400 : 300
 }
 
 export function resolveVisibleChoiceFromText({ userText = '', choices = [] } = {}) {
@@ -251,6 +305,14 @@ export function resolveVisibleChoiceFromText({ userText = '', choices = [] } = {
         if (score == null) continue
         if (!best || score > best.score) {
           best = { choice, score, exact: false }
+        }
+      }
+
+      // Target-based fallback when label matching didn't produce a strong hit
+      if (!best || best.score < 500) {
+        const targetScore = scoreTargetMatch(choice, inputTokens)
+        if (targetScore > 0 && (!best || targetScore > best.score)) {
+          best = { choice, score: targetScore, exact: false }
         }
       }
 

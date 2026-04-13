@@ -9,6 +9,7 @@ const LEGACY_MODEL_ID_MAP = {
   'google/gemini-2.5-pro-preview': 'google/gemini-2.5-pro',
   'anthropic/claude-sonnet-4-5': 'anthropic/claude-sonnet-4.5',
   'anthropic/claude-opus-4-5': 'anthropic/claude-opus-4.5',
+  'stepfun/step-3.5-flash:free': 'openrouter/free',
 }
 
 export const AVAILABLE_MODELS = [
@@ -30,16 +31,6 @@ export const AVAILABLE_MODELS = [
     category: 'free',
     description:
       'Solides Gratis-Modell für erste Tests. Kann aber bei längeren Szenen, sauberer Logik und natürlichem Deutsch deutlich schwanken.',
-    fallbackPricing: { prompt: '$0/M', completion: '$0/M' },
-  },
-  {
-    id: 'stepfun/step-3.5-flash:free',
-    name: 'Step 3.5 Flash (Free)',
-    badge: 'Kostenlos',
-    isPaid: false,
-    category: 'free',
-    description:
-      'Kostenlose Alternative mit ordentlicher Geschwindigkeit. Für Experimente gut, aber nicht immer stabil bei Atmosphäre, Stil und konsistentem Abenteueraufbau.',
     fallbackPricing: { prompt: '$0/M', completion: '$0/M' },
   },
   {
