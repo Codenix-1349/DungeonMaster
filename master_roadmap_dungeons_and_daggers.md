@@ -1,6 +1,6 @@
 # Dungeons & Daggers – Master-Roadmap
 
-Last updated: 2026-04-13
+Last updated: 2026-04-13 (v2)
 
 ## Zweck dieser Datei
 
@@ -19,8 +19,17 @@ Die operative Ausführung für den aktuellen Schwerpunkt liegt in:
 
 ## Leitprinzip
 
+**Zuerst eine stabile App bauen, dann exakt darauf zugeschnittene Abenteuer.**
+Nicht umgekehrt. Abenteuer werden auf die fertige Engine-Logik zugeschnitten — die App wird nicht um Abenteuer-Inhalte herumgebaut.
+
 **Engine kontrolliert die Spielwahrheit.**
 Die KI liefert Sprache, Atmosphäre, Dialog und natürliche Formulierung.
+
+Kanonische Wahrheit kommt aus genau zwei Quellen:
+1. **Die App (Engine)** — Proben, Kampf, Inventar, State, Transitions, Choices
+2. **Das Abenteuer (authored module)** — NPCs, Clues, Szenen, Flags, Reveals
+
+Die KI ist **keine Wahrheitsquelle**. Sie erzählt, beschreibt, formuliert — aber generiert keine kanonischen Fakten.
 
 ### Harte Entscheidungsregel
 Jede Änderung bleibt nur im Plan, wenn sie mindestens eines davon klar verbessert:
@@ -42,7 +51,8 @@ Ziel ist ein stabiles, spoilerarmes, tokeneffizientes AI-Dungeon-Master-System m
 - keine KI-generierte Wahrheit
 - konsistente NPC-, Clue-, Objekt- und Plot-Zustände
 - engine-first Choice-, Reveal- und Check-Logik
-- später: engine-seitiger Kampf, Proben, Inventar, Ressourcen und Klassenmechanik
+- engine-seitiger Kampf, Proben, Inventar, Ressourcen und Klassenmechanik
+- später: Authoring-Tools für maßgeschneiderte Abenteuer
 
 ---
 
@@ -80,18 +90,18 @@ Der Runtime-Kern ist bereits weit vorangekommen:
 - player-facing vs internal text
 - AI-Choices im Runtime-Modus entfernt
 - zwei Referenzabenteuer als Architekturfläche
-
-Trotzdem ist Phase 3 noch nicht vollständig abgeschlossen.
+- Intent-/Identity-Pfad gehärtet (aliases, actionKey, interactionId)
+- Player-facing Validation und Acceptance Invariants
+- State Ownership und Choice Visibility über choiceEngine
 
 ### Realistischer Status
-- Phase 3: **sehr weit, aber noch nicht final dicht**
-- Größter Restblock: **Intent-/Identity-Härtung, Validation, Acceptance Shield, Check-Flow E2E**
-- Aktuell fehlt weniger Vision als saubere Verifikation und Kanonisierung
+- Phase 3: **sehr weit, 3.1–3.3 abgeschlossen, 3.4 + 3.5 offen**
+- Größter Restblock: **Check-Flow E2E (3.4) und Doku-Kanonisierung (3.5)**
 
 ### Warum Phase 4 noch nicht starten sollte
 - Eine Backend-Zentralisierung würde dieselben offenen Runtime-Unschärfen nur verlagern.
-- Ohne stabile Interaction-Identity bleibt Prompt-Autorität indirekt fragil.
-- Ohne Acceptance Shield fehlt der belastbare Nachweis, dass die Architektur unter echten Modulen hält.
+- Ohne stabilen Check-Flow bleibt ein Kernpfad (Proben) unbewiesen.
+- Ohne kanonisierte Doku fehlt der klare Startpunkt für das nächste Team/die nächste Session.
 
 ---
 
@@ -101,7 +111,7 @@ Trotzdem ist Phase 3 noch nicht vollständig abgeschlossen.
 Structured runtime modules müssen der klare, verlässliche Kernpfad sein.
 Die KI darf nur den aktuell erlaubten Runtime-Ausschnitt sehen und beschreiben, aber keine Spielwahrheit erzeugen.
 
-## 3.1 Runtime-Identity und Intent final härten
+## 3.1 Runtime-Identity und Intent final härten ✅
 
 ### Fokus
 Freitext, Buttons und Wiederholungen sollen deterministisch auf dieselbe autorisierte Interaction-Identität laufen.
@@ -114,10 +124,10 @@ Freitext, Buttons und Wiederholungen sollen deterministisch auf dieselbe autoris
 - mehrdeutige Interaktionen bei mehreren NPCs/Objekten explizit entschärfen
 
 ### Exit-Signal
-- gleiche Absicht landet reproduzierbar auf derselben authored Interaction
-- Dedupe/Retry hängt nicht mehr primär am sichtbaren Label
+- gleiche Absicht landet reproduzierbar auf derselben authored Interaction ✅
+- Dedupe/Retry hängt nicht mehr primär am sichtbaren Label ✅
 
-## 3.2 Player-facing Validation ausbauen
+## 3.2 Player-facing Validation ausbauen ✅
 
 ### Fokus
 Spoilerhafte sichtbare Modultexte früh erkennen statt zur Laufzeit kosmetisch zu kaschieren.
@@ -130,10 +140,10 @@ Warnungen/Checks für:
 - sichtbare Runtime-Elemente ohne saubere authored Herkunft
 
 ### Exit-Signal
-- spoilrige player-facing Texte schlagen früh an
-- keine Laufzeit-Umschreibung als Scheinlösung
+- spoilrige player-facing Texte schlagen früh an ✅
+- keine Laufzeit-Umschreibung als Scheinlösung ✅
 
-## 3.3 Acceptance Shield mit den 2 Referenzabenteuern festziehen
+## 3.3 Acceptance Shield mit den 2 Referenzabenteuern festziehen ✅
 
 ### Fokus
 Die Architektur muss mit echten Modulen beweisen, dass sichtbare Optionen, Prompt-Wahrheit und Runtime-Wahrheit zusammenpassen.
@@ -153,19 +163,23 @@ Beide Module als verbindliche Akzeptanzfläche ausbauen für:
 - spoilerfreie player-facing Intros
 
 ### Exit-Signal
-- beide Module prüfen bewusst die Kernarchitektur statt nur Content
-- neue Regressionen werden früh sichtbar
+- beide Module prüfen bewusst die Kernarchitektur statt nur Content ✅
+- neue Regressionen werden früh sichtbar ✅
 
 ## 3.4 Probe-/Check-Flow end-to-end härten
 
 ### Fokus
 Authored Checks müssen im echten UI-Fluss klar, sichtbar und verlässlich funktionieren.
+**Abgrenzung zu Phase 6:** Hier geht es darum, dass authored checks überhaupt E2E funktionieren. Phase 6 vertieft das System danach (passive checks, partial success, fail forward, Klassenfeatures).
 
 ### Umsetzung
 - authored check -> pendingCheck -> SkillCheckPanel -> Roll -> Result -> Runtime-State
 - klare UI-Sichtbarkeit für checkbasierte Aktionen
 - Success/Fail-End-to-End-Tests
 - keine Runtime-Checks mehr aus Freitext-Inferenz
+
+### Bekannter Bug
+Proben feuern nicht zuverlässig — vermutlich durch Token-Optimierung oder strukturierten Kontext verursacht. Prüfen: `buildConditionalRulesBlock()` in `openrouter.js`.
 
 ### Exit-Signal
 - eine blaue Option bedeutet eindeutig authored check
@@ -189,12 +203,13 @@ Ein klarer wahrer Stand ohne widersprüchliche interne Anweisungen.
 ## Phase-3-Abschlusskriterium
 
 Phase 3 ist erst dann wirklich fertig, wenn:
-- Runtime-Truth engine-owned ist
-- Intent-/Identity-Pfad stabil genug ist
-- player-facing Leaks durch Validation früh auffallen
-- beide Referenzabenteuer die Architektur sauber beweisen
-- Check + non-check + reveal chains end-to-end funktionieren
-- Prompt, Choice-Layer und UI aus derselben autoritativen Runtime-Wahrheit ziehen
+- Runtime-Truth engine-owned ist ✅
+- Intent-/Identity-Pfad stabil genug ist ✅
+- player-facing Leaks durch Validation früh auffallen ✅
+- beide Referenzabenteuer die Architektur sauber beweisen ✅
+- Check + non-check + reveal chains end-to-end funktionieren ❌ (3.4)
+- Prompt, Choice-Layer und UI aus derselben autoritativen Runtime-Wahrheit ziehen ✅
+- Doku kanonisiert und widerspruchsfrei ❌ (3.5)
 
 Erst dann beginnt Phase 4.
 
@@ -221,6 +236,7 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 ### 4.4 Streaming bis zur UX durchziehen
 - echte Delta-Ausgabe
 - keine nur technische Streaming-Existenz
+- Hinweis: gehört thematisch eher zur UX, wird aber hier erledigt weil beim Backend-Umbau Streaming ohnehin angefasst werden muss
 
 ### Done
 - Promptlogik zentralisiert
@@ -236,22 +252,33 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 ### Ziel
 Kampf darf nicht halb narrativ, halb mechanisch bleiben. Engine entscheidet, KI beschreibt.
 
-### Schwerpunkt
-- Condition Engine einführen
+### 5.1 Encounter-Autorität und Kampfablauf
+- Encounter-Start/-Ende engine-gesteuert, nicht KI-initiiert
+- Initiative, Rundenstruktur und Zugreihenfolge systemisch
+- Reward-Vergabe (XP, Loot) nur engine-seitig
+- Exit-Signal: Kampf startet und endet deterministisch, KI kann keinen Kampf erfinden oder beenden
+
+### 5.2 Condition Engine und Zustandseffekte
+- Condition Engine einführen (poisoned, stunned, prone, etc.)
 - Konzentration und Dauer systemisch tracken
-- Kernzustände systemisch modellieren
-- wichtige Zaubereffekte systemisch auflösen
-- Encounter-Autorität von der KI wegnehmen
-- Rewards nur engine-seitig vergeben
+- Kernzustände modellieren statt narrativ beschreiben
+- Exit-Signal: Zustände wirken sich mechanisch aus und verfallen regelkonform
+
+### 5.3 Zauber und Effekt-Resolution
+- Wichtige Zaubereffekte systemisch auflösen (Schaden, Heilung, Buffs, Debuffs)
+- Spell Slots engine-seitig verwalten
+- Exit-Signal: Kernzauber funktionieren mechanisch korrekt, nicht nur narrativ
 
 ### Done
 - Kampf ist merklich engine-seitig und testbar
 - KI ist Erzähler, nicht Kampfrichter
+- Conditions, Zauber und Rewards laufen über die Engine
 
 ## Phase 6 – Probensystem und Klassenfeatures vertiefen
 
 ### Ziel
 Proben weniger KI-abhängig machen und Klassen mechanisch echter abbilden.
+**Abgrenzung zu Phase 3.4:** Phase 3.4 stellt sicher, dass authored checks E2E funktionieren. Phase 6 baut darauf auf und vertieft das System.
 
 ### Schwerpunkt
 - passive Werte, partial success, fail forward, Retry-Kontrolle
@@ -266,12 +293,19 @@ Proben weniger KI-abhängig machen und Klassen mechanisch echter abbilden.
 ## Phase 7 – Inventar, Ressourcen und Exploration vertiefen
 
 ### Ziel
-Inventar und Ausrüstung sollen systemisch relevant werden.
+Das bestehende SRD-Inventarsystem (Items, Münzen, Equipment-Slots, Auto-Loot) systemisch vertiefen, damit Inventar und Ausrüstung spielmechanisch relevant werden.
 
-### Schwerpunkt
-- item IDs statt fuzzy label handling
-- Verbrauchsgüter, Munition, Questitems sauber trennen
-- Werkzeuge und Ressourcen systemisch nutzbar machen
+### Was bereits existiert
+- Strukturiertes Inventar mit item IDs (itemKey), Typen, Gewicht, Stacking
+- Münzwallet (km/sm/em/gm/pm), Equipment-Slots, Tragkapazitätsbalken
+- SRD-Itemkatalog (~150 Items), Loot-Tabellen, Auto-Loot nach Kampf
+- AC-Berechnung aus ausgerüsteter Rüstung/Schild
+
+### Schwerpunkt (Vertiefung)
+- Verbrauchsgüter und Munition mechanisch nutzbar machen (nicht nur Zähler)
+- Quest-Items sauber von normalem Inventar trennen
+- Werkzeuge und Ressourcen in Proben/Exploration systemisch einbinden
+- Encumbrance-Enforcement (aktuell nur visuell, nicht blockierend)
 - finaler Besitz nur über Engine
 
 ### Done
@@ -293,16 +327,32 @@ Geringere Kosten, stabilere Langzeitsessions, weniger Kontextmüll.
 - Kontext ist kontrollierbarer
 - Langzeitsessions bleiben stabiler
 
+## Phase 9 – Abenteuer-Authoring
+
+### Ziel
+Effiziente Erstellung maßgeschneiderter Abenteuer für die fertige Engine.
+
+### Schwerpunkt
+- Authoring-Format und Validierung für Runtime-Module
+- Editor oder Tooling zur Abenteuer-Erstellung
+- Modul-Validierung gegen Engine-Capabilities (nutzt das Modul nur Features die die App unterstützt?)
+- Template-System für wiederkehrende Patterns (NPC-Intro, Check-Gate, Reveal-Chain)
+
+### Done
+- Abenteuer können effizient und fehlerfrei erstellt werden
+- Module nutzen die Engine-Mechaniken voll aus
+
 ---
 
 ## Harte Priorisierung ab jetzt
 
-1. **Phase 3 sauber abschließen**
+1. **Phase 3 sauber abschließen** (3.4 + 3.5)
 2. **Phase 4** – Backend-/Prompt-Autorität
-3. **Phase 5** – Kampfsystem
+3. **Phase 5** – Kampfsystem (3 Sub-Phasen)
 4. **Phase 6** – Proben + Klassenfeatures
-5. **Phase 7** – Inventar/Ressourcen
+5. **Phase 7** – Inventar/Ressourcen vertiefen
 6. **Phase 8** – Token-/Qualitätsnetz
+7. **Phase 9** – Abenteuer-Authoring
 
 ---
 
@@ -313,6 +363,7 @@ Geringere Kosten, stabilere Langzeitsessions, weniger Kontextmüll.
 - kein Kampfsystem auf halbweicher Truth-Firewall
 - keine Heuristikmagie, um schlechte Moduldaten zu kaschieren
 - keine Feature-Orgie ohne klaren Beitrag zum Endziel
+- keine Abenteuer-Produktion vor stabiler Engine-Mechanik
 
 ---
 
@@ -322,10 +373,11 @@ Die richtige Reihenfolge bleibt:
 
 **Phase 3 sauber dicht machen**
 → **Phase 4 Autorität zentralisieren**
-→ **Phase 5 Kampf engine-seitig**
+→ **Phase 5 Kampf engine-seitig** (Encounter → Conditions → Zauber)
 → **Phase 6 Proben + Klassen**
-→ **Phase 7 Inventar + Ressourcen**
+→ **Phase 7 Inventar + Ressourcen vertiefen**
 → **Phase 8 Token + Qualitätsnetz**
+→ **Phase 9 Abenteuer-Authoring**
 
 Das ist die Roadmap, die am saubersten auf das Endziel einzahlt:
-**ein stabiles, spoilerarmes, tokeneffizientes AI-Dungeon-Master-System mit app-gesteuerter Wahrheit.**
+**ein stabiles, spoilerarmes, tokeneffizientes AI-Dungeon-Master-System mit app-gesteuerter Wahrheit — und darauf zugeschnittenen Abenteuern.**
