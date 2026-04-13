@@ -95,12 +95,11 @@ Der Runtime-Kern ist bereits weit vorangekommen:
 - State Ownership und Choice Visibility über choiceEngine
 
 ### Realistischer Status
-- Phase 3: **sehr weit, 3.1–3.3 abgeschlossen, 3.4 + 3.5 offen**
-- Größter Restblock: **Check-Flow E2E (3.4) und Doku-Kanonisierung (3.5)**
+- Phase 3: **sehr weit, 3.1–3.4 abgeschlossen, 3.5 offen**
+- Größter Restblock: **Doku-Kanonisierung (3.5)**
 
 ### Warum Phase 4 noch nicht starten sollte
 - Eine Backend-Zentralisierung würde dieselben offenen Runtime-Unschärfen nur verlagern.
-- Ohne stabilen Check-Flow bleibt ein Kernpfad (Proben) unbewiesen.
 - Ohne kanonisierte Doku fehlt der klare Startpunkt für das nächste Team/die nächste Session.
 
 ---
@@ -166,7 +165,7 @@ Beide Module als verbindliche Akzeptanzfläche ausbauen für:
 - beide Module prüfen bewusst die Kernarchitektur statt nur Content ✅
 - neue Regressionen werden früh sichtbar ✅
 
-## 3.4 Probe-/Check-Flow end-to-end härten
+## 3.4 Probe-/Check-Flow end-to-end härten ✅
 
 ### Fokus
 Authored Checks müssen im echten UI-Fluss klar, sichtbar und verlässlich funktionieren.
@@ -178,14 +177,17 @@ Authored Checks müssen im echten UI-Fluss klar, sichtbar und verlässlich funkt
 - Success/Fail-End-to-End-Tests
 - keine Runtime-Checks mehr aus Freitext-Inferenz
 
-### Bekannter Bug
-Proben feuern nicht zuverlässig — vermutlich durch Token-Optimierung oder strukturierten Kontext verursacht. Prüfen: `buildConditionalRulesBlock()` in `openrouter.js`.
+### Status
+- authored Check-Flow ist jetzt end-to-end verifiziert
+- authored `interaction.check` -> `pendingCheck` -> `SkillCheckPanel` -> Roll -> Runtime-State
+- Success und Failure mutieren Runtime-State autoritativ
+- Runtime-Checks werden nicht mehr aus Freitext-Inferenz oder AI-Tags gezogen
 
 ### Exit-Signal
-- eine blaue Option bedeutet eindeutig authored check
-- der Check-Flow läuft sichtbar und reproduzierbar durch
+- eine blaue Option bedeutet eindeutig authored check ✅
+- der Check-Flow läuft sichtbar und reproduzierbar durch ✅
 
-## 3.5 Doku kanonisieren
+## 3.5 Doku kanonisieren ← aktueller Fokus
 
 ### Fokus
 Ein klarer wahrer Stand ohne widersprüchliche interne Anweisungen.
@@ -194,6 +196,7 @@ Ein klarer wahrer Stand ohne widersprüchliche interne Anweisungen.
 - `docs/runtime-authority-roadmap.md` als operative Phase-3-Quelle festziehen
 - `docs/ai-next-steps.md` auf denselben Startpunkt ausrichten
 - `docs/ai-progress.md` klar als historisches Log markieren
+- `master_roadmap_dungeons_and_daggers.md` auf denselben echten Phase-3-Stand ziehen
 - veraltete Testzahlen, Branch-Hinweise und konkurrierende Priorisierungen entfernen
 
 ### Exit-Signal
@@ -207,7 +210,7 @@ Phase 3 ist erst dann wirklich fertig, wenn:
 - Intent-/Identity-Pfad stabil genug ist ✅
 - player-facing Leaks durch Validation früh auffallen ✅
 - beide Referenzabenteuer die Architektur sauber beweisen ✅
-- Check + non-check + reveal chains end-to-end funktionieren ❌ (3.4)
+- Check + non-check + reveal chains end-to-end funktionieren ✅ (3.4)
 - Prompt, Choice-Layer und UI aus derselben autoritativen Runtime-Wahrheit ziehen ✅
 - Doku kanonisiert und widerspruchsfrei ❌ (3.5)
 
@@ -346,7 +349,7 @@ Effiziente Erstellung maßgeschneiderter Abenteuer für die fertige Engine.
 
 ## Harte Priorisierung ab jetzt
 
-1. **Phase 3 sauber abschließen** (3.4 + 3.5)
+1. **Phase 3 sauber abschließen** (3.5)
 2. **Phase 4** – Backend-/Prompt-Autorität
 3. **Phase 5** – Kampfsystem (3 Sub-Phasen)
 4. **Phase 6** – Proben + Klassenfeatures
