@@ -31,12 +31,14 @@ Runtime modules must be engine-authoritative.
 
 ## Current Phase-3 focus
 
-The remaining work should stay concentrated on:
-- runtime interaction identity across buttons, typed input, retry, and remount
-- player-facing validation for spoiler-prone authored text
-- app-level acceptance invariants across Birkenhain and Graufurt
-- end-to-end authored check flow
-- doc cleanup so the runtime plan has one canonical operational source
+### Done
+- ~~runtime interaction identity across buttons, typed input, retry, and remount~~ ✅ (3.1)
+- ~~player-facing validation for spoiler-prone authored text~~ ✅ (3.2)
+- ~~app-level acceptance invariants across Birkenhain and Graufurt~~ ✅ (3.3)
+
+### Remaining
+- **end-to-end authored check flow** ← current focus (3.4)
+- **doc cleanup so the runtime plan has one canonical operational source** (3.5)
 
 ## Non-goals
 
@@ -215,9 +217,13 @@ Done criteria:
 
 ## Current next-session starting point
 
-Continue with app-level runtime acceptance invariants across Birkenhain and Graufurt.
+**Phase 3.4 — End-to-end authored check flow.**
 
-Reason:
-- The runtime architecture should now be checked through reusable app-side contracts, not adventure-specific intuition.
-- Birkenhain and Graufurt are the proof surface for those contracts, not the source of the architecture.
-- Larger real adventures should follow only after this acceptance surface feels stable.
+The authored check pipeline must work reliably:
+- authored `interaction.check` → `pendingCheck` → `SkillCheckPanel` → Roll → Runtime-State
+- blue check styling = authored runtime check, never heuristic
+- success/fail outcomes must authoritatively mutate runtime state
+
+Known bug: checks do not fire reliably. Investigate `buildConditionalRulesBlock()` in `openrouter.js`.
+
+After 3.4, finish 3.5 (this doc cleanup pass) and Phase 3 is complete.

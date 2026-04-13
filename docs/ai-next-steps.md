@@ -14,29 +14,24 @@ Use the docs in this order:
 
 Phase 3 is still the active gate.
 Do not start Phase 4 work before these are meaningfully closed:
-- runtime interaction identity across buttons, typed input, retries, and remounts
-- player-facing validation for spoiler-prone authored text
-- acceptance invariants across Birkenhain and Graufurt
-- end-to-end authored check flow
-- doc cleanup so one operational runtime source stays canonical
+
+- ~~runtime interaction identity across buttons, typed input, retries, and remounts~~ ✅ (3.1)
+- ~~player-facing validation for spoiler-prone authored text~~ ✅ (3.2)
+- ~~acceptance invariants across Birkenhain and Graufurt~~ ✅ (3.3)
+- **end-to-end authored check flow** ← current focus (3.4)
+- **doc cleanup so one operational runtime source stays canonical** (3.5)
 
 ## Current next step
 
-Continue with app-level runtime acceptance invariants across the two reference modules:
-- `src/data/adventures/graufurt_reference_runtime_module.txt`
-- `src/data/adventures/birkenhain_minimal_runtime_module.txt`
+**Phase 3.4 — Check-Flow E2E härten.**
 
-The current acceptance surface should stress:
-- two NPCs in one runtime scene
-- authored dialogue identity
-- hidden reveal chains
-- retry reopening after tool/context changes
-- check and non-check state transitions
-- backtracking and final gating
-- spoiler-safe player-facing intros
+The authored check pipeline must work reliably end-to-end:
+- authored `interaction.check` → `pendingCheck` → `SkillCheckPanel` → Roll → Runtime-State
+- blue check styling = authored runtime check, never heuristic
+- success/fail outcomes must authoritatively mutate runtime state
+- no runtime checks from free-text inference or AI tags
 
-Birkenhain and Graufurt should prove the invariants.
-They should not define the architecture.
+Known bug: checks do not fire reliably — likely caused by token optimization or structured context changes. Investigate `buildConditionalRulesBlock()` in `openrouter.js`.
 
 ## Runtime rules to preserve
 
