@@ -219,6 +219,7 @@ describe('runtime checks', () => {
       skillOrAbility: 'investigation',
       dc: 11,
       advantage: null,
+      onFail: expect.any(String),
     })
   })
 
@@ -244,6 +245,7 @@ describe('runtime checks', () => {
       skillOrAbility: 'investigation',
       dc: 11,
       advantage: null,
+      onFail: expect.any(String),
     })
     expect(rearHallChoices.find(choice => choice.interactionId === 'unlock_cellar_door')?.check).toBeNull()
 
@@ -276,6 +278,7 @@ describe('runtime checks', () => {
       skillOrAbility: 'investigation',
       dc: 12,
       advantage: null,
+      onFail: expect.any(String),
     })
     expect(breweryChoices.find(choice => choice.interactionId === 'inspect_hidden_plate')?.check).toBeNull()
     expect(breweryChoices.find(choice => choice.interactionId === 'open_hidden_plate')?.check).toBeNull()

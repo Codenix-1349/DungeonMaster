@@ -8,9 +8,10 @@ import CombatTracker from '../components/CombatTracker'
 import SkillCheckPanel from '../components/SkillCheckPanel'
 import MessageBubble, { TypingIndicator } from '../components/game/MessageBubble'
 import SessionCard from '../components/game/SessionCard'
-import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById, resolveReveals, applyReveals, findInteractionDef, resolveInteractionOutcome } from '../data/srd'
+import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById, findInteractionDef, resolveInteractionOutcome } from '../data/srd'
 import { isRuntimeStructure } from '../data/runtimeModule'
 import {
+  applyPendingCheckResult,
   createPendingCheckFromChoice,
   createPendingChoiceMeta,
   formatAssistantTextForDisplay,
@@ -445,51 +446,17 @@ export default function GamePage() {
     setPendingCheck(null)
     setDynamicChoices([])
 
-    let nextSceneState = sceneState
-    let inventoryAdds = []
-
-    // Record failed interaction in sceneState (authoritative check flow)
-    if (!result.success && nextSceneState) {
-      const record = {
-        id: `int-${Date.now()}`,
-        sectionId: nextSceneState.gmState?.currentSectionId || null,
-        targetId: choiceMeta?.target || null,
-        interactionId: choiceMeta?.interactionId || null,
-        actionKey: choiceMeta?.actionKey || null,
-        skill: result.skillOrAbility || null,
-        outcome: 'failure',
-        turn: nextSceneState.turnCount || 0,
-        label: choiceLabel || '',
-        kind: choiceMeta?.kind || null,
-        contextSnapshot: {
-          clueCount: nextSceneState.playerKnowledge?.discoveredClues?.length || 0,
-          npcCount: nextSceneState.playerKnowledge?.knownNpcs?.length || 0,
-          itemCount: character?.inventory?.length || 0,
-        },
-      }
-      nextSceneState = {
-        ...nextSceneState,
-        interactionHistory: [...(nextSceneState?.interactionHistory || []), record].slice(-20),
-      }
-    }
-
-    if (choiceMeta?.interactionId && nextSceneState) {
-      const resolved = resolveInteraction(
-        choiceMeta.interactionId,
-        nextSceneState,
-        result.success ? 'success' : 'failure'
-      )
-      if (resolved?.sceneState) nextSceneState = resolved.sceneState
-      if (resolved?.inventoryAdds?.length) inventoryAdds = resolved.inventoryAdds
-    } else if (result.success && nextSceneState && choiceMeta?.target) {
-      const section = getCurrentSection(adventure, nextSceneState)
-      if (section) {
-        const matched = resolveReveals(section, nextSceneState, choiceMeta.target)
-        if (matched.length) {
-          nextSceneState = applyReveals(nextSceneState, matched)
-        }
-      }
-    }
+    const {
+      sceneState: nextSceneState,
+      inventoryAdds,
+      recentActionKey,
+    } = applyPendingCheckResult({
+      result,
+      choiceMeta: choiceMeta ? { ...choiceMeta, label: choiceLabel || '' } : null,
+      sceneState,
+      characterItemCount: character?.inventory?.length || 0,
+      adventure,
+    })
 
     const stateOverride = nextSceneState && nextSceneState !== sceneState
       ? nextSceneState
@@ -508,17 +475,20 @@ export default function GamePage() {
     const successLabel = result.success ? 'Erfolg' : 'Fehlschlag'
 
     const probeText = `[Probe] ${result.label}: ${rollStr} ${modStr} = ${result.total} vs SG ${result.dc} → ${successLabel}`
+    const failHint = !result.success && choiceMeta?.onFail ? ` | [Erzählhinweis: ${choiceMeta.onFail}]` : ''
     const sendOpts = {
       allowEngineCheckInference: false,
-      recentActionKey: choiceMeta?.actionKey || null,
+      // Probe follow-ups are app-driven and must not be re-resolved as a fresh visible choice.
+      skipTextChoiceResolution: true,
+      recentActionKey,
       ...(stateOverride ? { sceneStateOverride: stateOverride } : {}),
     }
     if (choiceLabel) {
-      handleSend(`${choiceLabel} | ${probeText}`, sendOpts)
+      handleSend(`${choiceLabel} | ${probeText}${failHint}`, sendOpts)
     } else {
-      handleSend(probeText, sendOpts)
+      handleSend(`${probeText}${failHint}`, sendOpts)
     }
-  }, [handleSend, sceneState, setSceneState, character, adventure, resolveInteraction, addItem])
+  }, [handleSend, sceneState, setSceneState, character, adventure, addItem])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

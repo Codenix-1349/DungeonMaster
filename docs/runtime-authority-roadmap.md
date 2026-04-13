@@ -32,13 +32,13 @@ Runtime modules must be engine-authoritative.
 ## Current Phase-3 focus
 
 ### Done
-- ~~runtime interaction identity across buttons, typed input, retry, and remount~~ ✅ (3.1)
-- ~~player-facing validation for spoiler-prone authored text~~ ✅ (3.2)
-- ~~app-level acceptance invariants across Birkenhain and Graufurt~~ ✅ (3.3)
+- [done] runtime interaction identity across buttons, typed input, retry, and remount (3.1)
+- [done] player-facing validation for spoiler-prone authored text (3.2)
+- [done] app-level acceptance invariants across Birkenhain and Graufurt (3.3)
+- [done] end-to-end authored check flow (3.4)
 
 ### Remaining
-- **end-to-end authored check flow** ← current focus (3.4)
-- **doc cleanup so the runtime plan has one canonical operational source** (3.5)
+- [current] doc cleanup so the runtime plan has one canonical operational source (3.5)
 
 ## Non-goals
 
@@ -150,6 +150,11 @@ Done criteria:
 - Success and failure both produce expected runtime state and UI state.
 - No probe-relevant runtime transition depends on AI narration.
 
+Status:
+- Done on 2026-04-13.
+- Runtime checks now stay authored end-to-end through `pendingCheck`, `SkillCheckPanel`, and the app-side result path.
+- Success and failure are covered by app-side tests and no longer depend on AI-generated runtime truth.
+
 ### C2. Decouple clue truth from narration
 - Runtime modules must discover clues via reveal rules and clue registry only.
 - Text-heuristic clue extraction remains legacy fallback only, never runtime truth.
@@ -217,13 +222,16 @@ Done criteria:
 
 ## Current next-session starting point
 
-**Phase 3.4 — End-to-end authored check flow.**
+**Phase 3.5 - Doc cleanup and canonical source alignment.**
 
-The authored check pipeline must work reliably:
-- authored `interaction.check` → `pendingCheck` → `SkillCheckPanel` → Roll → Runtime-State
-- blue check styling = authored runtime check, never heuristic
-- success/fail outcomes must authoritatively mutate runtime state
+Current task:
+- keep this file as the canonical operational source for Phase 3
+- keep `docs/ai-next-steps.md` as the short restart pointer only
+- remove stale bug notes and stale implementation references
 
-Known bug: checks do not fire reliably. Investigate `buildConditionalRulesBlock()` in `openrouter.js`.
+Phase 3.4 is complete:
+- authored `interaction.check` now reaches `pendingCheck` -> `SkillCheckPanel` -> Roll -> Runtime-State deterministically
+- blue check styling maps to authored runtime checks only
+- success/fail outcomes mutate runtime state through app logic, not AI narration
 
-After 3.4, finish 3.5 (this doc cleanup pass) and Phase 3 is complete.
+After 3.5, Phase 3 is complete.
