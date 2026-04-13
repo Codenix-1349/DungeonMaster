@@ -4,6 +4,14 @@
 
 import { describe, it, expect } from 'vitest'
 import { buildSystemPrompt } from '../services/openrouter.js'
+import { normalizeAdventureEntry } from '../data/srd.js'
+import { readFileSync } from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+const BIRKENHAIN_MODULE_TEXT = readFileSync(resolve(__dirname, '../data/adventures/birkenhain_minimal_runtime_module.txt'), 'utf-8')
 
 // ── Helpers ──
 
@@ -39,6 +47,14 @@ function makeSceneState(overrides = {}) {
     openThreads: ['Schlüssel finden'], notableElements: ['taverne'],
     ...overrides,
   }
+}
+
+function loadRuntimeAdventure() {
+  return normalizeAdventureEntry({
+    id: 'prompt-runtime-birkenhain',
+    title: 'Birkenhain Minimal',
+    text: BIRKENHAIN_MODULE_TEXT,
+  })
 }
 
 // ── Tests ──
@@ -152,5 +168,25 @@ describe('Prompt — no legacy fallback leaks', () => {
     const prompt = buildSystemPrompt(makeCharacter(), null, [], null, makeSceneState())
 
     expect(prompt).not.toContain('[object Object]')
+  })
+})
+
+describe('Prompt â€” runtime flavor-only mode', () => {
+  it('adds strict flavor-only instructions for unmatched runtime free text', () => {
+    const prompt = buildSystemPrompt(
+      makeCharacter(),
+      loadRuntimeAdventure(),
+      [{ role: 'user', content: 'Ich huepfe kurz in die Luft.' }],
+      null,
+      makeSceneState({
+        currentSectionTitle: 'Alte Brauerei',
+        currentLocation: 'Birkenhain',
+      }),
+      'runtime_flavor_only'
+    )
+
+    expect(prompt).toContain('Runtime-Freitextmodus: Flavor-only')
+    expect(prompt).toContain('KEINE kanonischen Fakten')
+    expect(prompt).toContain('keine echte Wirkung')
   })
 })

@@ -11,6 +11,24 @@ Use the docs in this order instead:
 3. `docs/ai-next-steps.md`
 4. `docs/ai-progress.md`
 
+## 2026-04-13 - Phase 4.2 Slice 2: Runtime Free-Text Intent Layer Expanded
+
+### Done - runtime free text now has more value than repeating visible button text
+
+- Runtime choice matching now recognizes stronger parameterized/entity-heavy input instead of only near-label repetition.
+- Examples like `benutze die Fackel am Brunnen` can resolve to the authored runtime interaction with the best entity overlap.
+- Unmatched runtime text is now split app-side into:
+  - flavor-only narration requests
+  - clarification for structured but non-eindeutige input
+  - blocked escalation for insults, threats, and attacks until engine-owned consequence paths exist
+- Flavor-only runtime requests are marked explicitly in the prompt path so AI narration stays non-canonical and cannot smuggle in reveals, state changes, loot, or hidden checks.
+- Proxy and direct transports both pass the runtime request mode through the same prompt-building contract.
+- Added regression coverage for:
+  - parameterized runtime intent matching
+  - flavor-only vs. clarify vs. blocked escalation classification
+  - proxy/direct prompt propagation of runtime flavor-only mode
+- Full test suite green (`190/190`) and build green after the slice.
+
 ## 2026-04-13 - Phase 3.4: Authored Check Flow Hardened
 
 ### Done - authored runtime checks now stay app-authoritative end-to-end

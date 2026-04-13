@@ -14,7 +14,7 @@ const FRAME_INTERVAL = 75  // ~13 FPS
  *   holdTime   — how long the result stays visible in ms (default 2000)
  *   onComplete — fires after holdTime expires
  */
-export default function D20Animation({ result, size = 220, holdTime = 2000, onComplete }) {
+export default function D20Animation({ result, runId = 0, size = 220, holdTime = 2000, onComplete }) {
   const [frame, setFrame] = useState(0)
   const [done, setDone] = useState(false)
   const onCompleteRef = useRef(onComplete)
@@ -26,6 +26,9 @@ export default function D20Animation({ result, size = 220, holdTime = 2000, onCo
 
   // Play through all 12 frames once, then hold
   useEffect(() => {
+    setFrame(0)
+    setDone(false)
+
     let tick = 0
     const interval = setInterval(() => {
       tick++
@@ -37,7 +40,7 @@ export default function D20Animation({ result, size = 220, holdTime = 2000, onCo
     }, FRAME_INTERVAL)
 
     return () => clearInterval(interval)
-  }, [])
+  }, [resultNum, runId])
 
   // After hold time, fire onComplete
   useEffect(() => {

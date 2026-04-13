@@ -173,6 +173,17 @@ WICHTIG: Beende JEDE Antwort außerhalb des Kampfes mit 3 bis 5 nummerierten, si
 - Schreibe NIEMALS zwei Optionen auf dieselbe Zeile. IMMER Zeilenumbruch vor jeder Nummer.`
 }
 
+function buildRuntimeRequestModeInstruction(runtimeRequestMode = null, isRuntimeModule = false) {
+  if (!isRuntimeModule || runtimeRequestMode !== 'runtime_flavor_only') return ''
+
+  return `## Runtime-Freitextmodus: Flavor-only
+- Die letzte Spieleraktion ist NUR eine freie Flavor-Handlung innerhalb der aktuellen Szene.
+- Veraendere KEINE kanonischen Fakten, Reveals, Beziehungen, Inventargegenstaende, Ortswechsel oder Quest-Zustaende.
+- Fuehre KEINE versteckten Checks, Belohnungen, Schaeden oder sonstige mechanische Konsequenzen ein.
+- Beschreibe nur die unmittelbare, harmlose Reaktion der bestehenden Szene in 1-3 Saetzen.
+- Wenn die Handlung keine echte Wirkung hat, schildere genau das knapp und in-world.`
+}
+
 function getDialogueNpcDisplayName(sceneState = null, structure = null, runtimeModule = false) {
   const activeNpcId = sceneState?.dialogueState?.activeNpcId || ''
   if (!activeNpcId) return ''
@@ -381,7 +392,7 @@ function formatCurrencyForPrompt(character) {
 /**
  * Build the system prompt
  */
-export function buildSystemPrompt(character, adventure, messages = [], combat = null, sceneState = null) {
+export function buildSystemPrompt(character, adventure, messages = [], combat = null, sceneState = null, runtimeRequestMode = null) {
   const userText = getLatestUserText(messages)
   const normalizedAdventure = normalizeAdventureEntry(adventure)
   const structure = normalizedAdventure?.structure || null
@@ -393,6 +404,7 @@ export function buildSystemPrompt(character, adventure, messages = [], combat = 
     combat,
   })
   const runtimeModule = Boolean(adventureContext.runtimeModule)
+  const runtimeRequestInstruction = buildRuntimeRequestModeInstruction(runtimeRequestMode, runtimeModule)
 
   let prompt = `Du bist die in-world-Erzählstimme von ${PROJECT_NAME} für ein Solo-Abenteuer nach ${SRD_VERSION_LABEL}.
 
@@ -426,6 +438,10 @@ ${SRD_CORE_PROMPT_RULES.trim()}
 ${rulesContext.text || 'Nutze die SRD-Grundlogik fair, simpel und konsistent.'}
 
 ${buildChoiceStyleInstruction(userText, Boolean(combat?.active), runtimeModule)}`
+
+  if (runtimeRequestInstruction) {
+    prompt += `\n\n${runtimeRequestInstruction}`
+  }
 
   const sceneContext = buildSceneStateContext(sceneState, { runtimeModule, structure })
   if (sceneContext) {

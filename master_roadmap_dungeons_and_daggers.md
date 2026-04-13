@@ -255,6 +255,27 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
   - sauber ablehnen
   - oder explizit als reine Flavor-Narration ohne State-Mutation behandeln
 
+#### Eskalationsleiter fuer Runtime-Freitext
+- Eskalation soll nicht pauschal sofort Kampf bedeuten, sondern ueber eine klare engine-gesteuerte Leiter laufen:
+  - `beleidigen` -> Disposition sinkt, Warnung oder erste Bedrohungsstufe
+  - `drohen` -> staerkere Eskalation, Gespraechsabbruch, Hilfe rufen oder Kampfbereitschaft
+  - `angreifen` -> wenn Szene/NPC Kampf erlauben: engine-gesteuerter Kampfstart, sonst authoritativer Alternativpfad wie Flucht, Wachen oder harte Ablehnung
+- Dafuer braucht die Runtime mittelfristig authored Eskalationsregeln statt freier KI-Interpretation:
+  - `escalationPolicy`, `canStartCombat`, Schwellen fuer Warnung / Feindseligkeit / Kampf
+  - zielgebundene Eskalation gegen sichtbare NPCs oder Objekte
+  - KI erzaehlt nur die bereits engine-seitig entschiedene Folge
+
+### Status
+- erledigt:
+  - Button und gematchter Freitext teilen denselben Execute-Pfad
+  - parameterisierte/entity-lastige Freitexte werden besser auf sichtbare Runtime-Aktionen gemappt
+  - nicht gematchter Runtime-Freitext wird app-seitig in Flavor-only, Klaerung oder blockierte Eskalation getrennt
+  - Flavor-only Runtime-Freitext wird im Prompt explizit als nicht-kanonisch markiert
+- offen:
+  - Eskalation nicht mehr nur blocken, sondern in echte engine-gesteuerte Konsequenzpfade ueberfuehren
+  - einfache Eskalationsleiter fuer `beleidigen` / `drohen` / `angreifen` mit authored Schwellen und optionalem Kampfstart bauen
+  - Intent-Aufloesung weiter von reinem Text-Matching auf authored Target-/Tool-/Topic-Slots ziehen
+
 ### Exit-Signal
 - Freitext hat echten Nutzwert jenseits exakter Button-Wiederholung
 - gleicher Intent fuehrt bei Button und Text zum gleichen Effekt
