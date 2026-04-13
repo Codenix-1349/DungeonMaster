@@ -234,7 +234,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
           target: intr.target || null,
           interactionId: intr.id,
           actionKey,
-          check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
+          check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null, onFail: intr.check.onFail || null } : null,
           priority: intr.source === 'runtime' ? 5 : 8 + i,
           isFallback: false,
         })
@@ -265,7 +265,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
           target: intr.target || null,
           interactionId: intr.id,
           actionKey,
-          check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
+          check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null, onFail: intr.check.onFail || null } : null,
           priority: 8 + i,
           isFallback: false,
         })
@@ -291,7 +291,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
           target: intr.target || null,
           interactionId: intrId,
           actionKey,
-          check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null } : null,
+          check: intr.check ? { skillOrAbility: intr.check.skill, dc: intr.check.dc, advantage: null, onFail: intr.check.onFail || null } : null,
           priority: 5,
           isFallback: false,
         })

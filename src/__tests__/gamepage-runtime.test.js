@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyPendingCheckResult,
   createPendingCheckFromChoice,
   createPendingChoiceMeta,
   formatAssistantTextForDisplay,
@@ -9,6 +10,23 @@ import {
   resolveRuntimeChoiceFromText,
   shouldBuildChoicesAfterResponse,
 } from '../pages/gamePageRuntime.js'
+import { createInitialSceneState, findInteractionDef, normalizeAdventureEntry } from '../data/srd.js'
+import { readFileSync } from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+const BIRKENHAIN_MODULE_TEXT = readFileSync(resolve(__dirname, '../data/adventures/birkenhain_minimal_runtime_module.txt'), 'utf-8')
+const GRAUFURT_MODULE_TEXT = readFileSync(resolve(__dirname, '../data/adventures/graufurt_reference_runtime_module.txt'), 'utf-8')
+
+function loadBirkenhainModule() {
+  return normalizeAdventureEntry({ id: 'gamepage-runtime-birkenhain', title: 'Birkenhain Minimal', text: BIRKENHAIN_MODULE_TEXT })
+}
+
+function loadGraufurtModule() {
+  return normalizeAdventureEntry({ id: 'gamepage-runtime-graufurt', title: 'Graufurt Referenz', text: GRAUFURT_MODULE_TEXT })
+}
 
 describe('GamePage runtime check flow helpers', () => {
   it('probe-based choice creates pending check metadata', () => {
@@ -25,12 +43,42 @@ describe('GamePage runtime check flow helpers', () => {
       kind: 'inspect',
       interactionId: 'inspect_counter',
       actionKey: 'intr:inspect_counter',
+      onFail: null,
     })
     expect(createPendingCheckFromChoice(choice)).toEqual({
       skillOrAbility: 'investigation',
       dc: 12,
       advantage: null,
       choiceLabel: 'Den beschädigten Tresen untersuchen',
+    })
+  })
+
+  it('stores authored failure narration in pending choice metadata without leaking it into the pending check payload', () => {
+    const choice = {
+      label: 'Das Schloss und die Kratzspuren untersuchen',
+      kind: 'inspect',
+      target: 'cellar_door',
+      interactionId: 'inspect_lock',
+      check: {
+        skillOrAbility: 'investigation',
+        dc: 11,
+        advantage: null,
+        onFail: 'Du erkennst Abnutzung am alten Schloss, aber die Kratzspuren ergeben noch kein klares Bild.',
+      },
+    }
+
+    expect(createPendingChoiceMeta(choice)).toEqual({
+      target: 'cellar_door',
+      kind: 'inspect',
+      interactionId: 'inspect_lock',
+      actionKey: 'intr:inspect_lock',
+      onFail: 'Du erkennst Abnutzung am alten Schloss, aber die Kratzspuren ergeben noch kein klares Bild.',
+    })
+    expect(createPendingCheckFromChoice(choice)).toEqual({
+      skillOrAbility: 'investigation',
+      dc: 11,
+      advantage: null,
+      choiceLabel: 'Das Schloss und die Kratzspuren untersuchen',
     })
   })
 
@@ -80,6 +128,86 @@ describe('GamePage runtime check flow helpers', () => {
     })).toBe(false)
 
     expect(shouldBuildChoicesAfterResponse({ pendingCheck: null })).toBe(true)
+  })
+
+  it('applies authored runtime success checks directly to engine state and keeps the stable action key', () => {
+    const adventure = loadBirkenhainModule()
+    const structure = adventure.structure
+    const base = createInitialSceneState(adventure)
+    const sceneState = {
+      ...base,
+      gmState: {
+        ...base.gmState,
+        currentSectionId: 'old_brewery',
+        plotFlags: { HAS_CELLAR_KEY: true, CELLAR_UNLOCKED: true },
+      },
+    }
+    const interaction = findInteractionDef(structure, 'inspect_counter')
+
+    const resolved = applyPendingCheckResult({
+      result: { success: true, skillOrAbility: 'investigation' },
+      choiceMeta: {
+        label: interaction.label,
+        kind: 'inspect',
+        target: 'counter',
+        interactionId: 'inspect_counter',
+        actionKey: 'intr:inspect_counter',
+      },
+      sceneState,
+      adventure,
+    })
+
+    expect(resolved.recentActionKey).toBe('intr:inspect_counter')
+    expect(resolved.inventoryAdds).toEqual([])
+    expect(resolved.sceneState.gmState.plotFlags.COUNTER_INSPECTED).toBe(true)
+    expect(resolved.sceneState.gmState.runtimeObjects.hidden_plate).toEqual(expect.objectContaining({
+      sectionId: 'old_brewery',
+      visible: true,
+      state: 'sealed',
+    }))
+  })
+
+  it('applies authored runtime failure checks directly to engine state and records retry history', () => {
+    const adventure = loadGraufurtModule()
+    const structure = adventure.structure
+    const base = createInitialSceneState(adventure)
+    const sceneState = {
+      ...base,
+      gmState: {
+        ...base.gmState,
+        currentSectionId: 'collapsed_gallery',
+      },
+    }
+    const interaction = findInteractionDef(structure, 'cross_broken_catwalk')
+
+    const resolved = applyPendingCheckResult({
+      result: { success: false, skillOrAbility: 'athletics' },
+      choiceMeta: {
+        label: interaction.label,
+        kind: 'move',
+        target: 'catwalk',
+        interactionId: 'cross_broken_catwalk',
+        actionKey: 'intr:cross_broken_catwalk',
+      },
+      sceneState,
+      adventure,
+      characterItemCount: 0,
+    })
+
+    expect(resolved.recentActionKey).toBeNull()
+    expect(resolved.inventoryAdds).toEqual([])
+    expect(resolved.sceneState.gmState.plotFlags.CATWALK_SLIPPED).toBe(true)
+    expect(resolved.sceneState.interactionHistory).toEqual([
+      expect.objectContaining({
+        interactionId: 'cross_broken_catwalk',
+        actionKey: 'intr:cross_broken_catwalk',
+        targetId: 'catwalk',
+        skill: 'athletics',
+        outcome: 'failure',
+        label: interaction.label,
+        kind: 'move',
+      }),
+    ])
   })
 
   it('rebuilds runtime choices from persisted section state without a new AI roundtrip', () => {

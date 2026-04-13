@@ -15,23 +15,26 @@ Use the docs in this order:
 Phase 3 is still the active gate.
 Do not start Phase 4 work before these are meaningfully closed:
 
-- ~~runtime interaction identity across buttons, typed input, retries, and remounts~~ ✅ (3.1)
-- ~~player-facing validation for spoiler-prone authored text~~ ✅ (3.2)
-- ~~acceptance invariants across Birkenhain and Graufurt~~ ✅ (3.3)
-- **end-to-end authored check flow** ← current focus (3.4)
-- **doc cleanup so one operational runtime source stays canonical** (3.5)
+- [done] runtime interaction identity across buttons, typed input, retries, and remounts (3.1)
+- [done] player-facing validation for spoiler-prone authored text (3.2)
+- [done] acceptance invariants across Birkenhain and Graufurt (3.3)
+- [done] end-to-end authored check flow (3.4)
+- [current] doc cleanup so one operational runtime source stays canonical (3.5)
 
 ## Current next step
 
-**Phase 3.4 — Check-Flow E2E härten.**
+**Phase 3.5 - Runtime doc cleanup.**
 
-The authored check pipeline must work reliably end-to-end:
-- authored `interaction.check` → `pendingCheck` → `SkillCheckPanel` → Roll → Runtime-State
-- blue check styling = authored runtime check, never heuristic
-- success/fail outcomes must authoritatively mutate runtime state
-- no runtime checks from free-text inference or AI tags
+Phase 3.4 is now verified:
+- authored `interaction.check` -> `pendingCheck` -> `SkillCheckPanel` -> Roll -> Runtime-State
+- blue check styling comes only from authored runtime checks
+- success and failure both mutate runtime state authoritatively
+- runtime checks are not inferred from free text or AI tags
 
-Known bug: checks do not fire reliably — likely caused by token optimization or structured context changes. Investigate `buildConditionalRulesBlock()` in `openrouter.js`.
+Current cleanup goal:
+- keep `docs/runtime-authority-roadmap.md` as the canonical operational Phase-3 source
+- keep `docs/ai-next-steps.md` as the short restart pointer only
+- remove stale bug notes and stale implementation references from the runtime docs
 
 ## Runtime rules to preserve
 

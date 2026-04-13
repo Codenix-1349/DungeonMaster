@@ -1,5 +1,13 @@
 import { buildAvailableChoices, getChoiceActionKey, inferCheckFromLabel } from '../engine/choiceEngine'
 import { formatProbeHinweisTags, stripCheckTags, stripProbeHintTags } from '../services/openrouter'
+import {
+  applyReveals,
+  findInteractionDef,
+  findSectionById,
+  normalizeAdventureEntry,
+  resolveInteractionOutcome,
+  resolveReveals,
+} from '../data/srd'
 
 export function createPendingChoiceMeta(choice) {
   if (!choice?.check) return null
@@ -8,14 +16,90 @@ export function createPendingChoiceMeta(choice) {
     kind: choice.kind || null,
     interactionId: choice.interactionId || null,
     actionKey: getChoiceActionKey(choice),
+    onFail: choice.check.onFail || null,
   }
 }
 
 export function createPendingCheckFromChoice(choice) {
   if (!choice?.check) return null
+  const { skillOrAbility, dc, advantage = null } = choice.check
   return {
-    ...choice.check,
+    skillOrAbility,
+    dc,
+    advantage,
     choiceLabel: choice.label,
+  }
+}
+
+export function applyPendingCheckResult({
+  result = null,
+  choiceMeta = null,
+  sceneState = null,
+  characterItemCount = 0,
+  adventure = null,
+} = {}) {
+  if (!result || !sceneState) {
+    return {
+      sceneState,
+      inventoryAdds: [],
+      recentActionKey: null,
+    }
+  }
+
+  let nextSceneState = sceneState
+  let inventoryAdds = []
+
+  if (!result.success) {
+    const record = {
+      id: `int-${Date.now()}`,
+      sectionId: nextSceneState.gmState?.currentSectionId || null,
+      targetId: choiceMeta?.target || null,
+      interactionId: choiceMeta?.interactionId || null,
+      actionKey: choiceMeta?.actionKey || null,
+      skill: result.skillOrAbility || null,
+      outcome: 'failure',
+      turn: nextSceneState.turnCount || 0,
+      label: choiceMeta?.label || '',
+      kind: choiceMeta?.kind || null,
+      contextSnapshot: {
+        clueCount: nextSceneState.playerKnowledge?.discoveredClues?.length || 0,
+        npcCount: nextSceneState.playerKnowledge?.knownNpcs?.length || 0,
+        itemCount: characterItemCount || 0,
+      },
+    }
+    nextSceneState = {
+      ...nextSceneState,
+      interactionHistory: [...(nextSceneState.interactionHistory || []), record].slice(-20),
+    }
+  }
+
+  const normalizedAdventure = normalizeAdventureEntry(adventure)
+  const structure = normalizedAdventure?.structure || null
+
+  if (choiceMeta?.interactionId && structure) {
+    const interactionDef = findInteractionDef(structure, choiceMeta.interactionId)
+    const resolved = resolveInteractionOutcome(
+      nextSceneState,
+      interactionDef,
+      structure.module,
+      result.success ? 'success' : 'failure'
+    )
+    if (resolved?.sceneState) nextSceneState = resolved.sceneState
+    if (resolved?.inventoryAdds?.length) inventoryAdds = resolved.inventoryAdds
+  } else if (result.success && choiceMeta?.target && structure) {
+    const currentSection = findSectionById(structure, nextSceneState.gmState?.currentSectionId)
+    if (currentSection) {
+      const matched = resolveReveals(currentSection, nextSceneState, choiceMeta.target)
+      if (matched.length) {
+        nextSceneState = applyReveals(nextSceneState, matched)
+      }
+    }
+  }
+
+  return {
+    sceneState: nextSceneState,
+    inventoryAdds,
+    recentActionKey: result.success ? (choiceMeta?.actionKey || null) : null,
   }
 }
 

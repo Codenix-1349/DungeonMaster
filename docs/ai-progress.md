@@ -11,6 +11,20 @@ Use the docs in this order instead:
 3. `docs/ai-next-steps.md`
 4. `docs/ai-progress.md`
 
+## 2026-04-13 - Phase 3.4: Authored Check Flow Hardened
+
+### Done - authored runtime checks now stay app-authoritative end-to-end
+
+- Runtime check follow-ups no longer re-enter the visible choice resolution path.
+- Authored onFail narration is carried in app metadata, not in the mechanical pending-check payload.
+- Extracted the check-result runtime transition logic into a pure helper so success and failure can be tested directly.
+- Added regression coverage for:
+  - pending check metadata vs. authored failure narration
+  - authored runtime check success mutating engine state
+  - authored runtime check failure mutating engine state and retry history
+- Test suite green and build green after the hardening pass.
+
+
 ## 2026-04-01 — Phase 3: Adventure Runtime Hardening (6 Deltas)
 
 ### Done — Engine-Truth over AI-Truth, 70 tests passing, build green
@@ -96,3 +110,5 @@ Extracted components:
 - `src/__tests__/choice-retry-engine.test.js`
 - `src/__tests__/combat-resolution.test.js`
 - `src/__tests__/session-persistence.test.js`
+
+
