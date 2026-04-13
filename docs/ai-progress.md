@@ -38,6 +38,20 @@ Use the docs in this order instead:
   - backend prompt assembly stripping spoofed client `system` messages
 - Full test suite green (`178/178`) and build green after the Phase-4 slice.
 
+## 2026-04-13 - Tooling: Local Ollama Provider Added For Branch Testing
+
+### Done - the app can now bypass OpenRouter limits for local testing
+
+- Added provider selection in settings: `OpenRouter` or `Ollama lokal`.
+- Ollama local uses the browser directly against `http://localhost:11434` via the OpenAI-compatible chat endpoint.
+- Settings can discover local Ollama models via `/api/tags`.
+- OpenRouter proxy flow remains intact and separate.
+- Added regression coverage for:
+  - direct Ollama chat transport
+  - Ollama model discovery
+  - Ollama connection test
+- Full test suite green (`185/185`) and build green after the provider addition.
+
 ## 2026-04-13 - Phase 4.2 Slice 1: Shared Runtime Choice Execute Path
 
 ### Done - button clicks and resolved typed choices now execute through the same app-side path

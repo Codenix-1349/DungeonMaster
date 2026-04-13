@@ -52,6 +52,10 @@ function useGameCombined() {
     // API config
     apiKey: apiConfig.apiKey,
     setApiKey: apiConfig.setApiKey,
+    aiProvider: apiConfig.aiProvider,
+    setAiProvider: apiConfig.setAiProvider,
+    ollamaBaseUrl: apiConfig.ollamaBaseUrl,
+    setOllamaBaseUrl: apiConfig.setOllamaBaseUrl,
     selectedModel: apiConfig.selectedModel,
     setSelectedModel: apiConfig.setSelectedModel,
     hasServerKey: apiConfig.hasServerKey,

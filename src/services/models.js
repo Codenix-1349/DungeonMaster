@@ -1,5 +1,7 @@
 // ─── OpenRouter Model Catalog ────────────────────────────────────────────────
 
+import { AI_PROVIDER_OLLAMA, AI_PROVIDER_OPENROUTER, normalizeAiProvider } from './aiProviders'
+
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 
 export const DEFAULT_MODEL_ID = 'openrouter/free'
@@ -117,7 +119,10 @@ export const AVAILABLE_MODELS = [
   },
 ]
 
-export function normalizeModelId(modelId) {
+export function normalizeModelId(modelId, provider = AI_PROVIDER_OPENROUTER) {
+  if (normalizeAiProvider(provider) === AI_PROVIDER_OLLAMA) {
+    return String(modelId || '').trim()
+  }
   if (!modelId) return DEFAULT_MODEL_ID
   return LEGACY_MODEL_ID_MAP[modelId] || modelId
 }
@@ -128,21 +133,36 @@ export function normalizeModelId(modelId) {
  * Call this whenever loading a model from storage or server — NOT when
  * the user actively picks a model in the UI (that has its own confirm).
  */
-export function ensureFreeUnlessExplicit(modelId) {
-  const normalized = normalizeModelId(modelId)
+export function ensureFreeUnlessExplicit(modelId, provider = AI_PROVIDER_OPENROUTER) {
+  if (normalizeAiProvider(provider) === AI_PROVIDER_OLLAMA) {
+    return String(modelId || '').trim()
+  }
+  const normalized = normalizeModelId(modelId, provider)
   const meta = AVAILABLE_MODELS.find(m => m.id === normalized)
   // Known paid model → reject, unknown model → allow (could be a new free model)
   if (meta?.isPaid) return DEFAULT_MODEL_ID
   return normalized
 }
 
-export function getModelMeta(modelId) {
-  const normalized = normalizeModelId(modelId)
+export function getModelMeta(modelId, provider = AI_PROVIDER_OPENROUTER) {
+  if (normalizeAiProvider(provider) === AI_PROVIDER_OLLAMA) {
+    const normalized = normalizeModelId(modelId, provider)
+    return {
+      id: normalized || '',
+      name: normalized || 'Lokales Ollama-Modell',
+      badge: 'Lokal',
+      isPaid: false,
+      category: 'local',
+      description: 'Lokal über Ollama. Keine OpenRouter-Allowance und kein externer Proxy nötig.',
+    }
+  }
+
+  const normalized = normalizeModelId(modelId, provider)
   return AVAILABLE_MODELS.find(model => model.id === normalized) || AVAILABLE_MODELS[0]
 }
 
-export function isPaidModel(modelId) {
-  return Boolean(getModelMeta(modelId)?.isPaid)
+export function isPaidModel(modelId, provider = AI_PROVIDER_OPENROUTER) {
+  return Boolean(getModelMeta(modelId, provider)?.isPaid)
 }
 
 export async function fetchModelCatalog(apiKey = '') {
@@ -161,8 +181,8 @@ export async function fetchModelCatalog(apiKey = '') {
   return Array.isArray(data?.data) ? data.data : []
 }
 
-export function getCatalogModel(catalog, modelId) {
-  const normalized = normalizeModelId(modelId)
+export function getCatalogModel(catalog, modelId, provider = AI_PROVIDER_OPENROUTER) {
+  const normalized = normalizeModelId(modelId, provider)
   return catalog.find(entry => entry.id === normalized) || null
 }
 
@@ -178,9 +198,13 @@ function formatPricePerMillion(rawValue) {
   return `$${pricePerMillion.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}/M`
 }
 
-export function getModelPricingDisplay(catalog, modelId) {
-  const entry = getCatalogModel(catalog, modelId)
-  const meta = getModelMeta(modelId)
+export function getModelPricingDisplay(catalog, modelId, provider = AI_PROVIDER_OPENROUTER) {
+  if (normalizeAiProvider(provider) === AI_PROVIDER_OLLAMA) {
+    return null
+  }
+
+  const entry = getCatalogModel(catalog, modelId, provider)
+  const meta = getModelMeta(modelId, provider)
 
   if (!entry?.pricing) {
     return meta?.fallbackPricing

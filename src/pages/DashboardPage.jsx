@@ -161,7 +161,7 @@ export default function DashboardPage() {
 
       <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
         {[
-          { step: '1', title: 'Einstellungen', desc: 'OpenRouter API Key eingeben und Modell wählen', route: '/settings' },
+          { step: '1', title: 'Einstellungen', desc: 'KI-Anbieter wählen und Modell konfigurieren', route: '/settings' },
           { step: '2', title: 'Abenteuer', desc: 'PDF oder TXT Abenteuer hochladen und Modulbibliothek pflegen', route: '/adventure' },
           { step: '3', title: 'Helden', desc: 'Mehrere SRD-Helden erstellen, speichern und für Sessions bereithalten', route: '/character' },
         ].map(({ step, title, desc, route }) => (
