@@ -8,15 +8,14 @@ import CombatTracker from '../components/CombatTracker'
 import SkillCheckPanel from '../components/SkillCheckPanel'
 import MessageBubble, { TypingIndicator } from '../components/game/MessageBubble'
 import SessionCard from '../components/game/SessionCard'
-import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById, findInteractionDef, resolveInteractionOutcome } from '../data/srd'
+import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById } from '../data/srd'
 import { isRuntimeStructure } from '../data/runtimeModule'
 import {
   applyPendingCheckResult,
-  createPendingCheckFromChoice,
-  createPendingChoiceMeta,
   formatAssistantTextForDisplay,
   rebuildVisibleChoices,
   resolveResponsePendingCheck,
+  resolveResolvedChoiceSubmission,
   resolveVisibleChoiceFromText,
   shouldBuildChoicesAfterResponse,
 } from './gamePageRuntime'
@@ -188,16 +187,6 @@ export default function GamePage() {
     })
   }, [gameLog])
 
-  // Resolve an interaction outcome against a specific scene state.
-  const resolveInteraction = useCallback((interactionId, baseSceneState = sceneState, outcome = 'success') => {
-    if (!interactionId || !adventure || !baseSceneState) return null
-    const normalized = normalizeAdventureEntry(adventure)
-    const structure = normalized?.structure
-    if (!structure) return null
-    const intrDef = findInteractionDef(structure, interactionId)
-    return resolveInteractionOutcome(baseSceneState, intrDef, structure.module, outcome)
-  }, [adventure, sceneState])
-
   const findVisibleTextChoice = useCallback((userText, activeAdventure = adventure, activeSceneState = sceneState) => {
     if (isRuntimeModule(activeAdventure)) {
       if (!activeSceneState) return null
@@ -215,6 +204,42 @@ export default function GamePage() {
 
     return resolveVisibleChoiceFromText({ userText, choices: dynamicChoices })
   }, [adventure, sceneState, combat?.active, dynamicChoices])
+
+  async function submitResolvedChoice(choice, options = {}) {
+    const activeAdventure = options.adventureOverride ?? adventure
+    const activeSceneState = options.sceneStateOverride ?? sceneState
+    const resolution = resolveResolvedChoiceSubmission({
+      choice,
+      sceneState: activeSceneState,
+      adventure: activeAdventure,
+    })
+
+    if (!resolution) return
+
+    if (resolution.type === 'free') {
+      inputRef.current?.focus()
+      return
+    }
+
+    if (resolution.type === 'pending_check') {
+      pendingChoiceMetaRef.current = resolution.pendingChoiceMeta
+      setPendingCheck(resolution.pendingCheck)
+      setInput('')
+      setError('')
+      return
+    }
+
+    if (resolution.sceneStateOverride) {
+      setSceneState(resolution.sceneStateOverride)
+    }
+    for (const itemName of resolution.inventoryAdds || []) addItem(itemName)
+
+    return handleSend(resolution.submitText, {
+      ...options,
+      ...(resolution.sceneStateOverride ? { sceneStateOverride: resolution.sceneStateOverride } : {}),
+      ...resolution.sendOptions,
+    })
+  }
 
   const handleSend = useCallback(async (userText, options = {}) => {
     const rawText = userText || input.trim()
@@ -238,31 +263,9 @@ export default function GamePage() {
       : null
 
     if (matchedVisibleChoice) {
-      if (matchedVisibleChoice.check) {
-        pendingChoiceMetaRef.current = createPendingChoiceMeta(matchedVisibleChoice)
-        setPendingCheck(createPendingCheckFromChoice(matchedVisibleChoice))
-        setInput('')
-        setError('')
-        return
-      }
-
-      const nextOptions = {
+      return submitResolvedChoice(matchedVisibleChoice, {
         ...options,
-        allowEngineCheckInference: false,
-        recentActionKey: matchedVisibleChoice.actionKey || null,
-        skipTextChoiceResolution: true,
-      }
-
-      if (matchedVisibleChoice.interactionId) {
-        const resolved = resolveInteraction(matchedVisibleChoice.interactionId, activeSceneState, 'success')
-        if (resolved?.sceneState) {
-          setSceneState(resolved.sceneState)
-          for (const itemName of resolved.inventoryAdds || []) addItem(itemName)
-          nextOptions.sceneStateOverride = resolved.sceneState
-        }
-      }
-
-      return handleSend(matchedVisibleChoice.label, nextOptions)
+      })
     }
 
     setInput('')
@@ -433,10 +436,9 @@ export default function GamePage() {
     awardXP,
     gameLog,
     findVisibleTextChoice,
-    resolveInteraction,
-    setSceneState,
     addItem,
     dynamicChoices,
+    submitResolvedChoice,
   ])
 
   const handleCombatAction = useCallback(text => handleSend(`[Kampfrunde] ${text}`), [handleSend])
@@ -899,31 +901,7 @@ export default function GamePage() {
                   const isDisabled = (!!pendingCheck && !isSelected) || !showTranscript || gameLog.length === 0 || streaming
                   const handleClick = () => {
                     if (pendingCheck) return
-                    if (isFree) {
-                      inputRef.current?.focus()
-                    } else if (hasProbe) {
-                      pendingChoiceMetaRef.current = createPendingChoiceMeta(choice)
-                      setPendingCheck(createPendingCheckFromChoice(choice))
-                    } else {
-                      // No-check interaction: apply success result immediately
-                      if (choice.interactionId) {
-                        const resolved = resolveInteraction(choice.interactionId, sceneState, 'success')
-                        if (resolved?.sceneState) {
-                          setSceneState(resolved.sceneState)
-                          for (const itemName of resolved.inventoryAdds || []) addItem(itemName)
-                          handleSend(choice.label, {
-                            sceneStateOverride: resolved.sceneState,
-                            allowEngineCheckInference: false,
-                            recentActionKey: choice.actionKey || null,
-                          })
-                          return
-                        }
-                      }
-                      handleSend(choice.label, {
-                        allowEngineCheckInference: false,
-                        recentActionKey: choice.actionKey || null,
-                      })
-                    }
+                    submitResolvedChoice(choice)
                   }
                   return (
                     <button

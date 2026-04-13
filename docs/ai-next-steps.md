@@ -34,7 +34,7 @@ Phase 4.1 slice 1 is now done:
 
 Current follow-up goal:
 - make runtime free text valuable beyond repeating button labels
-- unify button clicks and resolved typed input onto the same app-side execute path
+- [done] unify button clicks and resolved typed input onto the same app-side execute path
 - allow natural variants and parameterized intents like `use torch on well` or `ask Mara about the key`
 - separate three runtime text outcomes clearly:
   - authoritative resolved action
