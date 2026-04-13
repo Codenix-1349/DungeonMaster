@@ -11,8 +11,8 @@ import {
   buildRelevantRulesContext,
   calcSkillBonus,
   normalizeAdventureEntry,
-} from '../data/srd'
-import { getRuntimeNpcDisplayName } from '../data/runtimeModule'
+} from '../data/srd.js'
+import { getRuntimeNpcDisplayName } from '../data/runtimeModule.js'
 
 function getLatestUserText(messages = []) {
   const reversed = [...messages].reverse()

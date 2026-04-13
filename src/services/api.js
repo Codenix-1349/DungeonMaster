@@ -207,14 +207,14 @@ export async function updateApiConfig({ apiKey, modelId }) {
 
 // ── Chat (SSE streaming) ────────────────────────────────────────────────────
 
-export async function streamChatProxy({ messages, model, temperature, maxTokens, onChunk }) {
+export async function streamChatProxy({ messages, model, temperature, maxTokens, promptContext, onChunk }) {
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const res = await fetch(`${API_BASE}/chat/send`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ messages, model, temperature, maxTokens }),
+    body: JSON.stringify({ messages, model, temperature, maxTokens, promptContext }),
   })
 
   if (!res.ok) {

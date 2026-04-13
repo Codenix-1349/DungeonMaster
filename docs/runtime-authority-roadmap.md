@@ -4,7 +4,7 @@ Last updated: 2026-04-13
 
 ## Role in the doc set
 
-This is the operational execution roadmap for **Phase 3** from `master_roadmap_dungeons_and_daggers.md`.
+This is the operational execution roadmap for the completed **Phase 3** from `master_roadmap_dungeons_and_daggers.md`.
 
 Use:
 - `master_roadmap_dungeons_and_daggers.md` for strategic ordering and phase gates
@@ -29,16 +29,17 @@ Runtime modules must be engine-authoritative.
 - The AI narrates only within the active, visible runtime state.
 - Legacy/prose adventures remain supported, but their heuristic path stays clearly separated from runtime logic.
 
-## Current Phase-3 focus
+## Phase-3 result
 
 ### Done
 - [done] runtime interaction identity across buttons, typed input, retry, and remount (3.1)
 - [done] player-facing validation for spoiler-prone authored text (3.2)
 - [done] app-level acceptance invariants across Birkenhain and Graufurt (3.3)
 - [done] end-to-end authored check flow (3.4)
+- [done] doc cleanup so the runtime plan has one canonical operational source (3.5)
 
 ### Remaining
-- [current] doc cleanup so the runtime plan has one canonical operational source (3.5)
+- none; Phase 3 is complete
 
 ## Non-goals
 
@@ -222,16 +223,9 @@ Done criteria:
 
 ## Current next-session starting point
 
-**Phase 3.5 - Doc cleanup and canonical source alignment.**
+Phase 3 is complete.
 
-Current task:
-- keep this file as the canonical operational source for Phase 3
-- keep `docs/ai-next-steps.md` as the short restart pointer only
-- remove stale bug notes and stale implementation references
-
-Phase 3.4 is complete:
-- authored `interaction.check` now reaches `pendingCheck` -> `SkillCheckPanel` -> Roll -> Runtime-State deterministically
-- blue check styling maps to authored runtime checks only
-- success/fail outcomes mutate runtime state through app logic, not AI narration
-
-After 3.5, Phase 3 is complete.
+Use this file as the completed operational reference for runtime authority decisions.
+The active work has moved to Phase 4 in:
+- `master_roadmap_dungeons_and_daggers.md`
+- `docs/ai-next-steps.md`

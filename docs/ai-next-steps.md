@@ -12,29 +12,30 @@ Use the docs in this order:
 
 ## Current execution target
 
-Phase 3 is still the active gate.
-Do not start Phase 4 work before these are meaningfully closed:
+Phase 3 is complete.
+The active gate is now Phase 4: backend/prompt authority.
 
 - [done] runtime interaction identity across buttons, typed input, retries, and remounts (3.1)
 - [done] player-facing validation for spoiler-prone authored text (3.2)
 - [done] acceptance invariants across Birkenhain and Graufurt (3.3)
 - [done] end-to-end authored check flow (3.4)
-- [current] doc cleanup so one operational runtime source stays canonical (3.5)
+- [done] doc cleanup so one operational runtime source stays canonical (3.5)
+- [done] proxy-backed prompt building moved to backend assembly (4.1 slice 1)
 
 ## Current next step
 
-**Phase 3.5 - Runtime doc cleanup.**
+**Phase 4 - backend authority, next slice: server-side state loading / memory ownership.**
 
-Phase 3.4 is now verified:
-- authored `interaction.check` -> `pendingCheck` -> `SkillCheckPanel` -> Roll -> Runtime-State
-- blue check styling comes only from authored runtime checks
-- success and failure both mutate runtime state authoritatively
-- runtime checks are not inferred from free text or AI tags
+Phase 4.1 slice 1 is now done:
+- proxy-backed chat sends raw history + `promptContext`
+- `/api/chat/send` builds the final `system` prompt on the server
+- proxy requests ignore client-supplied `system` messages when server prompt assembly is active
+- direct frontend OpenRouter calls still keep the local fallback path
 
-Current cleanup goal:
-- keep `docs/runtime-authority-roadmap.md` as the canonical operational Phase-3 source
-- keep `docs/ai-next-steps.md` as the short restart pointer only
-- remove stale bug notes and stale implementation references from the runtime docs
+Current follow-up goal:
+- reduce trust in client-passed state on the proxy path
+- move more prompt/state authority from browser payloads into server-loaded session data
+- start the backend-owned memory/session compaction path
 
 ## Runtime rules to preserve
 
@@ -74,4 +75,4 @@ Current cleanup goal:
 3. Stay on the active feature branch if work is in progress, otherwise create a new one from `main`
 4. `npm test -- --run`
 5. `npm run build`
-6. Read `master_roadmap_dungeons_and_daggers.md` and `docs/runtime-authority-roadmap.md` before changing priorities
+6. Read `master_roadmap_dungeons_and_daggers.md` first, then `docs/ai-next-steps.md`; use `docs/runtime-authority-roadmap.md` as the completed Phase-3 reference if needed
