@@ -42,6 +42,27 @@ function getInitialSceneState(adventure) {
   return adventure ? createInitialSceneState(adventure) : null
 }
 
+export function deriveSyncedSceneState({
+  previousSceneState = null,
+  adventure = null,
+  messages = [],
+  combat = null,
+  fallbackUserText = '',
+  fallbackUserActionKey = null,
+} = {}) {
+  const activeAdventure = normalizeAdventureEntry(adventure)
+  if (!activeAdventure) return null
+
+  return deriveSceneState({
+    adventure: activeAdventure,
+    previousSceneState,
+    messages,
+    combat,
+    fallbackUserText,
+    fallbackUserActionKey,
+  })
+}
+
 function buildInitialSessionState(characterStore) {
   const adventures = (() => {
     const stored = loadFromStorage('dm_adventures', [])
@@ -273,16 +294,23 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
     return applyLiveSceneState(nextValue)
   }, [applyLiveSceneState])
 
-  const syncSceneState = useCallback(({ messages, adventureOverride = null, combatOverride = null, fallbackUserText = '', fallbackUserActionKey = null }) => {
+  const syncSceneState = useCallback(({
+    messages,
+    adventureOverride = null,
+    combatOverride = null,
+    previousSceneStateOverride = undefined,
+    fallbackUserText = '',
+    fallbackUserActionKey = null,
+  }) => {
     const activeAdventure = normalizeAdventureEntry(adventureOverride || adventureRef.current)
     if (!activeAdventure) {
       setSceneState(null)
       return null
     }
 
-    const nextSceneState = deriveSceneState({
+    const nextSceneState = deriveSyncedSceneState({
+      previousSceneState: previousSceneStateOverride ?? sceneStateRef.current,
       adventure: activeAdventure,
-      previousSceneState: sceneStateRef.current,
       messages,
       combat: combatOverride ?? combatRef.current,
       fallbackUserText,
