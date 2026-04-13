@@ -1,72 +1,72 @@
 # Next Steps
 
-## Active roadmap
+Last updated: 2026-04-13
 
-The current runtime-module implementation roadmap is tracked in:
-- `docs/runtime-authority-roadmap.md`
+## Canonical reading order
 
-Resume future work from that document first. It is the canonical plan for the runtime cleanup and authority model.
+Use the docs in this order:
+1. `master_roadmap_dungeons_and_daggers.md` for strategic priority and phase gates
+2. `docs/runtime-authority-roadmap.md` for the operational Phase-3 plan
+3. `docs/ai-next-steps.md` for the short restart point
+4. `docs/ai-progress.md` for historical context only
 
-## Phase 3 late hardening — Runtime Acceptance Shield
+## Current execution target
 
-Key changes: engine-truth over AI-truth, structured data over heuristics.
-- NPC/object states promoted to gmState (permanent, survive transitions)
-- NPC discovery: assistant-only (player can't meta-game names)
-- Structured transitions: exits-only (no false transitions)
-- Clue discovery: cross-referenced with section clues, assistant-only
-- Prompt leakage reduced (hidden NPCs/clues limited, engine-truth block added)
+Phase 3 is still the active gate.
+Do not start Phase 4 work before these are meaningfully closed:
+- runtime interaction identity across buttons, typed input, retries, and remounts
+- player-facing validation for spoiler-prone authored text
+- acceptance invariants across Birkenhain and Graufurt
+- end-to-end authored check flow
+- doc cleanup so one operational runtime source stays canonical
 
-### Runtime check rule
-- **Runtime modules:** checks are authored in the module via explicit `interaction.check` blocks.
-- **UI contract:** a runtime option may render as check-based only when the resolved authored runtime interaction defines `check`.
-- **Authoring contract:** runtime interactions should declare either `check` or `checkPolicy: none`.
-- **No runtime check heuristics:** the app no longer infers runtime checks from free text or AI tags.
-- **Legacy/prose adventures:** AI `[PROBE:]` / `[PROBE_HINWEIS:]` tags and label-based fallback inference still apply there.
+## Current next step
 
-### Runtime dialogue rule
-- **Runtime modules:** `activeNpcId` comes from resolved authored interaction intent, not from narration keyword matching.
-- **Carry-forward:** free follow-up input may keep the active runtime NPC only while that NPC stays visibly present in the same section.
-- **No runtime dialogue heuristics:** narration alone must not invent or switch the active runtime dialogue target.
-- **Legacy/prose adventures:** name-based dialogue heuristics remain a fallback there.
+Continue with app-level runtime acceptance invariants across the two reference modules:
+- `src/data/adventures/graufurt_reference_runtime_module.txt`
+- `src/data/adventures/birkenhain_minimal_runtime_module.txt`
 
-### Runtime player-facing rule
-- **Runtime modules:** player-facing quest framing may be authored separately from internal runtime truth.
-- **Module level:** `PLAYER_PRIMARY_OBJECTIVE` is the player-facing primary quest text.
-- **Section level:** `playerObjective` is the player-facing section goal, and `introText` is the authored player-facing scene framing.
-- **UI/prompt contract:** runtime UI and prompt context should prefer the player-facing fields over internal objective text.
-- **Validation:** runtime modules should warn when player-facing quest or intro framing is missing.
+The current acceptance surface should stress:
+- two NPCs in one runtime scene
+- authored dialogue identity
+- hidden reveal chains
+- retry reopening after tool/context changes
+- check and non-check state transitions
+- backtracking and final gating
+- spoiler-safe player-facing intros
 
-### Runtime interaction identity rule
-- **Runtime modules:** interaction behavior is identified by authored `interactionId`, not by visible wording.
-- **UI/runtime transport:** `actionKey` carries that stable identity through retries, remounts, and follow-up handling.
-- **Labels are presentation-only:** changing a visible label must not change runtime truth.
-- **Free-text bridge:** runtime modules may author `aliases` to help free-text resolve to an existing interaction.
-- **Retry contract:** runtime retry/suppression logic should prefer stored `interactionId` / `actionKey` over label or target similarity.
+Birkenhain and Graufurt should prove the invariants.
+They should not define the architecture.
 
-## Current next step — App-level acceptance invariants
+## Runtime rules to preserve
 
-- `src/data/adventures/graufurt_reference_runtime_module.txt` is now the architecture-driven reference module.
-- `src/data/adventures/birkenhain_minimal_runtime_module.txt` remains the compact leak/reveal/gating reference module.
-- Runtime acceptance should now be expressed as reusable app-side invariants first.
-- It exists to stress:
-  - two NPCs in one runtime scene
-  - authored dialogue identity
-  - hidden reveal chains
-  - retry reopening after new tools
-  - check and non-check state transitions
-  - backtracking and final gating
-- Birkenhain and Graufurt should prove the invariants; they should not define the model.
-- Prefer extending regression and acceptance coverage around these modules before treating a larger authored adventure as the main proof surface.
+### Check rule
+- Runtime-module checks come only from authored `interaction.check`.
+- The UI may mark a runtime option as a check only when the resolved authored interaction defines `check`.
+- Runtime modules should author either `check` or `checkPolicy: none`.
+- Runtime check heuristics from free text or AI tags are not allowed.
+- Legacy/prose adventures may still use AI check tags and heuristic fallback behavior.
 
-## Possible future test additions (not urgent)
-- **CombatTracker integration**: initiative, multi-round, enemy defeat, XP/loot
-- **Adventure parsing**: structured adventure round-trip, legacy format migration
-- **Tag parsing edge cases**: [GEGNER:], [BEUTE:], [HP:], [XP:] tag extraction
-- **Character creation/migration**: stat calculation, inventory migration
+### Dialogue rule
+- In runtime modules, `activeNpcId` comes from the resolved authored interaction, not from narration keyword matching.
+- Free follow-up input may keep the active runtime NPC only while that NPC remains visibly present in the same section.
+- Runtime narration alone must not invent or switch dialogue authority.
 
-## How to continue after an interruption
+### Player-facing rule
+- `PLAYER_PRIMARY_OBJECTIVE`, `playerObjective`, and `introText` are the player-facing authored framing.
+- UI and prompt context should prefer them over internal runtime objective text.
+- Validation should warn when this framing is missing or spoiler-prone.
+
+### Identity rule
+- Runtime interaction behavior is identified by authored `interactionId`, not by visible wording.
+- `actionKey` must carry that stable identity through retries, remounts, and follow-up handling.
+- `aliases` may help free text resolve to an existing authored interaction, but must not create new behavior.
+
+## Resume checklist after an interruption
+
 1. `cd C:\Apps\DungeonsDaggers\DungeonMaster`
-2. `git checkout main` (or the current feature branch if work is still in progress)
-3. `npm test -- --run` — verify the full suite passes
-4. `npm run build` — verify build succeeds
-5. Read this file + `docs/runtime-authority-roadmap.md` for context
+2. `git status --short --branch`
+3. Stay on the active feature branch if work is in progress, otherwise create a new one from `main`
+4. `npm test -- --run`
+5. `npm run build`
+6. Read `master_roadmap_dungeons_and_daggers.md` and `docs/runtime-authority-roadmap.md` before changing priorities

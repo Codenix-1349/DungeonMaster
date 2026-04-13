@@ -1,16 +1,24 @@
 # Runtime Authority Roadmap
 
-Last updated: 2026-04-06
+Last updated: 2026-04-13
+
+## Role in the doc set
+
+This is the operational execution roadmap for **Phase 3** from `master_roadmap_dungeons_and_daggers.md`.
+
+Use:
+- `master_roadmap_dungeons_and_daggers.md` for strategic ordering and phase gates
+- `docs/runtime-authority-roadmap.md` for concrete runtime implementation work
+- `docs/ai-next-steps.md` for the short restart point
+- `docs/ai-progress.md` for history only
 
 ## Workflow rule
 
 After each working branch:
-
 - implement and test on the branch
+- hand the branch off for user testing
 - commit and push only after explicit user approval
-- merge the branch into `main` before creating the next working branch
-
-Do not start a new branch while the previous approved branch is still waiting to be merged into `main`.
+- do not start the next working branch until the current one is either merged or explicitly parked
 
 ## Goal
 
@@ -21,10 +29,19 @@ Runtime modules must be engine-authoritative.
 - The AI narrates only within the active, visible runtime state.
 - Legacy/prose adventures remain supported, but their heuristic path stays clearly separated from runtime logic.
 
+## Current Phase-3 focus
+
+The remaining work should stay concentrated on:
+- runtime interaction identity across buttons, typed input, retry, and remount
+- player-facing validation for spoiler-prone authored text
+- app-level acceptance invariants across Birkenhain and Graufurt
+- end-to-end authored check flow
+- doc cleanup so the runtime plan has one canonical operational source
+
 ## Non-goals
 
 - No UI-only workaround for duplicate or confusing choices.
-- No label-based patch targeted only at Mara or a single module.
+- No label-based patch targeted only at one NPC or one module.
 - No broader text heuristics as a substitute for stable runtime identities.
 
 ## Current runtime check contract
@@ -51,7 +68,7 @@ Reason:
 - A runtime talk interaction may set the active NPC context.
 - Free follow-up input may keep the active runtime NPC only while that NPC remains visibly present in the same section.
 - Runtime narration alone must not invent or switch the active NPC.
-- Legacy / prose adventures may still use name-based dialogue heuristics as fallback.
+- Legacy/prose adventures may still use name-based dialogue heuristics as fallback.
 
 ## Current player-facing runtime contract
 
@@ -73,46 +90,46 @@ Reason:
 - Runtime free-text resolution may use authored `aliases`, but aliases only help select an existing authored interaction; they do not create new behavior.
 - Label/semantic matching remains a fallback bridge, not a runtime truth source.
 
-## Phase 1 - Runtime Contract and Canonical Model
+## Block A - Runtime contract and canonical model
 
-### 1. Tighten the runtime contract
+### A1. Tighten the runtime contract
 - Runtime modules own semantic affordances.
 - The engine may provide gating, prioritization, retry filtering, and free-form input.
 - The AI must not generate runtime choices or runtime truth.
 
-### 2. Canonical identities everywhere
+### A2. Canonical identities everywhere
 - Use stable IDs for NPCs, interactions, objects, reveals, and clues.
 - Display labels stay presentation-only.
 - Runtime truth must never depend on free-text matching.
 
-### 3. Split choice generation cleanly by mode
+### A3. Split choice generation cleanly by mode
 - `runtime`: only allowed module interactions, exits, and free-form input.
 - `legacy`: structured data plus AI/heuristic supplements as today.
 - No engine-invented generic runtime talk buttons unless the module models them explicitly.
 
-## Phase 2 - State Machine and Dialogue Authority
+## Block B - State machine and dialogue authority
 
-### 4. Make dialogue state authoritative
+### B1. Make dialogue state authoritative
 - In runtime modules, derive `activeNpcId` primarily from chosen interactions or runtime state.
 - Keep text heuristics only as a legacy fallback.
 
-### 5. Move dedup/recent/retry logic to intent keys
+### B2. Move dedup/recent/retry logic to intent keys
 - Use `interactionId`, `npcId`, `targetId`, or a stable `intentKey`.
 - Do not treat label similarity as the main identity mechanism.
 - Consumed interactions must not reappear indirectly through parallel sources.
 
-### 6. Unify authoritative runtime state transitions
+### B3. Unify authoritative runtime state transitions
 - Successful runtime actions change state only through engine logic.
 - Failed runtime actions also write authoritative state where relevant.
 - Runtime truth must not be created or overridden by narration.
 
-### 7. Extend module structure only where it improves the model
+### B4. Extend module structure only where it improves the model
 - If generic conversations are needed, model them explicitly as interactions or topics.
 - Do not hide missing structure behind engine magic.
 
-## Phase 3 - Mandatory Stabilization Block
+## Block C - Mandatory stabilization
 
-### 8. Clean up the probe/check flow
+### C1. Clean up the probe/check flow
 - Probe-based choices must reliably and visibly trigger the check flow.
 - Verify `pendingCheck`, `SkillCheckPanel`, and `handleCheckResult` end-to-end.
 - Success/fail outcomes must authoritatively mutate runtime state.
@@ -122,7 +139,7 @@ Done criteria:
 - Success and failure both produce expected runtime state and UI state.
 - No probe-relevant runtime transition depends on AI narration.
 
-### 9. Decouple clue truth from narration
+### C2. Decouple clue truth from narration
 - Runtime modules must discover clues via reveal rules and clue registry only.
 - Text-heuristic clue extraction remains legacy fallback only, never runtime truth.
 
@@ -130,7 +147,7 @@ Done criteria:
 - Runtime clue visibility is explainable from registry/reveal state alone.
 - Prompt/UI only expose engine-confirmed known clues.
 
-### 10. Tighten prompt and adventure context for runtime modules
+### C3. Tighten prompt and adventure context for runtime modules
 - Only send the active section.
 - Only send visible NPCs, visible runtime objects, allowed interactions, relevant known clues, and a short summary.
 - Do not send upcoming scenes, hidden reveals, or unnecessary hidden NPC/clue hints.
@@ -139,7 +156,7 @@ Done criteria:
 - Runtime prompts are scoped to currently visible, actionable truth.
 - The AI cannot learn hidden runtime facts from the prompt context.
 
-### 11. Secure reveal/state transitions without checks
+### C4. Secure reveal/state transitions without checks
 - Valid non-check actions such as open, read, take, inspect must be able to mutate runtime state engine-side.
 - Non-probe transitions must be as authoritative as probe-based ones.
 
@@ -147,9 +164,9 @@ Done criteria:
 - Check and non-check runtime actions share the same authority model.
 - Runtime reveals can be triggered without relying on the AI to "say the right thing".
 
-## Phase 4 - Tests, Regression Shield, Acceptance
+## Block D - Tests, regression shield, acceptance
 
-### 12. Expand the runtime test matrix
+### D1. Expand the runtime test matrix
 - Runtime modules ignore AI-generated choice lists.
 - Runtime modules do not show duplicate semantic actions from parallel sources.
 - Consumed runtime interactions stay consumed.
@@ -158,15 +175,16 @@ Done criteria:
 - Runtime clues come only from registry/reveal state.
 - Legacy behavior remains intact.
 
-### 13. Acceptance criteria
+### D2. Acceptance criteria
 - Every visible runtime choice is traceable to module data plus current runtime state.
 - Every runtime state change is traceable to engine logic.
 - AI narration cannot create, consume, or restore runtime truth.
 - Choice behavior is consistent across interruptions, retries, and scene transitions.
 
-### Phase 4 reference module
+### D3. Reference modules
 - Use `src/data/adventures/graufurt_reference_runtime_module.txt` as the architecture-driven reference runtime module.
-- Its purpose is not broad content coverage, but focused stress on:
+- Use `src/data/adventures/birkenhain_minimal_runtime_module.txt` as the compact leak/reveal/gating reference module.
+- Their purpose is not broad content coverage, but focused stress on:
   - two visible NPCs in one scene
   - authored dialogue identity
   - hidden-object reveal chains
@@ -174,16 +192,17 @@ Done criteria:
   - check and non-check runtime transitions
   - backtracking and final gating
 - App-level runtime invariants should be expressed first; Birkenhain and Graufurt prove that those invariants hold under authored content.
-- Acceptance and regression tests should continue to grow around this reference module before larger authored adventures become the main validation surface.
+- Acceptance and regression tests should continue to grow around these reference modules before larger authored adventures become the main validation surface.
 
 ## Recommended execution order
 
 1. Lock the runtime contract and canonical IDs.
-2. Split runtime/legacy choice generation cleanly.
-3. Move dialogue, recent-action, and dedup logic onto stable identities.
+2. Move dialogue, recent-action, and dedup logic onto stable identities.
+3. Expand player-facing validation and identity-safe free-text bridging.
 4. Unify probe and non-probe runtime state transitions.
 5. Harden clue truth and runtime prompt context.
-6. Add regression coverage and verify acceptance criteria.
+6. Add regression coverage and verify acceptance criteria on Birkenhain and Graufurt.
+7. Keep docs aligned so the current priority is unambiguous.
 
 ## Current next-session starting point
 

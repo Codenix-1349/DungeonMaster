@@ -1,5 +1,16 @@
 # Progress
 
+## Role of this file
+
+This file is a historical progress log.
+Do not use it as the primary planning source.
+
+Use the docs in this order instead:
+1. `master_roadmap_dungeons_and_daggers.md`
+2. `docs/runtime-authority-roadmap.md`
+3. `docs/ai-next-steps.md`
+4. `docs/ai-progress.md`
+
 ## 2026-04-01 — Phase 3: Adventure Runtime Hardening (6 Deltas)
 
 ### Done — Engine-Truth over AI-Truth, 70 tests passing, build green
