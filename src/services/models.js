@@ -10,6 +10,8 @@ const LEGACY_MODEL_ID_MAP = {
   'anthropic/claude-sonnet-4-5': 'anthropic/claude-sonnet-4.5',
   'anthropic/claude-opus-4-5': 'anthropic/claude-opus-4.5',
   'stepfun/step-3.5-flash:free': 'openrouter/free',
+  'meta-llama/llama-3.3-70b-instruct:free': 'openrouter/free',
+  'z-ai/glm-4.5-air:free': 'openrouter/free',
 }
 
 export const AVAILABLE_MODELS = [
@@ -24,23 +26,33 @@ export const AVAILABLE_MODELS = [
     fallbackPricing: { prompt: '$0/M', completion: '$0/M' },
   },
   {
-    id: 'meta-llama/llama-3.3-70b-instruct:free',
-    name: 'Llama 3.3 70B (Free)',
+    id: 'google/gemma-4-31b-it:free',
+    name: 'Gemma 4 31B (Free)',
     badge: 'Kostenlos',
     isPaid: false,
     category: 'free',
     description:
-      'Solides Gratis-Modell für erste Tests. Kann aber bei längeren Szenen, sauberer Logik und natürlichem Deutsch deutlich schwanken.',
+      'Googles neuestes Open-Source-Modell. Solide bei Deutsch und kreativem Text, gute Balance aus Qualität und Geschwindigkeit.',
     fallbackPricing: { prompt: '$0/M', completion: '$0/M' },
   },
   {
     id: 'nvidia/nemotron-3-super-120b-a12b:free',
-    name: 'Nemotron 3 Super (Free)',
+    name: 'Nemotron 3 Super 120B (Free)',
     badge: 'Kostenlos',
     isPaid: false,
     category: 'free',
     description:
-      'Kostenlos und leistungsfähig, aber im Rollenspiel nicht garantiert so rund wie hochwertige Paid-Modelle. Qualität kann je nach Szene schwanken.',
+      'Großes 120B-Modell, kostenlos. Leistungsfähig, aber im Rollenspiel nicht immer stabil. Qualität kann je nach Szene schwanken.',
+    fallbackPricing: { prompt: '$0/M', completion: '$0/M' },
+  },
+  {
+    id: 'minimax/minimax-m2.5:free',
+    name: 'MiniMax M2.5 (Free)',
+    badge: 'Kostenlos',
+    isPaid: false,
+    category: 'free',
+    description:
+      'Kostenlose Alternative mit breitem Sprachverständnis. Für Experimente und Tests gut geeignet.',
     fallbackPricing: { prompt: '$0/M', completion: '$0/M' },
   },
   {
@@ -54,13 +66,13 @@ export const AVAILABLE_MODELS = [
     fallbackPricing: { prompt: '$0/M', completion: '$0/M' },
   },
   {
-    id: 'z-ai/glm-4.5-air:free',
-    name: 'GLM 4.5 Air (Free)',
+    id: 'google/gemma-4-26b-a4b-it:free',
+    name: 'Gemma 4 26B MoE (Free)',
     badge: 'Kostenlos',
     isPaid: false,
     category: 'free',
     description:
-      'Gute kostenlose Auswahl für Tests. Kann brauchbar sein, aber bei Stiltreue, Plausibilität und dramaturgischer Führung nicht immer stabil.',
+      'Mixture-of-Experts Variante von Gemma 4. Schnell und effizient, aber etwas kleiner als die 31B-Variante.',
     fallbackPricing: { prompt: '$0/M', completion: '$0/M' },
   },
   {
