@@ -6,6 +6,7 @@ import {
   formatAssistantTextForDisplay,
   rebuildVisibleChoices,
   resolveResponsePendingCheck,
+  resolveResolvedChoiceSubmission,
   resolveVisibleChoiceFromText,
   resolveRuntimeChoiceFromText,
   shouldBuildChoicesAfterResponse,
@@ -128,6 +129,94 @@ describe('GamePage runtime check flow helpers', () => {
     })).toBe(false)
 
     expect(shouldBuildChoicesAfterResponse({ pendingCheck: null })).toBe(true)
+  })
+
+  it('prepares pending check execution for resolved authored probe choices', () => {
+    const resolution = resolveResolvedChoiceSubmission({
+      choice: {
+        label: 'Das Schloss und die Kratzspuren untersuchen',
+        kind: 'inspect',
+        target: 'cellar_door',
+        interactionId: 'inspect_lock',
+        actionKey: 'intr:inspect_lock',
+        check: {
+          skillOrAbility: 'investigation',
+          dc: 11,
+          advantage: null,
+          onFail: 'Du erkennst Abnutzung am alten Schloss, aber die Kratzspuren ergeben noch kein klares Bild.',
+        },
+      },
+    })
+
+    expect(resolution).toEqual({
+      type: 'pending_check',
+      pendingChoiceMeta: {
+        target: 'cellar_door',
+        kind: 'inspect',
+        interactionId: 'inspect_lock',
+        actionKey: 'intr:inspect_lock',
+        onFail: 'Du erkennst Abnutzung am alten Schloss, aber die Kratzspuren ergeben noch kein klares Bild.',
+      },
+      pendingCheck: {
+        skillOrAbility: 'investigation',
+        dc: 11,
+        advantage: null,
+        choiceLabel: 'Das Schloss und die Kratzspuren untersuchen',
+      },
+    })
+  })
+
+  it('prepares immediate runtime interaction execution for resolved no-check choices', () => {
+    const adventure = loadBirkenhainModule()
+    const base = createInitialSceneState(adventure)
+    const sceneState = {
+      ...base,
+      gmState: {
+        ...base.gmState,
+        currentSectionId: 'old_brewery',
+        plotFlags: { HAS_CELLAR_KEY: true, CELLAR_UNLOCKED: true },
+        runtimeObjects: {
+          hidden_plate: {
+            id: 'hidden_plate',
+            sectionId: 'old_brewery',
+            label: 'Vibrierende Metallplatte',
+            visible: true,
+            state: 'sealed',
+          },
+        },
+      },
+    }
+
+    const resolution = resolveResolvedChoiceSubmission({
+      choice: {
+        label: 'Die Metallplatte oeffnen',
+        kind: 'manipulate',
+        target: 'hidden_plate',
+        interactionId: 'open_hidden_plate',
+        actionKey: 'intr:open_hidden_plate',
+      },
+      sceneState,
+      adventure,
+    })
+
+    expect(resolution.type).toBe('submit')
+    expect(resolution.submitText).toBe('Die Metallplatte oeffnen')
+    expect(resolution.recentActionKey).toBe('intr:open_hidden_plate')
+    expect(resolution.sendOptions).toEqual({
+      allowEngineCheckInference: false,
+      skipTextChoiceResolution: true,
+      recentActionKey: 'intr:open_hidden_plate',
+    })
+    expect(resolution.inventoryAdds).toEqual([])
+    expect(resolution.sceneStateOverride?.gmState?.plotFlags?.HIDDEN_PLATE_OPENED).toBe(true)
+    expect(resolution.sceneStateOverride?.gmState?.runtimeObjects?.hidden_plate).toEqual(expect.objectContaining({
+      sectionId: 'old_brewery',
+      state: 'opened',
+    }))
+    expect(resolution.sceneStateOverride?.gmState?.runtimeObjects?.parchment_note).toEqual(expect.objectContaining({
+      sectionId: 'old_brewery',
+      visible: true,
+    }))
   })
 
   it('applies authored runtime success checks directly to engine state and keeps the stable action key', () => {

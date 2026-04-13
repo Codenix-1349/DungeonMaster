@@ -38,6 +38,20 @@ Use the docs in this order instead:
   - backend prompt assembly stripping spoofed client `system` messages
 - Full test suite green (`178/178`) and build green after the Phase-4 slice.
 
+## 2026-04-13 - Phase 4.2 Slice 1: Shared Runtime Choice Execute Path
+
+### Done - button clicks and resolved typed choices now execute through the same app-side path
+
+- Extracted resolved choice submission into a pure helper in `gamePageRuntime.js`.
+- Runtime button clicks and matched free text now share the same authored handling for:
+  - pending authored checks
+  - no-check runtime interactions
+  - stable `recentActionKey` propagation into narration follow-ups
+- Added regression coverage for:
+  - pending-check submission payload from a resolved authored choice
+  - immediate no-check runtime interaction execution from a resolved authored choice
+- Full test suite green (`182/182`) and build green after the slice.
+
 
 ## 2026-04-01 — Phase 3: Adventure Runtime Hardening (6 Deltas)
 

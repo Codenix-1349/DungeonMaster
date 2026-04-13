@@ -31,6 +31,53 @@ export function createPendingCheckFromChoice(choice) {
   }
 }
 
+export function resolveResolvedChoiceSubmission({
+  choice = null,
+  sceneState = null,
+  adventure = null,
+} = {}) {
+  if (!choice) return null
+
+  if (choice.kind === 'free') {
+    return {
+      type: 'free',
+    }
+  }
+
+  if (choice.check) {
+    return {
+      type: 'pending_check',
+      pendingChoiceMeta: createPendingChoiceMeta(choice),
+      pendingCheck: createPendingCheckFromChoice(choice),
+    }
+  }
+
+  let nextSceneState = null
+  let inventoryAdds = []
+
+  if (choice.interactionId && sceneState && adventure) {
+    const normalizedAdventure = normalizeAdventureEntry(adventure)
+    const structure = normalizedAdventure?.structure || null
+    const interactionDef = structure ? findInteractionDef(structure, choice.interactionId) : null
+    const resolved = resolveInteractionOutcome(sceneState, interactionDef, structure?.module, 'success')
+    if (resolved?.sceneState) nextSceneState = resolved.sceneState
+    if (resolved?.inventoryAdds?.length) inventoryAdds = resolved.inventoryAdds
+  }
+
+  return {
+    type: 'submit',
+    submitText: choice.label,
+    recentActionKey: choice.actionKey || null,
+    sceneStateOverride: nextSceneState,
+    inventoryAdds,
+    sendOptions: {
+      allowEngineCheckInference: false,
+      skipTextChoiceResolution: true,
+      recentActionKey: choice.actionKey || null,
+    },
+  }
+}
+
 export function applyPendingCheckResult({
   result = null,
   choiceMeta = null,
