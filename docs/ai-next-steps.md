@@ -31,6 +31,7 @@ Phase 4.1 slice 1 is now done:
 - `/api/chat/send` builds the final `system` prompt on the server
 - proxy requests ignore client-supplied `system` messages when server prompt assembly is active
 - direct frontend OpenRouter calls still keep the local fallback path
+- local branch testing can now also use Ollama via `http://localhost:11434` without OpenRouter allowance
 
 Current follow-up goal:
 - make runtime free text valuable beyond repeating button labels

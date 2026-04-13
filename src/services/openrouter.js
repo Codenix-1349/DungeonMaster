@@ -34,4 +34,4 @@ export {
 export { buildSystemPrompt } from './promptBuilder'
 
 // ── Transport (send/test) ───────────────────────────────────────────────────
-export { sendMessage, testConnection } from './openrouterTransport'
+export { sendMessage, testConnection, fetchOllamaModels } from './openrouterTransport'

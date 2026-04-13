@@ -1,15 +1,21 @@
-// ─── OpenRouter Transport ───────────────────────────────────────────────────
-// HTTP/streaming transport for OpenRouter API calls.
+// ─── LLM Transport ──────────────────────────────────────────────────────────
+// Direct browser transport for OpenRouter and local Ollama.
 
 import { PROJECT_NAME } from '../data/srd'
 import { normalizeModelId } from './models'
 import { streamChatProxy, testChatConnection as apiTestChat } from './api'
 import { normalizeAssistantResponse } from './responseNormalization'
 import { buildSystemPrompt } from './promptBuilder'
+import {
+  AI_PROVIDER_OLLAMA,
+  AI_PROVIDER_OPENROUTER,
+  normalizeAiProvider,
+  normalizeOllamaBaseUrl,
+} from './aiProviders'
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 
-function buildFriendlyErrorMessage(status, apiMessage = '') {
+function buildOpenRouterErrorMessage(status, apiMessage = '') {
   if (status === 401) {
     return 'Ungültiger API Key. Bitte prüfe den OpenRouter-Key in den Einstellungen.'
   }
@@ -36,12 +42,30 @@ function buildFriendlyErrorMessage(status, apiMessage = '') {
   return apiMessage || `API Fehler: ${status}`
 }
 
-async function extractError(response) {
+function buildOllamaErrorMessage(status, apiMessage = '') {
+  if (status === 404) {
+    return 'Ollama-Modell oder Endpunkt nicht gefunden. Prüfe Base-URL und Modellname.'
+  }
+
+  if (status === 400) {
+    return apiMessage || 'Ollama konnte die Anfrage nicht verarbeiten. Prüfe Modellname und Request.'
+  }
+
+  if (status >= 500) {
+    return apiMessage || `Ollama meldet einen Serverfehler (${status}).`
+  }
+
+  return apiMessage || `Ollama Fehler: ${status}`
+}
+
+async function extractError(response, provider = AI_PROVIDER_OPENROUTER) {
   try {
     const text = await response.text()
 
     if (!text) {
-      return buildFriendlyErrorMessage(response.status)
+      return provider === AI_PROVIDER_OLLAMA
+        ? buildOllamaErrorMessage(response.status)
+        : buildOpenRouterErrorMessage(response.status)
     }
 
     try {
@@ -52,90 +76,64 @@ async function extractError(response) {
         json?.detail ||
         ''
 
-      return buildFriendlyErrorMessage(response.status, apiMessage)
+      return provider === AI_PROVIDER_OLLAMA
+        ? buildOllamaErrorMessage(response.status, apiMessage)
+        : buildOpenRouterErrorMessage(response.status, apiMessage)
     } catch {
-      return buildFriendlyErrorMessage(response.status, text)
+      return provider === AI_PROVIDER_OLLAMA
+        ? buildOllamaErrorMessage(response.status, text)
+        : buildOpenRouterErrorMessage(response.status, text)
     }
   } catch {
-    return buildFriendlyErrorMessage(response.status)
+    return provider === AI_PROVIDER_OLLAMA
+      ? buildOllamaErrorMessage(response.status)
+      : buildOpenRouterErrorMessage(response.status)
   }
 }
 
-/**
- * Send a message to OpenRouter with streaming
- * onChunk(text) called once with the final response text
- */
-export async function sendMessage({ messages, model, apiKey, character, adventure, combat, sceneState, onChunk, useProxy = false }) {
-  if (!useProxy && !apiKey) {
-    throw new Error('Kein API Key konfiguriert. Bitte in den Einstellungen eingeben.')
+function getDirectChatEndpoint(provider, ollamaBaseUrl) {
+  if (provider === AI_PROVIDER_OLLAMA) {
+    return `${normalizeOllamaBaseUrl(ollamaBaseUrl)}/v1/chat/completions`
   }
+  return `${OPENROUTER_BASE}/chat/completions`
+}
 
-  const normalizedModel = normalizeModelId(model)
-
-  // Route through backend proxy when logged in with server-stored key
-  if (useProxy) {
-    try {
-      const rawText = await streamChatProxy({
-        messages,
-        model: normalizedModel,
-        temperature: 0.6,
-        maxTokens: 1800,
-        promptContext: {
-          character,
-          adventure,
-          combat,
-          sceneState,
-        },
-        onChunk: null,
-      })
-      const normalizedText = normalizeAssistantResponse(rawText)
-      if (normalizedText && onChunk) onChunk(normalizedText)
-      return normalizedText
-    } catch (proxyErr) {
-      // Fallback to direct OpenRouter call if local apiKey is available
-      if (apiKey) {
-        console.warn('Chat-Proxy fehlgeschlagen, Fallback auf direkten API-Call:', proxyErr.message)
-      } else {
-        throw proxyErr
-      }
-    }
-  }
-
-  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat, sceneState)
-  const fullMessages = [
-    { role: 'system', content: systemPrompt },
-    ...messages,
-  ]
-
-  const body = {
-    model: normalizedModel,
-    max_tokens: 1800,
-    stream: true,
-    temperature: 0.6,
-    messages: fullMessages,
-  }
-
-  // Retry on 429 (rate-limit) — openrouter/free may pick a different model on retry
-  const MAX_RETRIES = 3
+async function streamDirectChat({
+  endpoint,
+  provider = AI_PROVIDER_OPENROUTER,
+  body,
+  headers = {},
+}) {
   let response
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': window.location.origin,
-        'X-Title': PROJECT_NAME,
-      },
-      body: JSON.stringify(body),
-    })
-    if (response.status !== 429 || attempt === MAX_RETRIES) break
-    console.warn(`[openrouter] 429 rate-limited (attempt ${attempt + 1}/${MAX_RETRIES}), retrying...`)
-    await new Promise(r => setTimeout(r, (attempt + 1) * 1000))
+
+  try {
+    if (provider === AI_PROVIDER_OPENROUTER) {
+      const maxRetries = 3
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        })
+        if (response.status !== 429 || attempt === maxRetries) break
+        await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 1000))
+      }
+    } else {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      })
+    }
+  } catch (error) {
+    if (provider === AI_PROVIDER_OLLAMA) {
+      throw new Error('Ollama lokal nicht erreichbar. Läuft der Dienst auf der angegebenen Base-URL?')
+    }
+    throw error
   }
 
   if (!response.ok) {
-    throw new Error(await extractError(response))
+    throw new Error(await extractError(response, provider))
   }
 
   if (!response.body) {
@@ -180,7 +178,113 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
     }
   }
 
-  const normalizedText = normalizeAssistantResponse(fullText.trim())
+  return fullText.trim()
+}
+
+export async function fetchOllamaModels(baseUrl = '') {
+  const endpoint = `${normalizeOllamaBaseUrl(baseUrl)}/api/tags`
+  let response
+
+  try {
+    response = await fetch(endpoint)
+  } catch {
+    throw new Error('Ollama lokal nicht erreichbar. Läuft der Dienst auf der angegebenen Base-URL?')
+  }
+
+  if (!response.ok) {
+    throw new Error(await extractError(response, AI_PROVIDER_OLLAMA))
+  }
+
+  const data = await response.json().catch(() => ({}))
+  return Array.isArray(data?.models) ? data.models : []
+}
+
+/**
+ * Send a message to OpenRouter with streaming
+ * onChunk(text) called once with the final response text
+ */
+export async function sendMessage({
+  messages,
+  model,
+  apiKey,
+  character,
+  adventure,
+  combat,
+  sceneState,
+  onChunk,
+  useProxy = false,
+  provider = AI_PROVIDER_OPENROUTER,
+  ollamaBaseUrl = '',
+}) {
+  const activeProvider = normalizeAiProvider(provider)
+
+  if (activeProvider === AI_PROVIDER_OPENROUTER && !useProxy && !apiKey) {
+    throw new Error('Kein API Key konfiguriert. Bitte in den Einstellungen eingeben.')
+  }
+
+  const normalizedModel = normalizeModelId(model, activeProvider)
+
+  // Route through backend proxy when logged in with server-stored key
+  if (activeProvider === AI_PROVIDER_OPENROUTER && useProxy) {
+    try {
+      const rawText = await streamChatProxy({
+        messages,
+        model: normalizedModel,
+        temperature: 0.6,
+        maxTokens: 1800,
+        promptContext: {
+          character,
+          adventure,
+          combat,
+          sceneState,
+        },
+        onChunk: null,
+      })
+      const normalizedText = normalizeAssistantResponse(rawText)
+      if (normalizedText && onChunk) onChunk(normalizedText)
+      return normalizedText
+    } catch (proxyErr) {
+      // Fallback to direct OpenRouter call if local apiKey is available
+      if (apiKey) {
+        console.warn('Chat-Proxy fehlgeschlagen, Fallback auf direkten API-Call:', proxyErr.message)
+      } else {
+        throw proxyErr
+      }
+    }
+  }
+
+  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat, sceneState)
+  const fullMessages = [
+    { role: 'system', content: systemPrompt },
+    ...messages,
+  ]
+
+  const body = {
+    model: normalizedModel,
+    max_tokens: 1800,
+    stream: true,
+    temperature: 0.6,
+    messages: fullMessages,
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+  }
+
+  if (activeProvider === AI_PROVIDER_OPENROUTER) {
+    headers.Authorization = `Bearer ${apiKey}`
+    headers['HTTP-Referer'] = window.location.origin
+    headers['X-Title'] = PROJECT_NAME
+  }
+
+  const rawText = await streamDirectChat({
+    endpoint: getDirectChatEndpoint(activeProvider, ollamaBaseUrl),
+    provider: activeProvider,
+    body,
+    headers,
+  })
+
+  const normalizedText = normalizeAssistantResponse(rawText)
   if (normalizedText && onChunk) {
     onChunk(normalizedText)
   }
@@ -191,35 +295,55 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
 /**
  * Test API connection
  */
-export async function testConnection(apiKey, model, { useProxy = false } = {}) {
-  if (!useProxy && !apiKey) {
+export async function testConnection(apiKey, model, {
+  useProxy = false,
+  provider = AI_PROVIDER_OPENROUTER,
+  ollamaBaseUrl = '',
+} = {}) {
+  const activeProvider = normalizeAiProvider(provider)
+
+  if (activeProvider === AI_PROVIDER_OPENROUTER && !useProxy && !apiKey) {
     throw new Error('Kein API Key konfiguriert.')
   }
 
-  const normalizedModel = normalizeModelId(model)
+  const normalizedModel = normalizeModelId(model, activeProvider)
 
-  if (useProxy) {
+  if (activeProvider === AI_PROVIDER_OPENROUTER && useProxy) {
     const data = await apiTestChat(normalizedModel)
     return data?.response?.choices?.[0]?.message?.content || 'OK'
   }
 
-  const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': window.location.origin,
-      'X-Title': PROJECT_NAME,
-    },
-    body: JSON.stringify({
-      model: normalizedModel,
-      max_tokens: 12,
-      messages: [{ role: 'user', content: 'Antworte nur mit: OK' }],
-    }),
-  })
+  const headers = {
+    'Content-Type': 'application/json',
+  }
+
+  if (activeProvider === AI_PROVIDER_OPENROUTER) {
+    headers.Authorization = `Bearer ${apiKey}`
+    headers['HTTP-Referer'] = window.location.origin
+    headers['X-Title'] = PROJECT_NAME
+  }
+
+  let response
+  try {
+    response = await fetch(getDirectChatEndpoint(activeProvider, ollamaBaseUrl), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: normalizedModel,
+        max_tokens: 12,
+        stream: false,
+        messages: [{ role: 'user', content: 'Antworte nur mit: OK' }],
+      }),
+    })
+  } catch {
+    if (activeProvider === AI_PROVIDER_OLLAMA) {
+      throw new Error('Ollama lokal nicht erreichbar. Läuft der Dienst auf der angegebenen Base-URL?')
+    }
+    throw new Error('Verbindung zum API-Endpunkt fehlgeschlagen.')
+  }
 
   if (!response.ok) {
-    throw new Error(await extractError(response))
+    throw new Error(await extractError(response, activeProvider))
   }
 
   const data = await response.json()

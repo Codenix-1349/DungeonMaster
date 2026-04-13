@@ -94,8 +94,10 @@ export default function GamePage() {
     useItem,
     updateCurrency,
     apiKey,
+    aiProvider,
     hasServerKey,
     apiReady,
+    ollamaBaseUrl,
     selectedModel,
     sceneState,
     setSceneState,
@@ -246,7 +248,7 @@ export default function GamePage() {
     const text = rawText.trim()
     if (!text || streaming) return
     if (!apiReady) {
-      setError('Kein API Key – bitte Einstellungen öffnen.')
+      setError('Kein KI-Zugang konfiguriert – bitte Einstellungen öffnen.')
       return
     }
 
@@ -284,11 +286,13 @@ export default function GamePage() {
         messages: outboundMessages,
         model: selectedModel,
         apiKey,
+        provider: aiProvider,
         character: activeCharacter,
         adventure: activeAdventure,
         combat,
         sceneState: activeSceneState,
-        useProxy: isLoggedIn && hasServerKey,
+        ollamaBaseUrl,
+        useProxy: aiProvider === 'openrouter' && isLoggedIn && hasServerKey,
         onChunk: chunk => {
           full += chunk
           setStreamingText(prev => prev + chunk)
@@ -424,11 +428,13 @@ export default function GamePage() {
     streaming,
     apiReady,
     apiKey,
+    aiProvider,
     character,
     adventure,
     sceneState,
     buildHistory,
     addMessage,
+    ollamaBaseUrl,
     selectedModel,
     combat,
     syncSceneState,
@@ -515,7 +521,7 @@ export default function GamePage() {
 
   const handleStartNewSession = useCallback(async () => {
     if (!apiReady) {
-      setError('Bitte zuerst einen OpenRouter API Key hinterlegen.')
+      setError('Bitte zuerst einen KI-Zugang konfigurieren.')
       return
     }
 
@@ -688,7 +694,7 @@ export default function GamePage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {!apiReady && <button onClick={() => navigate('/settings')} className="btn-primary">⚙️ API Key eingeben</button>}
+                      {!apiReady && <button onClick={() => navigate('/settings')} className="btn-primary">⚙️ KI-Zugang einrichten</button>}
                       <button onClick={() => navigate('/character')} className="btn-ghost">🛡️ Helden auswählen oder neu erstellen</button>
                       <button onClick={() => navigate('/adventure')} className="btn-ghost">📜 Abenteuer verwalten</button>
                     </div>
