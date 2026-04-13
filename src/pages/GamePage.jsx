@@ -390,6 +390,7 @@ export default function GamePage() {
         messages: fullTranscript,
         adventureOverride: activeAdventure,
         combatOverride: combat,
+        previousSceneStateOverride: activeSceneState,
         fallbackUserText: text,
         fallbackUserActionKey: options.recentActionKey || null,
       })

@@ -24,7 +24,7 @@ The active gate is now Phase 4: backend/prompt authority.
 
 ## Current next step
 
-**Phase 4 - backend authority, next slice: server-side state loading / memory ownership.**
+**Phase 4 - next slice: runtime free-text / intent authority, then server-side state loading.**
 
 Phase 4.1 slice 1 is now done:
 - proxy-backed chat sends raw history + `promptContext`
@@ -33,9 +33,14 @@ Phase 4.1 slice 1 is now done:
 - direct frontend OpenRouter calls still keep the local fallback path
 
 Current follow-up goal:
-- reduce trust in client-passed state on the proxy path
-- move more prompt/state authority from browser payloads into server-loaded session data
-- start the backend-owned memory/session compaction path
+- make runtime free text valuable beyond repeating button labels
+- unify button clicks and resolved typed input onto the same app-side execute path
+- allow natural variants and parameterized intents like `use torch on well` or `ask Mara about the key`
+- separate three runtime text outcomes clearly:
+  - authoritative resolved action
+  - flavor-only narration without state mutation
+  - engine-owned escalation (threat, conflict, combat)
+- after that, continue reducing trust in client-passed state on the proxy path and move session memory/state loading server-side
 
 ## Runtime rules to preserve
 
@@ -60,6 +65,13 @@ Current follow-up goal:
 - Runtime interaction behavior is identified by authored `interactionId`, not by visible wording.
 - `actionKey` must carry that stable identity through retries, remounts, and follow-up handling.
 - `aliases` may help free text resolve to an existing authored interaction, but must not create new behavior.
+
+### Free-text rule
+- In runtime modules, free text is an intent input, not only a second way to repeat visible button text.
+- Free text may resolve natural variants, synonyms, and parameterized phrasings against visible, app-authorized affordances.
+- Harmless flavor actions may receive narration without canonical state mutation.
+- Escalating text such as insulting, threatening, arguing, or attacking must route into engine-owned consequence systems, not free AI canon.
+- If the input is ambiguous or unavailable, the app should clarify or reject it explicitly instead of silently doing nothing or inventing world truth.
 
 ### State ownership rule
 - `gmState` is authoritative world truth only.

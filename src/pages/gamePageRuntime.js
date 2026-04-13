@@ -115,6 +115,10 @@ const RUNTIME_MATCH_STOPWORDS = new Set([
 function normalizeRuntimeChoiceText(text = '') {
   return String(text)
     .toLowerCase()
+    .replace(/\u00e4/g, 'ae')
+    .replace(/\u00f6/g, 'oe')
+    .replace(/\u00fc/g, 'ue')
+    .replace(/\u00df/g, 'ss')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9\s]/g, ' ')

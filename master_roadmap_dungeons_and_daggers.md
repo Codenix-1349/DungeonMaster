@@ -1,6 +1,6 @@
 # Dungeons & Daggers – Master-Roadmap
 
-Last updated: 2026-04-13 (v3)
+Last updated: 2026-04-13 (v4)
 
 ## Zweck dieser Datei
 
@@ -97,11 +97,13 @@ Der Runtime-Kern ist bereits weit vorangekommen:
 ### Realistischer Status
 - Phase 3: **abgeschlossen**
 - Phase 4: **gestartet, 4.1 erster Slice erledigt**
-- Größter Restblock: **serverseitige State-/Memory-Autorität**
+- Nächster notwendiger Klärungsblock: **Runtime-Freitext als echter, autoritativer Intent-Layer**
+- Größter Restblock: **Runtime-Input-Autorität plus serverseitige State-/Memory-Autorität**
 
 ### Warum Phase 4 jetzt dran ist
 - Der Runtime-Kern ist ausreichend gehärtet und Phase 3 ist dokumentarisch abgeschlossen.
 - Jetzt lohnt es sich, Wahrheits- und Prompt-Autorität schrittweise aus dem Frontend herauszuziehen.
+- Bevor serverseitige Memory-/State-Zentralisierung tiefer wird, muss der Runtime-Freitextvertrag klar sein, damit Text-Eingabe denselben app-seitigen Wahrheitsstandard wie Buttons bekommt.
 
 ---
 
@@ -226,7 +228,7 @@ Phase 3 ist jetzt abgeschlossen:
 ## Ziel
 Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Übergänge.
 
-### 4.1 Prompt-Building ins Backend verschieben ← aktueller Slice
+### 4.1 Prompt-Building ins Backend verschieben
 - Frontend baut nicht mehr die finale Prompt-Wahrheit
 - Server lädt State, baut Prompt, orchestriert AI-Call
 
@@ -236,16 +238,38 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 - Clientseitig eingeschleuste `system` Messages werden auf dem Proxy-Pfad verworfen.
 - Noch offen: serverseitiges Laden von State statt clientgegebener `promptContext`-Daten.
 
-### 4.2 Session-Memory serverseitig verdichten
+### 4.2 Runtime-Freitext als echten Intent-Layer ausbauen ← nächster Slice
+- Buttons und aufgelöster Freitext teilen denselben app-seitigen Execute-Pfad.
+- Freitext muss mehr können als Button-Labels nur zu wiederholen: natürliche Varianten, Synonyme und parameterisierte Intents müssen auf erlaubte Runtime-Aktionen gemappt werden können.
+- Beispiele für sinnvollen Runtime-Freitext:
+  - `zurueck zur brauerei`
+  - `benutze fackel am brunnen`
+  - `frage mara nach dem schluessel`
+- Nicht-kanonische Flavor-Aktionen wie springen, huepfen, singen oder eine Fackel anzuzünden dürfen moeglich bleiben, solange sie keine autoritative Abenteuer-/Runtime-Wahrheit ändern.
+- Eskalierende Eingaben wie beleidigen, drohen, streiten oder angreifen dürfen nicht frei von der KI kanonisiert werden, sondern muessen in engine-gesteuerte Konsequenzpfade laufen:
+  - Dialog-/Dispositionsänderung
+  - Warnung / Bedrohungsstufe
+  - Kampfstart
+- Mehrdeutige oder aktuell nicht erlaubte Eingaben brauchen app-seitige Auflösung:
+  - klar nachfragen
+  - sauber ablehnen
+  - oder explizit als reine Flavor-Narration ohne State-Mutation behandeln
+
+### Exit-Signal
+- Freitext hat echten Nutzwert jenseits exakter Button-Wiederholung
+- gleicher Intent fuehrt bei Button und Text zum gleichen Effekt
+- Flavor, autoritativer Intent und Eskalation haben klare, getrennte Regeln
+
+### 4.3 Session-Memory serverseitig verdichten
 - raw history reduzieren
 - strukturierte Summary pflegen
 - doppelte Prompt-Infos vermeiden
 
-### 4.3 Persistenz sauberer machen
+### 4.4 Persistenz sauberer machen
 - Session-Patches bündeln/debouncen
 - Fire-and-forget-Write-Flut reduzieren
 
-### 4.4 Streaming bis zur UX durchziehen
+### 4.5 Streaming bis zur UX durchziehen
 - echte Delta-Ausgabe
 - keine nur technische Streaming-Existenz
 - Hinweis: gehört thematisch eher zur UX, wird aber hier erledigt weil beim Backend-Umbau Streaming ohnehin angefasst werden muss
@@ -254,6 +278,7 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 - erster Prompt-Autoritäts-Slice auf dem Proxy-Pfad
 - Frontend trägt weniger Wahrheitslast
 - Tokenfluss ist nachvollziehbarer
+- Freitext-/Intent-Autorität ist als eigener notwendiger Architekturblock explizit eingeplant
 
 ---
 

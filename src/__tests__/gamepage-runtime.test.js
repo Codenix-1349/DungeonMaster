@@ -331,6 +331,31 @@ describe('GamePage runtime check flow helpers', () => {
     expect(choice?.check).toEqual({ skillOrAbility: 'investigation', dc: 12, advantage: null })
   })
 
+  it('matches umlaut free text to ASCII-authored runtime exit labels', () => {
+    const choice = resolveVisibleChoiceFromText({
+      userText: 'Zur\u00fcck zur Brauerei',
+      choices: [
+        {
+          label: 'Zurueck zur Brauerei',
+          kind: 'exit',
+          source: 'structured',
+          target: 'old_brewery',
+          actionKey: 'exit:back_to_brewery',
+        },
+        {
+          label: 'Weiter zur verketteten Kammer',
+          kind: 'exit',
+          source: 'structured',
+          target: 'ritual_cellar',
+          actionKey: 'exit:to_ritual_cellar',
+        },
+      ],
+    })
+
+    expect(choice?.label).toBe('Zurueck zur Brauerei')
+    expect(choice?.actionKey).toBe('exit:back_to_brewery')
+  })
+
   it('matches inflected free text to the parchment read interaction', () => {
     const choice = resolveRuntimeChoiceFromText({
       userText: 'Ich lese das Pergament',
