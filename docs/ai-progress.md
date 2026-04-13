@@ -24,6 +24,20 @@ Use the docs in this order instead:
   - authored runtime check failure mutating engine state and retry history
 - Test suite green and build green after the hardening pass.
 
+## 2026-04-13 - Phase 4.1: Proxy Prompt Building Moved Server-Side
+
+### Done - backend proxy now owns final prompt assembly
+
+- Proxy-backed chat no longer sends a frontend-built `system` prompt to `/api/chat/send`.
+- Frontend now sends raw `user`/`assistant` history plus `promptContext` on the proxy path.
+- Backend builds the final `system` prompt itself before calling OpenRouter.
+- Client-supplied `system` messages are stripped when `promptContext` is present, so proxy prompt truth comes from server assembly, not browser payload.
+- Legacy proxy payloads without `promptContext` remain accepted as a compatibility fallback.
+- Added regression coverage for:
+  - proxy transport sending raw history plus prompt context
+  - backend prompt assembly stripping spoofed client `system` messages
+- Full test suite green (`178/178`) and build green after the Phase-4 slice.
+
 
 ## 2026-04-01 — Phase 3: Adventure Runtime Hardening (6 Deltas)
 

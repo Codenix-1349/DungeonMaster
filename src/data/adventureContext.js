@@ -1,7 +1,7 @@
-import { normalizeAdventureEntry, truncateText, tokenizeText } from './adventureParser'
-import { findSectionById, selectRelevantChunks, deriveSceneState, SCENE_STATE_VERSION } from './sceneState'
-import { getAllowedSectionExits, getVisibleRuntimeNpcs, isRuntimeStructure } from './runtimeModule'
-import { buildAvailableChoices } from '../engine/choiceEngine'
+import { normalizeAdventureEntry, truncateText, tokenizeText } from './adventureParser.js'
+import { findSectionById, selectRelevantChunks, deriveSceneState, SCENE_STATE_VERSION } from './sceneState.js'
+import { getAllowedSectionExits, getVisibleRuntimeNpcs, isRuntimeStructure } from './runtimeModule.js'
+import { buildAvailableChoices } from '../engine/choiceEngine.js'
 
 // ─── Structured adventure: compact AI context builder ────────────────────────
 

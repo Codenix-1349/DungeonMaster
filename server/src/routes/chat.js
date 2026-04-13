@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { pool } from '../db/pool.js'
 import { authenticate } from '../middleware/auth.js'
 import { decrypt } from '../services/crypto.js'
+import { buildProxyMessages } from '../services/chatProxyMessages.js'
 import { streamChat, testConnection } from '../services/openrouter.js'
 
 const router = Router()
@@ -34,9 +35,15 @@ router.post('/send', async (req, res, next) => {
       return res.status(400).json({ error: 'Kein API-Key konfiguriert.' })
     }
 
-    const { messages, model, temperature, maxTokens } = req.body
+    const { messages, model, temperature, maxTokens, promptContext = null } = req.body
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: 'messages Array erforderlich.' })
+    }
+
+    const preparedMessages = buildProxyMessages({ messages, promptContext })
+    const hasChatTurns = preparedMessages.some(message => message.role === 'user' || message.role === 'assistant')
+    if (!hasChatTurns) {
+      return res.status(400).json({ error: 'Mindestens eine user- oder assistant-Nachricht ist erforderlich.' })
     }
 
     const useModel = model || config.modelId || 'openrouter/free'
@@ -48,7 +55,7 @@ router.post('/send', async (req, res, next) => {
     await streamChat({
       apiKey: config.apiKey,
       model: useModel,
-      messages,
+      messages: preparedMessages,
       temperature: temperature ?? 0.8,
       maxTokens: maxTokens ?? 4096,
       res,

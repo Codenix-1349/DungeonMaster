@@ -10,7 +10,7 @@
 //
 // The UI consumes only normalized Choice objects — never raw AI text.
 
-import { getAllowedRuntimeInteractions, getAllowedSectionExits } from '../data/runtimeModule'
+import { getAllowedRuntimeInteractions, getAllowedSectionExits } from '../data/runtimeModule.js'
 
 // ─── Choice Schema ──────────────────────────────────────────────────────────
 // {

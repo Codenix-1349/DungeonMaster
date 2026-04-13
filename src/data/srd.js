@@ -50,7 +50,7 @@ export {
   getXPForNextLevel,
   CR_XP,
   ENEMY_PRESETS,
-} from './characterRules'
+} from './characterRules.js'
 
 // ── Spell System (via characterRules → spells.js) ───────────────────────────
 export {
@@ -62,7 +62,7 @@ export {
   getCantripsKnownCount,
   getSpellsKnownCount,
   getMaxSpellLevel,
-} from './characterRules'
+} from './characterRules.js'
 
 // ── Rules (via characterRules → rules.js) ───────────────────────────────────
 export {
@@ -71,7 +71,7 @@ export {
   SRD_RULE_BLOCKS,
   resolveRelevantRuleBlockKeys,
   buildRelevantRulesContext,
-} from './characterRules'
+} from './characterRules.js'
 
 // ── Items (via characterRules → items.js) ───────────────────────────────────
 export {
@@ -93,13 +93,13 @@ export {
   ITEM_TYPES,
   ARMOR_PROFICIENCY,
   SHIELD_PROFICIENCY,
-} from './characterRules'
+} from './characterRules.js'
 
 // ── Adventure Parsing ───────────────────────────────────────────────────────
 export {
   normalizeAdventureEntry,
   prepareAdventureForStorage,
-} from './adventureParser'
+} from './adventureParser.js'
 
 // ── Scene State ─────────────────────────────────────────────────────────────
 export {
@@ -113,9 +113,9 @@ export {
   applyInteractionOutcome,
   applyInteractionSuccess,
   resolveInteractionOutcome,
-} from './sceneState'
+} from './sceneState.js'
 
 // ── Adventure Context ───────────────────────────────────────────────────────
 export {
   buildRelevantAdventureContext,
-} from './adventureContext'
+} from './adventureContext.js'

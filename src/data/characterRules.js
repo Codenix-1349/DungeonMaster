@@ -1,7 +1,7 @@
 import {
   EMPTY_CURRENCY,
   lookupItem, createInventoryItem,
-} from './items'
+} from './items.js'
 
 export const PROJECT_NAME = 'Dungeons & Daggers'
 export const SRD_VERSION_LABEL = 'D&D SRD 5.2.1'
@@ -281,7 +281,7 @@ export {
   getCantripsKnownCount,
   getSpellsKnownCount,
   getMaxSpellLevel,
-} from './spells'
+} from './spells.js'
 
 
 export const ABILITY_SAVE_LABELS = [
@@ -300,7 +300,7 @@ export {
   SRD_RULE_BLOCKS,
   resolveRelevantRuleBlockKeys,
   buildRelevantRulesContext,
-} from './rules'
+} from './rules.js'
 
 const SPELLCASTING_CLASSES = new Set(
   Object.entries(CLASS_CONFIG)
@@ -481,10 +481,10 @@ export function calcArmorClassFromEquipment(inventory, dexScore = 10, className 
 }
 
 // ─── Re-export items utilities ───────────────────────────────────────────────
-export { ITEM_CATALOG, EMPTY_CURRENCY, lookupItem, createInventoryItem, generateInventoryId } from './items'
-export { CURRENCY_CONFIG, CURRENCY_ORDER, calcCarryingCapacity, calcTotalWeight, calcTotalGoldValue } from './items'
-export { getItemsByType, getWeapons, getArmors, getArmorsForClass, canUseShield } from './items'
-export { ITEM_TYPES, ARMOR_PROFICIENCY, SHIELD_PROFICIENCY } from './items'
+export { ITEM_CATALOG, EMPTY_CURRENCY, lookupItem, createInventoryItem, generateInventoryId } from './items.js'
+export { CURRENCY_CONFIG, CURRENCY_ORDER, calcCarryingCapacity, calcTotalWeight, calcTotalGoldValue } from './items.js'
+export { getItemsByType, getWeapons, getArmors, getArmorsForClass, canUseShield } from './items.js'
+export { ITEM_TYPES, ARMOR_PROFICIENCY, SHIELD_PROFICIENCY } from './items.js'
 
 export function createCharacterTemplate() {
   const defaultClass = 'Kämpfer'

@@ -1,6 +1,6 @@
 # Dungeons & Daggers – Master-Roadmap
 
-Last updated: 2026-04-13 (v2)
+Last updated: 2026-04-13 (v3)
 
 ## Zweck dieser Datei
 
@@ -82,7 +82,7 @@ Wenn diese Dokumente sich widersprechen, gilt die Reihenfolge:
 
 ## Aktuelle Gesamteinordnung
 
-Der aktuelle Schwerpunkt bleibt **Phase 3**.
+Der aktuelle Schwerpunkt ist jetzt **Phase 4**.
 
 Der Runtime-Kern ist bereits weit vorangekommen:
 - Runtime-Module als echter Hauptpfad
@@ -95,16 +95,17 @@ Der Runtime-Kern ist bereits weit vorangekommen:
 - State Ownership und Choice Visibility über choiceEngine
 
 ### Realistischer Status
-- Phase 3: **sehr weit, 3.1–3.4 abgeschlossen, 3.5 offen**
-- Größter Restblock: **Doku-Kanonisierung (3.5)**
+- Phase 3: **abgeschlossen**
+- Phase 4: **gestartet, 4.1 erster Slice erledigt**
+- Größter Restblock: **serverseitige State-/Memory-Autorität**
 
-### Warum Phase 4 noch nicht starten sollte
-- Eine Backend-Zentralisierung würde dieselben offenen Runtime-Unschärfen nur verlagern.
-- Ohne kanonisierte Doku fehlt der klare Startpunkt für das nächste Team/die nächste Session.
+### Warum Phase 4 jetzt dran ist
+- Der Runtime-Kern ist ausreichend gehärtet und Phase 3 ist dokumentarisch abgeschlossen.
+- Jetzt lohnt es sich, Wahrheits- und Prompt-Autorität schrittweise aus dem Frontend herauszuziehen.
 
 ---
 
-# Now – Phase 3 sauber abschließen
+# Phase 3 abgeschlossen
 
 ## Ziel
 Structured runtime modules müssen der klare, verlässliche Kernpfad sein.
@@ -187,7 +188,7 @@ Authored Checks müssen im echten UI-Fluss klar, sichtbar und verlässlich funkt
 - eine blaue Option bedeutet eindeutig authored check ✅
 - der Check-Flow läuft sichtbar und reproduzierbar durch ✅
 
-## 3.5 Doku kanonisieren ← aktueller Fokus
+## 3.5 Doku kanonisieren ✅
 
 ### Fokus
 Ein klarer wahrer Stand ohne widersprüchliche interne Anweisungen.
@@ -199,33 +200,41 @@ Ein klarer wahrer Stand ohne widersprüchliche interne Anweisungen.
 - `master_roadmap_dungeons_and_daggers.md` auf denselben echten Phase-3-Stand ziehen
 - veraltete Testzahlen, Branch-Hinweise und konkurrierende Priorisierungen entfernen
 
+### Status
+- Doku-Stand wurde auf den echten Phase-3-Abschluss gezogen.
+- `master_roadmap_dungeons_and_daggers.md`, `docs/ai-next-steps.md` und `docs/runtime-authority-roadmap.md` widersprechen sich nicht mehr über den Status von 3.4/3.5.
+
 ### Exit-Signal
-- ein klarer Startpunkt
-- keine widersprüchlichen Aussagen zum aktuellen Stand
+- ein klarer Startpunkt ✅
+- keine widersprüchlichen Aussagen zum aktuellen Stand ✅
 
 ## Phase-3-Abschlusskriterium
 
-Phase 3 ist erst dann wirklich fertig, wenn:
+Phase 3 ist jetzt abgeschlossen:
 - Runtime-Truth engine-owned ist ✅
 - Intent-/Identity-Pfad stabil genug ist ✅
 - player-facing Leaks durch Validation früh auffallen ✅
 - beide Referenzabenteuer die Architektur sauber beweisen ✅
 - Check + non-check + reveal chains end-to-end funktionieren ✅ (3.4)
 - Prompt, Choice-Layer und UI aus derselben autoritativen Runtime-Wahrheit ziehen ✅
-- Doku kanonisiert und widerspruchsfrei ❌ (3.5)
-
-Erst dann beginnt Phase 4.
+- Doku kanonisiert und widerspruchsfrei ✅ (3.5)
 
 ---
 
-# Next – Phase 4 Autorität zentralisieren
+# Now – Phase 4 Autorität zentralisieren
 
 ## Ziel
 Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Übergänge.
 
-### 4.1 Prompt-Building ins Backend verschieben
+### 4.1 Prompt-Building ins Backend verschieben ← aktueller Slice
 - Frontend baut nicht mehr die finale Prompt-Wahrheit
 - Server lädt State, baut Prompt, orchestriert AI-Call
+
+### Status
+- Erster Slice erledigt: Der Proxy baut den finalen `system` Prompt jetzt serverseitig.
+- Frontend sendet auf dem Proxy-Pfad rohe Chat-Historie plus `promptContext` statt eines fertig gebauten `system` Prompts.
+- Clientseitig eingeschleuste `system` Messages werden auf dem Proxy-Pfad verworfen.
+- Noch offen: serverseitiges Laden von State statt clientgegebener `promptContext`-Daten.
 
 ### 4.2 Session-Memory serverseitig verdichten
 - raw history reduzieren
@@ -242,7 +251,7 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 - Hinweis: gehört thematisch eher zur UX, wird aber hier erledigt weil beim Backend-Umbau Streaming ohnehin angefasst werden muss
 
 ### Done
-- Promptlogik zentralisiert
+- erster Prompt-Autoritäts-Slice auf dem Proxy-Pfad
 - Frontend trägt weniger Wahrheitslast
 - Tokenfluss ist nachvollziehbarer
 
@@ -349,13 +358,12 @@ Effiziente Erstellung maßgeschneiderter Abenteuer für die fertige Engine.
 
 ## Harte Priorisierung ab jetzt
 
-1. **Phase 3 sauber abschließen** (3.5)
-2. **Phase 4** – Backend-/Prompt-Autorität
-3. **Phase 5** – Kampfsystem (3 Sub-Phasen)
-4. **Phase 6** – Proben + Klassenfeatures
-5. **Phase 7** – Inventar/Ressourcen vertiefen
-6. **Phase 8** – Token-/Qualitätsnetz
-7. **Phase 9** – Abenteuer-Authoring
+1. **Phase 4** – Backend-/Prompt-Autorität
+2. **Phase 5** – Kampfsystem (3 Sub-Phasen)
+3. **Phase 6** – Proben + Klassenfeatures
+4. **Phase 7** – Inventar/Ressourcen vertiefen
+5. **Phase 8** – Token-/Qualitätsnetz
+6. **Phase 9** – Abenteuer-Authoring
 
 ---
 
@@ -374,7 +382,7 @@ Effiziente Erstellung maßgeschneiderter Abenteuer für die fertige Engine.
 
 Die richtige Reihenfolge bleibt:
 
-**Phase 3 sauber dicht machen**
+**Phase 3 abgeschlossen**
 → **Phase 4 Autorität zentralisieren**
 → **Phase 5 Kampf engine-seitig** (Encounter → Conditions → Zauber)
 → **Phase 6 Proben + Klassen**

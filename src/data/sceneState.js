@@ -1,19 +1,19 @@
 import {
   normalizeAdventureEntry, truncateText, firstSentences,
   tokenizeText, extractKeywords, splitSentences, normalizeShortList,
-} from './adventureParser'
+} from './adventureParser.js'
 import {
   extractCluesFromMessages, extractOpenThreads, extractDiscoveredNpcs,
   inferDispositionShift, inferSuspicionShift,
   extractNpcStateChanges, extractObjectStateChanges, detectActiveNpc,
-} from './knowledgeModel'
+} from './knowledgeModel.js'
 import {
   buildInitialRuntimeNpcStates,
   getVisibleRuntimeNpcs,
   isRuntimeStructure,
   normalizeRuntimeNpcState,
   resolveRuntimeNpcId,
-} from './runtimeModule'
+} from './runtimeModule.js'
 
 export const SCENE_STATE_VERSION = 3
 

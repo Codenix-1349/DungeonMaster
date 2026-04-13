@@ -71,21 +71,21 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
   }
 
   const normalizedModel = normalizeModelId(model)
-  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat, sceneState)
-
-  const fullMessages = [
-    { role: 'system', content: systemPrompt },
-    ...messages,
-  ]
 
   // Route through backend proxy when logged in with server-stored key
   if (useProxy) {
     try {
       const rawText = await streamChatProxy({
-        messages: fullMessages,
+        messages,
         model: normalizedModel,
         temperature: 0.6,
         maxTokens: 1800,
+        promptContext: {
+          character,
+          adventure,
+          combat,
+          sceneState,
+        },
         onChunk: null,
       })
       const normalizedText = normalizeAssistantResponse(rawText)
@@ -100,6 +100,12 @@ export async function sendMessage({ messages, model, apiKey, character, adventur
       }
     }
   }
+
+  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat, sceneState)
+  const fullMessages = [
+    { role: 'system', content: systemPrompt },
+    ...messages,
+  ]
 
   const body = {
     model: normalizedModel,

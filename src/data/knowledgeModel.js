@@ -1,4 +1,4 @@
-import { splitSentences, normalizeShortList } from './adventureParser'
+import { splitSentences, normalizeShortList } from './adventureParser.js'
 
 // ─── Clue & Thread Extraction ───────────────────────────────────────────────
 
