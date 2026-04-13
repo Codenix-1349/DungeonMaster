@@ -1,10 +1,11 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { SKILLS, ATTR_LABELS, ATTR_SHORT_LABELS, resolveSkillCheck } from '../data/srd'
 import D20Animation from './D20Animation'
 
 export default function SkillCheckPanel({ check, character, onResult, choiceLabel }) {
   const [result, setResult] = useState(null)
   const [rolling, setRolling] = useState(false)
+  const animationRunIdRef = useRef(0)
 
   const skillDef = SKILLS.find(s => s.key === check.skillOrAbility)
   const isSkill = Boolean(skillDef)
@@ -33,7 +34,10 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
     })
 
     // D20Animation handles the timing — we just set the result and let it animate
-    setResult(res)
+    setResult({
+      ...res,
+      animationRunId: ++animationRunIdRef.current,
+    })
   }, [check, character])
 
   const handleAnimComplete = useCallback(() => {
@@ -51,7 +55,14 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
           <span className="font-heading text-xs tracking-wider text-gold-500">PROBE: {label}</span>
         </div>
         <div className="flex justify-center py-2">
-          <D20Animation result={result.d20Result} size={220} holdTime={2000} onComplete={handleAnimComplete} />
+          <D20Animation
+            key={`skill-roll-${result.animationRunId}`}
+            result={result.d20Result}
+            runId={result.animationRunId}
+            size={220}
+            holdTime={2000}
+            onComplete={handleAnimComplete}
+          />
         </div>
       </div>
     )

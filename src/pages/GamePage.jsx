@@ -16,6 +16,7 @@ import {
   rebuildVisibleChoices,
   resolveResponsePendingCheck,
   resolveResolvedChoiceSubmission,
+  resolveUnmatchedRuntimeInput,
   resolveVisibleChoiceFromText,
   shouldBuildChoicesAfterResponse,
 } from './gamePageRuntime'
@@ -189,22 +190,21 @@ export default function GamePage() {
     })
   }, [gameLog])
 
-  const findVisibleTextChoice = useCallback((userText, activeAdventure = adventure, activeSceneState = sceneState) => {
+  const getVisibleChoices = useCallback((activeAdventure = adventure, activeSceneState = sceneState) => {
     if (isRuntimeModule(activeAdventure)) {
-      if (!activeSceneState) return null
+      if (!activeSceneState) return []
       const section = getCurrentSection(activeAdventure, activeSceneState)
-      if (!section) return null
-      const choices = rebuildVisibleChoices({
+      if (!section) return []
+      return rebuildVisibleChoices({
         section,
         sceneState: activeSceneState,
         assistantText: '',
         combatActive: combat?.active,
         runtimeModule: true,
       })
-      return resolveVisibleChoiceFromText({ userText, choices })
     }
 
-    return resolveVisibleChoiceFromText({ userText, choices: dynamicChoices })
+    return dynamicChoices
   }, [adventure, sceneState, combat?.active, dynamicChoices])
 
   async function submitResolvedChoice(choice, options = {}) {
@@ -260,14 +260,31 @@ export default function GamePage() {
       ? options.historyOverride
       : buildHistory()
 
-    const matchedVisibleChoice = !options.skipTextChoiceResolution && !options.recentActionKey
-      ? findVisibleTextChoice(text, activeAdventure, activeSceneState)
+    const visibleChoices = !options.skipTextChoiceResolution && !options.recentActionKey
+      ? getVisibleChoices(activeAdventure, activeSceneState)
+      : []
+
+    const matchedVisibleChoice = visibleChoices.length
+      ? resolveVisibleChoiceFromText({ userText: text, choices: visibleChoices })
       : null
 
     if (matchedVisibleChoice) {
       return submitResolvedChoice(matchedVisibleChoice, {
         ...options,
       })
+    }
+
+    const unresolvedRuntimeInput = activeRuntimeModule && visibleChoices.length
+      ? resolveUnmatchedRuntimeInput({ userText: text, choices: visibleChoices })
+      : null
+
+    if (
+      unresolvedRuntimeInput?.type === 'blocked_escalation' ||
+      unresolvedRuntimeInput?.type === 'needs_clarification'
+    ) {
+      setError(unresolvedRuntimeInput.message)
+      inputRef.current?.focus()
+      return
     }
 
     setInput('')
@@ -291,6 +308,7 @@ export default function GamePage() {
         adventure: activeAdventure,
         combat,
         sceneState: activeSceneState,
+        runtimeRequestMode: unresolvedRuntimeInput?.runtimeRequestMode || null,
         ollamaBaseUrl,
         useProxy: aiProvider === 'openrouter' && isLoggedIn && hasServerKey,
         onChunk: chunk => {
@@ -441,7 +459,7 @@ export default function GamePage() {
     startCombat,
     awardXP,
     gameLog,
-    findVisibleTextChoice,
+    getVisibleChoices,
     addItem,
     dynamicChoices,
     submitResolvedChoice,

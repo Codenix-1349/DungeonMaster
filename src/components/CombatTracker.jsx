@@ -79,7 +79,13 @@ function ResultBanner({ result }) {
     <div className={`rounded-lg border-2 p-3 text-center animate-slide-in ${style.bg}`}>
       {result.d20Roll ? (
         <div className="flex justify-center mb-1">
-          <D20Animation result={result.d20Roll} size={220} holdTime={2000} />
+          <D20Animation
+            key={`combat-roll-${result.animationRunId || 0}`}
+            result={result.d20Roll}
+            runId={result.animationRunId || 0}
+            size={220}
+            holdTime={2000}
+          />
         </div>
       ) : (
         <div className="text-2xl mb-1">{style.icon}</div>
@@ -156,6 +162,7 @@ export default function CombatTracker({ onCombatAction }) {
   const [actionLog, setActionLog] = useState([])
   const [resultBanner, setResultBanner] = useState(null)
   const bannerTimerRef = useRef(null)
+  const bannerAnimationRunIdRef = useRef(0)
 
   // State machine for player turn
   // null | 'selectAction' | 'selectTarget' | 'attack' | 'damage' |
@@ -180,7 +187,13 @@ export default function CombatTracker({ onCombatAction }) {
 
   const showBanner = useCallback((title, detail, type = 'hit', opts = {}) => {
     if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current)
-    setResultBanner({ title, detail, type, ...opts })
+    setResultBanner({
+      title,
+      detail,
+      type,
+      ...opts,
+      animationRunId: ++bannerAnimationRunIdRef.current,
+    })
     bannerTimerRef.current = setTimeout(() => setResultBanner(null), opts.d20Roll ? 4500 : 2500)
   }, [])
 

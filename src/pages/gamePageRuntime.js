@@ -168,6 +168,23 @@ const VERB_SYNONYM_GROUPS = [
   ['kletter', 'erklimm', 'hinauf', 'hochklett'],
   ['ueberzeug', 'beruhig', 'ueberred', 'besaenftig', 'zureden'],
   ['schleich', 'versteck', 'heimlich', 'anschleich', 'leise'],
+  ['benutz', 'verwend', 'nutz', 'einsetz', 'gebrauch'],
+  ['zuend', 'anzuend', 'entzuend', 'beleucht', 'leucht'],
+  ['lausch', 'hoer', 'horch'],
+  ['geh', 'kehr', 'weiter', 'folg', 'verlass', 'betret'],
+  ['les', 'studier', 'entschluessel'],
+]
+
+const RUNTIME_STRUCTURED_ACTION_STEMS = [
+  'benutz', 'verwend', 'nutz', 'einsetz', 'gebrauch',
+  'zuend', 'anzuend', 'entzuend', 'beleucht', 'leucht',
+  'geh', 'kehr', 'weiter', 'folg', 'verlass', 'betret',
+  'les', 'studier', 'entschluessel',
+]
+
+const RUNTIME_ESCALATION_STEMS = [
+  'angreif', 'kaempf', 'schlag', 'tret', 'hau', 'stich', 'stech', 'ramm',
+  'beleidig', 'beschimpf', 'droh', 'provozier', 'anschrei', 'streit',
 ]
 
 // Pre-build a stem → group-index lookup for O(1) synonym checks.
@@ -249,17 +266,116 @@ function getChoiceResolutionTexts(choice = {}) {
   return texts.map(text => String(text || '').trim()).filter(Boolean)
 }
 
+function tokenMatchesStemList(token = '', stems = []) {
+  if (!token) return false
+  return stems.some(stem => runtimeTokensMatch(token, stem))
+}
+
+function isVerbLikeRuntimeToken(token = '') {
+  if (!token) return false
+  return (
+    findSynonymGroup(token) != null ||
+    tokenMatchesStemList(token, RUNTIME_STRUCTURED_ACTION_STEMS) ||
+    tokenMatchesStemList(token, RUNTIME_ESCALATION_STEMS)
+  )
+}
+
+function getEntityRuntimeTokens(tokens = []) {
+  return tokens.filter(token => !isVerbLikeRuntimeToken(token))
+}
+
+function getChoiceResolutionTokens(choice = {}) {
+  const tokens = []
+  for (const text of getChoiceResolutionTexts(choice)) {
+    for (const token of tokenizeRuntimeChoiceText(text)) {
+      if (!tokens.some(existing => existing === token)) tokens.push(token)
+    }
+  }
+  return tokens
+}
+
+function countRuntimeTokenOverlaps(sourceTokens = [], candidateTokens = []) {
+  return sourceTokens.filter(sourceToken => (
+    candidateTokens.some(candidateToken => runtimeTokensMatch(sourceToken, candidateToken))
+  ))
+}
+
+function scoreParameterizedChoiceMatch(choice, inputTokens) {
+  const choiceTokens = getChoiceResolutionTokens(choice)
+  if (!choiceTokens.length) return 0
+
+  const inputEntityTokens = getEntityRuntimeTokens(inputTokens)
+  const choiceEntityTokens = getEntityRuntimeTokens(choiceTokens)
+  const matchedEntityTokens = countRuntimeTokenOverlaps(choiceEntityTokens, inputEntityTokens)
+  const matchedInputTokens = countRuntimeTokenOverlaps(inputTokens, choiceTokens)
+  const hasVerbOverlap = inputTokens.some(inputToken => (
+    choiceTokens.some(choiceToken => (
+      runtimeTokensMatch(inputToken, choiceToken) &&
+      (isVerbLikeRuntimeToken(inputToken) || isVerbLikeRuntimeToken(choiceToken))
+    ))
+  ))
+
+  if (matchedEntityTokens.length >= 2) {
+    return 620 + (matchedEntityTokens.length * 20) + (matchedInputTokens.length * 5) + (hasVerbOverlap ? 15 : 0)
+  }
+
+  if (matchedEntityTokens.length >= 1 && hasVerbOverlap && matchedInputTokens.length >= 2) {
+    return 540 + (matchedInputTokens.length * 10)
+  }
+
+  return 0
+}
+
 // Target-based fallback: match input against choice target names + action verbs.
 // "untersuche Schreibtisch" → finds interaction with target label containing "Schreibtisch".
 function scoreTargetMatch(choice, inputTokens) {
   if (!choice.target) return 0
-  const targetTokens = tokenizeRuntimeChoiceText(choice.label)
+  const targetTokens = getEntityRuntimeTokens(getChoiceResolutionTokens(choice))
   // At least one input token must match a target-related token in the label
   const targetHit = inputTokens.some(it => targetTokens.some(tt => runtimeTokensMatch(it, tt)))
   if (!targetHit) return 0
   // At least one input token should be an action verb (synonym-aware)
-  const hasVerb = inputTokens.some(it => findSynonymGroup(it) != null)
+  const hasVerb = inputTokens.some(it => isVerbLikeRuntimeToken(it))
   return hasVerb ? 400 : 300
+}
+
+function inputReferencesKnownRuntimeEntity(inputTokens = [], choices = []) {
+  const inputEntityTokens = getEntityRuntimeTokens(inputTokens)
+  if (!inputEntityTokens.length) return false
+
+  return choices.some(choice => {
+    const choiceEntityTokens = getEntityRuntimeTokens(getChoiceResolutionTokens(choice))
+    return inputEntityTokens.some(inputToken => (
+      choiceEntityTokens.some(choiceToken => runtimeTokensMatch(inputToken, choiceToken))
+    ))
+  })
+}
+
+export function resolveUnmatchedRuntimeInput({ userText = '', choices = [] } = {}) {
+  const inputTokens = tokenizeRuntimeChoiceText(userText)
+  if (!inputTokens.length) return null
+
+  const hasEscalation = inputTokens.some(token => tokenMatchesStemList(token, RUNTIME_ESCALATION_STEMS))
+  if (hasEscalation) {
+    return {
+      type: 'blocked_escalation',
+      message: 'Eskalierende Aktionen wie Drohen, Beleidigen oder Angreifen werden hier noch nicht frei von der KI aufgeloest. Nutze eine verfuegbare Handlung oder warte auf einen expliziten Engine-Pfad.',
+    }
+  }
+
+  const referencesKnownEntity = inputReferencesKnownRuntimeEntity(inputTokens, choices)
+  const hasStructuredIntent = inputTokens.some(token => isVerbLikeRuntimeToken(token))
+  if (referencesKnownEntity && hasStructuredIntent) {
+    return {
+      type: 'needs_clarification',
+      message: 'Diese Eingabe passt hier nicht eindeutig zu einer verfuegbaren Handlung. Nutze eine sichtbare Aktion oder formuliere Ziel und Mittel noch klarer.',
+    }
+  }
+
+  return {
+    type: 'flavor_only',
+    runtimeRequestMode: 'runtime_flavor_only',
+  }
 }
 
 export function resolveVisibleChoiceFromText({ userText = '', choices = [] } = {}) {
@@ -305,6 +421,13 @@ export function resolveVisibleChoiceFromText({ userText = '', choices = [] } = {
         if (score == null) continue
         if (!best || score > best.score) {
           best = { choice, score, exact: false }
+        }
+      }
+
+      if (!best || best.score < 700) {
+        const parameterizedScore = scoreParameterizedChoiceMatch(choice, inputTokens)
+        if (parameterizedScore > 0 && (!best || parameterizedScore > best.score)) {
+          best = { choice, score: parameterizedScore, exact: false }
         }
       }
 

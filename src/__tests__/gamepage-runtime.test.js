@@ -7,6 +7,7 @@ import {
   rebuildVisibleChoices,
   resolveResponsePendingCheck,
   resolveResolvedChoiceSubmission,
+  resolveUnmatchedRuntimeInput,
   resolveVisibleChoiceFromText,
   resolveRuntimeChoiceFromText,
   shouldBuildChoicesAfterResponse,
@@ -490,6 +491,28 @@ describe('GamePage runtime check flow helpers', () => {
     expect(choice?.interactionId).toBe('ask_elsa_to_open_stacks')
   })
 
+  it('matches parameterized runtime free text to the choice with the stronger entity overlap', () => {
+    const choice = resolveRuntimeChoiceFromText({
+      userText: 'Ich benutze die Fackel am Brunnen.',
+      choices: [
+        {
+          label: 'Dem Brunnen lauschen',
+          kind: 'listen',
+          interactionId: 'listen_well',
+          actionKey: 'intr:listen_well',
+        },
+        {
+          label: 'Den Brunnen mit der Fackel beleuchten',
+          kind: 'use',
+          interactionId: 'light_well_with_torch',
+          actionKey: 'intr:light_well_with_torch',
+        },
+      ],
+    })
+
+    expect(choice?.interactionId).toBe('light_well_with_torch')
+  })
+
   it('returns null for ambiguous typed text across multiple visible choices', () => {
     const choice = resolveVisibleChoiceFromText({
       userText: 'Ich untersuche die Tür.',
@@ -530,6 +553,64 @@ describe('GamePage runtime check flow helpers', () => {
     })
 
     expect(choice).toBeNull()
+  })
+
+  it('treats harmless unmatched runtime free text as flavor-only', () => {
+    const resolution = resolveUnmatchedRuntimeInput({
+      userText: 'Ich huepfe kurz in die Luft.',
+      choices: [
+        {
+          label: 'Zurueck zur Brauerei',
+          kind: 'exit',
+          actionKey: 'exit:back_to_brewery',
+        },
+      ],
+    })
+
+    expect(resolution).toEqual({
+      type: 'flavor_only',
+      runtimeRequestMode: 'runtime_flavor_only',
+    })
+  })
+
+  it('asks for clarification when unmatched runtime free text references known scene entities', () => {
+    const resolution = resolveUnmatchedRuntimeInput({
+      userText: 'Ich benutze die Fackel am Brunnen anders.',
+      choices: [
+        {
+          label: 'Dem Brunnen lauschen',
+          kind: 'listen',
+          interactionId: 'listen_well',
+          actionKey: 'intr:listen_well',
+        },
+        {
+          label: 'Den Brunnen mit der Fackel beleuchten',
+          kind: 'use',
+          interactionId: 'light_well_with_torch',
+          actionKey: 'intr:light_well_with_torch',
+        },
+      ],
+    })
+
+    expect(resolution?.type).toBe('needs_clarification')
+    expect(resolution?.message).toContain('nicht eindeutig')
+  })
+
+  it('blocks escalating runtime free text from becoming free AI canon', () => {
+    const resolution = resolveUnmatchedRuntimeInput({
+      userText: 'Ich beleidige Mara und greife sie an.',
+      choices: [
+        {
+          label: 'Mara ruhig nach dem Vermissten fragen',
+          kind: 'talk',
+          interactionId: 'ask_mara_about_missing_person',
+          actionKey: 'intr:ask_mara_about_missing_person',
+        },
+      ],
+    })
+
+    expect(resolution?.type).toBe('blocked_escalation')
+    expect(resolution?.message).toContain('Eskalierende Aktionen')
   })
 
   it('strips probe hint tags from runtime-module narration', () => {

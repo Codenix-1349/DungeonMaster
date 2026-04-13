@@ -55,6 +55,7 @@ describe('openrouterTransport proxy prompt authority', () => {
       adventure,
       combat,
       sceneState,
+      runtimeRequestMode: 'runtime_flavor_only',
       onChunk,
       useProxy: true,
     })
@@ -70,6 +71,7 @@ describe('openrouterTransport proxy prompt authority', () => {
         adventure,
         combat,
         sceneState,
+        runtimeRequestMode: 'runtime_flavor_only',
       },
       onChunk: null,
     })
@@ -108,6 +110,7 @@ describe('openrouterTransport proxy prompt authority', () => {
       adventure: { title: 'Graufurt' },
       combat: { active: false },
       sceneState: { currentSectionTitle: 'Torhaus' },
+      runtimeRequestMode: 'runtime_flavor_only',
       onChunk: vi.fn(),
       useProxy: false,
     })
@@ -119,6 +122,14 @@ describe('openrouterTransport proxy prompt authority', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.model).toBe('normalized:llama3.2')
     expect(body.messages[0]).toEqual({ role: 'system', content: 'SYSTEM PROMPT' })
+    expect(buildSystemPrompt).toHaveBeenCalledWith(
+      { name: 'Aria' },
+      { title: 'Graufurt' },
+      [{ role: 'user', content: 'Hallo lokal' }],
+      { active: false },
+      { currentSectionTitle: 'Torhaus' },
+      'runtime_flavor_only'
+    )
     expect(result).toBe('normalized:Lokale Antwort')
   })
 
