@@ -13,7 +13,10 @@ export const config = {
     port: Number(process.env.SMTP_PORT) || 587,
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
+    secure: process.env.SMTP_SECURE === 'true',
+    replyTo: process.env.SMTP_REPLY_TO || '',
     from: process.env.SMTP_FROM || 'noreply@dungeons-daggers.app',
+    fromName: process.env.SMTP_FROM_NAME || 'Dungeons & Daggers',
   },
   devAutoLogin: process.env.DEV_AUTO_LOGIN || '',
   tokenExpiryMinutes: {

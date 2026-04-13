@@ -11,6 +11,7 @@ import sessionRoutes from './routes/sessions.js'
 import apiConfigRoutes from './routes/apiConfig.js'
 import chatRoutes from './routes/chat.js'
 import { errorHandler } from './middleware/errorHandler.js'
+import { verifyEmailTransport } from './services/email.js'
 
 const app = express()
 
@@ -42,4 +43,14 @@ app.use(errorHandler)
 
 app.listen(config.port, () => {
   console.log(`DungeonMaster API listening on port ${config.port}`)
+
+  verifyEmailTransport()
+    .then(verified => {
+      if (verified) {
+        console.log('SMTP connection verified successfully.')
+      }
+    })
+    .catch(err => {
+      console.error('SMTP verification failed:', err.message)
+    })
 })

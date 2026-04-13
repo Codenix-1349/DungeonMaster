@@ -129,13 +129,25 @@ export default function LoginPage() {
               <p className="font-body text-sm text-stone-400">
                 Prüfe dein Postfach und klicke auf den Bestätigungslink.
               </p>
+              {!email.trim() && (
+                <div>
+                  <label className="font-heading text-xs text-stone-400 mb-1 block text-left">E-Mail</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className="input-dark w-full font-body"
+                    placeholder="held@example.com"
+                  />
+                </div>
+              )}
               <button
-                disabled={resending}
+                disabled={resending || !email.trim()}
                 onClick={async () => {
                   setResending(true)
                   setError('')
                   try {
-                    await resendVerification()
+                    await resendVerification(email.trim())
                     setSuccess('Bestätigungsmail erneut gesendet.')
                   } catch (err) {
                     setError(err.message)
