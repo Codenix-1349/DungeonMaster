@@ -426,6 +426,223 @@ SECTIONS:
       sectionId: 'room',
     }))
   })
+
+  it('warns when runtime authoring references unknown sections, clues, npcs, and unauthored runtime objects', () => {
+    const adv = normalizeAdventureEntry({
+      id: 'broken-authoring-contract',
+      title: 'Broken Authoring Contract',
+      text: `MODULE_ID: broken_authoring_contract
+MODULE_VERSION: 1
+SYSTEM: dnd5e
+START_SECTION_ID: missing_room
+PLAYER_PRIMARY_OBJECTIVE: Finde den Weg hinaus.
+NPC_REGISTRY:
+  host:
+    name: Gastgeber
+    firstSeen: room
+    currentlyVisible: true
+CLUE_REGISTRY:
+  hidden_truth:
+    sourceSectionId: ghost_room
+    revealConditions:
+      - interactionId: missing_interaction
+        result: success
+    text: Hinter der Nordwand liegt ein zweiter Zugang.
+OBJECT_REGISTRY:
+  hidden_drawer:
+    type: concealed_compartment
+    portable: false
+SECTIONS:
+  - id: room
+    location: Testkammer
+    playerObjective: Sprich mit dem Gastgeber.
+    introText: Eine stille Kammer mit kalten Steinwaenden.
+    visibleNpcs:
+      - ghost
+    exits:
+      - id: to_nowhere
+        label: In die Nebenhalle gehen
+        targetSectionId: next_room
+    interactions:
+      - id: talk_host
+        label: Mit dem Gastgeber sprechen
+        kind: talk
+        target: stranger
+        checkPolicy: none
+        availability:
+          visible: true
+        results:
+          success:
+            npcUpdates:
+              - npcId: stranger
+            revealClues:
+              - unknown_clue
+            revealRuntime:
+              objects:
+                - id: secret_panel
+                  sectionId: wrong_room
+                  label: Versteckte Platte in der Wand
+                  kind: concealed_panel
+                  visible: true
+                  state: sealed
+              interactions:
+                - id: reveal_guest
+                  sectionId: wrong_room
+                  label: Mit der verborgenen Stimme sprechen
+                  kind: talk
+                  visible: true
+      - id: inspect_drawer
+        label: Die verborgene Lade oeffnen
+        kind: manipulate
+        target: hidden_drawer
+        checkPolicy: none
+        availability:
+          runtimeObjectVisible: hidden_drawer
+        results:
+          success:
+            objectStateUpdates:
+              - objectId: hidden_drawer
+                state: opened`,
+    })
+
+    expect(adv.structure.module.validationWarnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'runtime-start-section-unknown' }),
+      expect.objectContaining({ code: 'runtime-clue-source-section-unknown' }),
+      expect.objectContaining({ code: 'runtime-clue-reveal-interaction-unknown', interactionId: 'missing_interaction' }),
+      expect.objectContaining({ code: 'runtime-visible-npc-unknown', sectionId: 'room' }),
+      expect.objectContaining({ code: 'runtime-exit-target-unknown', sectionId: 'room' }),
+      expect.objectContaining({ code: 'runtime-talk-target-unknown', sectionId: 'room', interactionId: 'talk_host' }),
+      expect.objectContaining({ code: 'runtime-npc-update-unknown', sectionId: 'room', interactionId: 'talk_host' }),
+      expect.objectContaining({ code: 'runtime-reveal-clue-unknown', sectionId: 'room', interactionId: 'talk_host' }),
+      expect.objectContaining({ code: 'runtime-revealed-object-unknown', sectionId: 'room', interactionId: 'talk_host' }),
+      expect.objectContaining({ code: 'runtime-revealed-object-section-unknown', sectionId: 'room', interactionId: 'talk_host' }),
+      expect.objectContaining({ code: 'runtime-revealed-talk-target-missing', sectionId: 'room', interactionId: 'talk_host' }),
+      expect.objectContaining({ code: 'runtime-availability-object-not-authored', sectionId: 'room', interactionId: 'inspect_drawer' }),
+      expect.objectContaining({ code: 'runtime-object-state-update-not-authored', sectionId: 'room', interactionId: 'inspect_drawer' }),
+    ]))
+  })
+
+  it('warns when player-facing runtime text leaks hidden NPCs, hidden objects, or clue text', () => {
+    const adv = normalizeAdventureEntry({
+      id: 'player-facing-leak',
+      title: 'Player Facing Leak',
+      text: `MODULE_ID: player_facing_leak
+MODULE_VERSION: 1
+SYSTEM: dnd5e
+START_SECTION_ID: room
+PLAYER_PRIMARY_OBJECTIVE: Finde Mira Sen im Vorraum.
+NPC_REGISTRY:
+  guard:
+    name: Torwaechter
+    firstSeen: room
+    currentlyVisible: true
+  mira:
+    name: Mira Sen
+    firstSeen: null
+    currentlyVisible: false
+CLUE_REGISTRY:
+  hidden_letter:
+    sourceSectionId: room
+    revealConditions:
+      - interactionId: inspect_floor
+        result: success
+    text: Mira Sen versteckte den Schluessel hinter der losen Platte.
+OBJECT_REGISTRY:
+  loose_plate:
+    type: concealed_panel
+    portable: false
+SECTIONS:
+  - id: room
+    location: Vorraum
+    playerObjective: Suche Mira Sen im stillen Vorraum.
+    introText: Eine lose Platte unter dem Teppich zeichnet sich vor dir ab.
+    visibleFeatures:
+      - Lose Platte unter dem Teppich
+    openThreads:
+      - Mira Sen versteckte den Schluessel hinter der losen Platte.
+    visibleNpcs:
+      - guard
+    interactions:
+      - id: inspect_floor
+        label: Den Boden untersuchen
+        kind: inspect
+        target: floor
+        checkPolicy: none
+        availability:
+          visible: true
+        results:
+          success:
+            revealClues:
+              - hidden_letter
+            revealRuntime:
+              objects:
+                - id: loose_plate
+                  sectionId: room
+                  label: Lose Platte unter dem Teppich
+                  kind: concealed_panel
+                  visible: true
+                  state: sealed`,
+    })
+
+    expect(adv.structure.module.validationWarnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'runtime-player-facing-hidden-npc', sectionId: null }),
+      expect.objectContaining({ code: 'runtime-player-facing-hidden-npc', sectionId: 'room' }),
+      expect.objectContaining({ code: 'runtime-player-facing-hidden-object', sectionId: 'room' }),
+      expect.objectContaining({ code: 'runtime-player-facing-hidden-clue', sectionId: 'room' }),
+    ]))
+  })
+
+  it('warns when authored runtime interactions reuse the same stable interaction id', () => {
+    const adv = normalizeAdventureEntry({
+      id: 'duplicate-runtime-ids',
+      title: 'Duplicate Runtime Ids',
+      text: `MODULE_ID: duplicate_runtime_ids
+MODULE_VERSION: 1
+SYSTEM: dnd5e
+START_SECTION_ID: room
+PLAYER_PRIMARY_OBJECTIVE: Untersuche die Kammer.
+NPC_REGISTRY: {}
+CLUE_REGISTRY: {}
+OBJECT_REGISTRY: {}
+SECTIONS:
+  - id: room
+    location: Kammer
+    playerObjective: Untersuche die Kammer.
+    introText: Eine kahle Kammer mit einem rissigen Sockel.
+    interactions:
+      - id: inspect_altar
+        label: Den Sockel untersuchen
+        kind: inspect
+        target: altar
+        checkPolicy: none
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [ALTAR_SEEN]
+  - id: hall
+    location: Seitenhalle
+    playerObjective: Untersuche die Seitenhalle.
+    introText: Eine leere Seitenhalle mit staubigem Boden.
+    interactions:
+      - id: inspect_altar
+        label: Den zweiten Sockel untersuchen
+        kind: inspect
+        target: second_altar
+        checkPolicy: none
+        availability:
+          visible: true
+        results:
+          success:
+            setFlags: [SECOND_ALTAR_SEEN]`,
+    })
+
+    expect(adv.structure.module.validationWarnings).toContainEqual(expect.objectContaining({
+      code: 'runtime-interaction-id-duplicate',
+      sectionId: 'hall',
+      interactionId: 'inspect_altar',
+    }))
+  })
 })
 
 // ── 3–6. Reveal chain: inspect_counter → hidden_plate → open → parchment ──

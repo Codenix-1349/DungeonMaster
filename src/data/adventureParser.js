@@ -474,11 +474,176 @@ function isRuntimeModule(text = '') {
   return /^MODULE_ID:/m.test(text) && /^SECTIONS:/m.test(text)
 }
 
+function pushRuntimeValidationWarning(warnings, seenWarnings, warning) {
+  const normalized = {
+    code: warning.code,
+    sectionId: warning.sectionId || null,
+    interactionId: warning.interactionId || null,
+    message: warning.message,
+  }
+  const warningKey = [
+    normalized.code,
+    normalized.sectionId || '',
+    normalized.interactionId || '',
+    normalized.message,
+  ].join('|')
+
+  if (seenWarnings.has(warningKey)) return
+  seenWarnings.add(warningKey)
+  warnings.push(normalized)
+}
+
+function normalizeRuntimeValidationText(value = '') {
+  return String(value || '').trim().toLowerCase()
+}
+
+function runtimeValidationTextIncludes(text = '', phrase = '') {
+  const source = normalizeRuntimeValidationText(text)
+  const needle = normalizeRuntimeValidationText(phrase)
+  return Boolean(source && needle && source.includes(needle))
+}
+
+function getRuntimeInteractionResultEntries(interaction) {
+  if (!interaction?.results || typeof interaction.results !== 'object') return []
+
+  return Object.entries(interaction.results)
+    .filter(([, result]) => result && typeof result === 'object')
+    .map(([outcome, result]) => ({ outcome, result }))
+}
+
+function validatePlayerFacingRuntimeText({
+  warnings,
+  seenWarnings,
+  text,
+  fieldLabel,
+  sectionId = null,
+  hiddenNpcNames = [],
+  hiddenObjectLabels = [],
+  clueTexts = [],
+} = {}) {
+  const sourceText = String(text || '').trim()
+  if (!sourceText) return
+
+  for (const npcName of hiddenNpcNames) {
+    if (!runtimeValidationTextIncludes(sourceText, npcName)) continue
+    pushRuntimeValidationWarning(warnings, seenWarnings, {
+      code: 'runtime-player-facing-hidden-npc',
+      sectionId,
+      interactionId: null,
+      message: `Runtime ${fieldLabel} mentions hidden NPC "${npcName}".`,
+    })
+  }
+
+  for (const objectLabel of hiddenObjectLabels) {
+    if (!runtimeValidationTextIncludes(sourceText, objectLabel)) continue
+    pushRuntimeValidationWarning(warnings, seenWarnings, {
+      code: 'runtime-player-facing-hidden-object',
+      sectionId,
+      interactionId: null,
+      message: `Runtime ${fieldLabel} mentions hidden object label "${objectLabel}".`,
+    })
+  }
+
+  for (const clueText of clueTexts) {
+    if (!runtimeValidationTextIncludes(sourceText, clueText)) continue
+    pushRuntimeValidationWarning(warnings, seenWarnings, {
+      code: 'runtime-player-facing-hidden-clue',
+      sectionId,
+      interactionId: null,
+      message: `Runtime ${fieldLabel} contains authored clue text that should stay unrevealed.`,
+    })
+  }
+}
+
 function validateRuntimeModuleStructure(module, sections = []) {
   const warnings = []
+  const seenWarnings = new Set()
+  const npcRegistry = module?.npcRegistry || {}
+  const clueRegistry = module?.clueRegistry || {}
+  const objectRegistry = module?.objectRegistry || {}
+  const sectionIds = new Set()
+  const staticInteractionIds = new Map()
+  const revealedOnlyInteractionIds = new Map()
+  const authoredRuntimeObjectIds = new Map()
+  const allHiddenObjectLabels = new Set()
+
+  const registerStaticInteractionId = (interactionId, sectionId, sourceDescription) => {
+    const normalizedId = String(interactionId || '').trim()
+    if (!normalizedId) return false
+
+    const previous = staticInteractionIds.get(normalizedId) || revealedOnlyInteractionIds.get(normalizedId)
+    if (previous) {
+      pushRuntimeValidationWarning(warnings, seenWarnings, {
+        code: 'runtime-interaction-id-duplicate',
+        sectionId,
+        interactionId: normalizedId,
+        message: `Runtime interaction id "${normalizedId}" is authored multiple times (${previous.sourceDescription} and ${sourceDescription}).`,
+      })
+      return false
+    }
+
+    staticInteractionIds.set(normalizedId, { sectionId, sourceDescription })
+    return true
+  }
+
+  const registerRevealedInteractionId = (interactionId, sectionId, sourceDescription) => {
+    const normalizedId = String(interactionId || '').trim()
+    if (!normalizedId) return false
+
+    const staticMatch = staticInteractionIds.get(normalizedId)
+    if (staticMatch) {
+      if (staticMatch.sectionId && sectionId && staticMatch.sectionId !== sectionId) {
+        pushRuntimeValidationWarning(warnings, seenWarnings, {
+          code: 'runtime-revealed-interaction-section-mismatch',
+          sectionId,
+          interactionId: normalizedId,
+          message: `Revealed runtime interaction "${normalizedId}" is assigned to section "${sectionId}" but its static authored definition lives in section "${staticMatch.sectionId}".`,
+        })
+      }
+      return true
+    }
+
+    const previous = revealedOnlyInteractionIds.get(normalizedId)
+    if (previous) {
+      pushRuntimeValidationWarning(warnings, seenWarnings, {
+        code: 'runtime-interaction-id-duplicate',
+        sectionId,
+        interactionId: normalizedId,
+        message: `Runtime interaction id "${normalizedId}" is authored multiple times (${previous.sourceDescription} and ${sourceDescription}).`,
+      })
+      return false
+    }
+
+    revealedOnlyInteractionIds.set(normalizedId, { sectionId, sourceDescription })
+    return true
+  }
+
+  const hasKnownInteractionId = interactionId => {
+    const normalizedId = String(interactionId || '').trim()
+    return Boolean(normalizedId && (staticInteractionIds.has(normalizedId) || revealedOnlyInteractionIds.has(normalizedId)))
+  }
+
+  const registerRuntimeObjectId = (objectId, sectionId, interactionId) => {
+    const normalizedId = String(objectId || '').trim()
+    if (!normalizedId) return false
+
+    const previous = authoredRuntimeObjectIds.get(normalizedId)
+    if (previous) {
+      pushRuntimeValidationWarning(warnings, seenWarnings, {
+        code: 'runtime-revealed-object-id-duplicate',
+        sectionId,
+        interactionId,
+        message: `Runtime object "${normalizedId}" is revealed multiple times (${previous.sectionId || 'unknown'} and ${sectionId || 'unknown'}).`,
+      })
+      return false
+    }
+
+    authoredRuntimeObjectIds.set(normalizedId, { sectionId, interactionId })
+    return true
+  }
 
   if (!String(module?.playerPrimaryObjective || '').trim()) {
-    warnings.push({
+    pushRuntimeValidationWarning(warnings, seenWarnings, {
       code: 'runtime-player-primary-objective-missing',
       sectionId: null,
       interactionId: null,
@@ -487,46 +652,422 @@ function validateRuntimeModuleStructure(module, sections = []) {
   }
 
   for (const section of sections) {
-    if (!String(section.playerObjective || '').trim()) {
-      warnings.push({
-        code: 'runtime-player-objective-missing',
-        sectionId: section.id,
+    const sectionId = String(section?.id || '').trim()
+    if (!sectionId) {
+      pushRuntimeValidationWarning(warnings, seenWarnings, {
+        code: 'runtime-section-id-missing',
+        sectionId: null,
         interactionId: null,
-        message: `Runtime section "${section.id || section.title || 'unknown'}" should define playerObjective for player-facing objective text.`,
+        message: 'Runtime sections must define a stable id.',
+      })
+    } else if (sectionIds.has(sectionId)) {
+      pushRuntimeValidationWarning(warnings, seenWarnings, {
+        code: 'runtime-section-id-duplicate',
+        sectionId,
+        interactionId: null,
+        message: `Runtime section id "${sectionId}" is authored multiple times.`,
+      })
+    } else {
+      sectionIds.add(sectionId)
+    }
+
+    for (const interaction of section.interactions || []) {
+      const interactionId = String(interaction?.id || '').trim()
+      if (!interactionId) {
+        pushRuntimeValidationWarning(warnings, seenWarnings, {
+          code: 'runtime-interaction-id-missing',
+          sectionId,
+          interactionId: null,
+          message: `Runtime section "${sectionId || section.title || 'unknown'}" contains an interaction without a stable id.`,
+        })
+      } else {
+        registerStaticInteractionId(interactionId, sectionId, `section ${sectionId}`)
+      }
+
+      for (const { result } of getRuntimeInteractionResultEntries(interaction)) {
+        for (const runtimeObject of result?.revealRuntime?.objects || []) {
+          const runtimeObjectId = String(runtimeObject?.id || '').trim()
+          const owningSectionId = String(runtimeObject?.sectionId || sectionId || '').trim() || null
+
+          if (runtimeObjectId) {
+            registerRuntimeObjectId(runtimeObjectId, owningSectionId, interactionId || null)
+          }
+
+          const runtimeObjectLabel = String(runtimeObject?.label || '').trim()
+          if (runtimeObjectLabel) {
+            allHiddenObjectLabels.add(runtimeObjectLabel)
+          }
+        }
+      }
+    }
+  }
+
+  for (const section of sections) {
+    const sectionId = String(section?.id || '').trim() || null
+    for (const interaction of section.interactions || []) {
+      const interactionId = String(interaction?.id || '').trim()
+      for (const { result } of getRuntimeInteractionResultEntries(interaction)) {
+        for (const revealedInteraction of result?.revealRuntime?.interactions || []) {
+          const revealedInteractionId = String(revealedInteraction?.id || '').trim()
+          const owningSectionId = String(revealedInteraction?.sectionId || sectionId || '').trim() || null
+          if (!revealedInteractionId) continue
+          registerRevealedInteractionId(
+            revealedInteractionId,
+            owningSectionId,
+            `revealed interaction from ${interactionId || 'unknown interaction'}`
+          )
+        }
+      }
+    }
+  }
+
+  if (!String(module?.startSectionId || '').trim() || !sectionIds.has(module.startSectionId)) {
+    pushRuntimeValidationWarning(warnings, seenWarnings, {
+      code: 'runtime-start-section-unknown',
+      sectionId: null,
+      interactionId: null,
+      message: `Runtime module start section "${module?.startSectionId || ''}" does not exist.`,
+    })
+  }
+
+  for (const [clueId, clue] of Object.entries(clueRegistry)) {
+    const sourceSectionId = String(clue?.sourceSectionId || '').trim()
+    if (sourceSectionId && !sectionIds.has(sourceSectionId)) {
+      pushRuntimeValidationWarning(warnings, seenWarnings, {
+        code: 'runtime-clue-source-section-unknown',
+        sectionId: sourceSectionId,
+        interactionId: null,
+        message: `Runtime clue "${clueId}" references unknown source section "${sourceSectionId}".`,
+      })
+    }
+
+    for (const condition of clue?.revealConditions || []) {
+      const interactionId = String(condition?.interactionId || '').trim()
+      if (!interactionId) continue
+      if (hasKnownInteractionId(interactionId)) continue
+      pushRuntimeValidationWarning(warnings, seenWarnings, {
+        code: 'runtime-clue-reveal-interaction-unknown',
+        sectionId: sourceSectionId || null,
+        interactionId,
+        message: `Runtime clue "${clueId}" references unknown interaction "${interactionId}" in revealConditions.`,
+      })
+    }
+  }
+
+  const allClueTexts = Object.values(clueRegistry)
+    .map(clue => String(clue?.text || '').trim())
+    .filter(Boolean)
+  const startSection = sections.find(section => section.id === module?.startSectionId) || null
+  const startVisibleNpcIds = new Set(startSection?.visibleNpcs || [])
+  const startHiddenNpcNames = Object.entries(npcRegistry)
+    .filter(([npcId]) => !startVisibleNpcIds.has(npcId))
+    .map(([, npc]) => String(npc?.name || '').trim())
+    .filter(Boolean)
+
+  validatePlayerFacingRuntimeText({
+    warnings,
+    seenWarnings,
+    text: module?.playerPrimaryObjective || '',
+    fieldLabel: 'PLAYER_PRIMARY_OBJECTIVE',
+    sectionId: null,
+    hiddenNpcNames: startHiddenNpcNames,
+    hiddenObjectLabels: [...allHiddenObjectLabels],
+    clueTexts: allClueTexts,
+  })
+
+  for (const section of sections) {
+    const sectionId = String(section?.id || '').trim() || null
+    if (!String(section.playerObjective || '').trim()) {
+      pushRuntimeValidationWarning(warnings, seenWarnings, {
+        code: 'runtime-player-objective-missing',
+        sectionId,
+        interactionId: null,
+        message: `Runtime section "${sectionId || section.title || 'unknown'}" should define playerObjective for player-facing objective text.`,
       })
     }
 
     if (!String(section.introText || '').trim()) {
-      warnings.push({
+      pushRuntimeValidationWarning(warnings, seenWarnings, {
         code: 'runtime-intro-text-missing',
-        sectionId: section.id,
+        sectionId,
         interactionId: null,
-        message: `Runtime section "${section.id || section.title || 'unknown'}" should define introText for player-facing scene framing.`,
+        message: `Runtime section "${sectionId || section.title || 'unknown'}" should define introText for player-facing scene framing.`,
+      })
+    }
+
+    const visibleNpcIds = new Set(section.visibleNpcs || [])
+    const hiddenNpcNames = Object.entries(npcRegistry)
+      .filter(([npcId]) => !visibleNpcIds.has(npcId))
+      .map(([, npc]) => String(npc?.name || '').trim())
+      .filter(Boolean)
+
+    validatePlayerFacingRuntimeText({
+      warnings,
+      seenWarnings,
+      text: section.playerObjective,
+      fieldLabel: `section "${sectionId || section.title || 'unknown'}" playerObjective`,
+      sectionId,
+      hiddenNpcNames,
+      hiddenObjectLabels: [...allHiddenObjectLabels],
+      clueTexts: allClueTexts,
+    })
+    validatePlayerFacingRuntimeText({
+      warnings,
+      seenWarnings,
+      text: section.introText,
+      fieldLabel: `section "${sectionId || section.title || 'unknown'}" introText`,
+      sectionId,
+      hiddenNpcNames,
+      hiddenObjectLabels: [...allHiddenObjectLabels],
+      clueTexts: allClueTexts,
+    })
+
+    for (const [featureIndex, feature] of (section.visibleFeatures || []).entries()) {
+      validatePlayerFacingRuntimeText({
+        warnings,
+        seenWarnings,
+        text: feature,
+        fieldLabel: `section "${sectionId || section.title || 'unknown'}" visibleFeatures[${featureIndex}]`,
+        sectionId,
+        hiddenNpcNames,
+        hiddenObjectLabels: [...allHiddenObjectLabels],
+        clueTexts: allClueTexts,
+      })
+    }
+
+    for (const [threadIndex, thread] of (section.openThreads || []).entries()) {
+      validatePlayerFacingRuntimeText({
+        warnings,
+        seenWarnings,
+        text: thread,
+        fieldLabel: `section "${sectionId || section.title || 'unknown'}" openThreads[${threadIndex}]`,
+        sectionId,
+        hiddenNpcNames,
+        hiddenObjectLabels: [...allHiddenObjectLabels],
+        clueTexts: allClueTexts,
+      })
+    }
+
+    for (const npcId of section.visibleNpcs || []) {
+      if (npcRegistry[npcId]) continue
+      pushRuntimeValidationWarning(warnings, seenWarnings, {
+        code: 'runtime-visible-npc-unknown',
+        sectionId,
+        interactionId: null,
+        message: `Runtime section "${sectionId || section.title || 'unknown'}" references unknown NPC "${npcId}" in visibleNpcs.`,
+      })
+    }
+
+    for (const exit of section.exits || []) {
+      const targetSectionId = String(exit?.targetId || '').trim()
+      if (targetSectionId && sectionIds.has(targetSectionId)) continue
+      pushRuntimeValidationWarning(warnings, seenWarnings, {
+        code: 'runtime-exit-target-unknown',
+        sectionId,
+        interactionId: null,
+        message: `Runtime exit "${exit?.id || exit?.label || 'unknown'}" references unknown target section "${targetSectionId}".`,
       })
     }
 
     for (const interaction of section.interactions || []) {
+      const interactionId = String(interaction?.id || '').trim() || null
+      const interactionKind = String(interaction?.kind || '').trim().toLowerCase()
       const checkPolicy = typeof interaction.checkPolicy === 'string'
         ? interaction.checkPolicy.trim()
         : null
+
+      if (interactionKind === 'talk') {
+        const targetNpcId = String(interaction?.target || '').trim()
+        if (!targetNpcId) {
+          pushRuntimeValidationWarning(warnings, seenWarnings, {
+            code: 'runtime-talk-target-missing',
+            sectionId,
+            interactionId,
+            message: `Runtime talk interaction "${interactionId || interaction.label || 'unknown'}" must target an NPC id from NPC_REGISTRY.`,
+          })
+        } else if (!npcRegistry[targetNpcId]) {
+          pushRuntimeValidationWarning(warnings, seenWarnings, {
+            code: 'runtime-talk-target-unknown',
+            sectionId,
+            interactionId,
+            message: `Runtime talk interaction "${interactionId || interaction.label || 'unknown'}" targets unknown NPC "${targetNpcId}".`,
+          })
+        }
+      }
+
+      const gatedRuntimeObjectId = String(interaction?.availability?.runtimeObjectVisible || '').trim()
+      if (gatedRuntimeObjectId && !objectRegistry[gatedRuntimeObjectId]) {
+        pushRuntimeValidationWarning(warnings, seenWarnings, {
+          code: 'runtime-availability-object-unknown',
+          sectionId,
+          interactionId,
+          message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" gates visibility on unknown object "${gatedRuntimeObjectId}".`,
+        })
+      } else if (gatedRuntimeObjectId && !authoredRuntimeObjectIds.has(gatedRuntimeObjectId)) {
+        pushRuntimeValidationWarning(warnings, seenWarnings, {
+          code: 'runtime-availability-object-not-authored',
+          sectionId,
+          interactionId,
+          message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" gates visibility on object "${gatedRuntimeObjectId}" that is never authored as a runtime reveal.`,
+        })
+      }
+
       if (checkPolicy && checkPolicy !== 'none') {
-        warnings.push({
+        pushRuntimeValidationWarning(warnings, seenWarnings, {
           code: 'runtime-check-policy-invalid',
-          sectionId: section.id,
-          interactionId: interaction.id || null,
-          message: `Runtime interaction "${interaction.id || interaction.label || 'unknown'}" uses unsupported checkPolicy "${checkPolicy}". Use "none" or define check.`,
+          sectionId,
+          interactionId,
+          message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" uses unsupported checkPolicy "${checkPolicy}". Use "none" or define check.`,
         })
         continue
+      }
+
+      for (const { outcome, result } of getRuntimeInteractionResultEntries(interaction)) {
+        for (const clueId of result?.revealClues || []) {
+          if (clueRegistry[clueId]) continue
+          pushRuntimeValidationWarning(warnings, seenWarnings, {
+            code: 'runtime-reveal-clue-unknown',
+            sectionId,
+            interactionId,
+            message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" reveals unknown clue "${clueId}" on ${outcome}.`,
+          })
+        }
+
+        for (const npcUpdate of result?.npcUpdates || []) {
+          const npcId = String(npcUpdate?.npcId || '').trim()
+          if (npcId && npcRegistry[npcId]) continue
+          pushRuntimeValidationWarning(warnings, seenWarnings, {
+            code: 'runtime-npc-update-unknown',
+            sectionId,
+            interactionId,
+            message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" updates unknown NPC "${npcId}" on ${outcome}.`,
+          })
+        }
+
+        for (const objectUpdate of result?.objectStateUpdates || []) {
+          const objectId = String(objectUpdate?.objectId || '').trim()
+          if (objectId && !objectRegistry[objectId]) {
+            pushRuntimeValidationWarning(warnings, seenWarnings, {
+              code: 'runtime-object-state-update-unknown',
+              sectionId,
+              interactionId,
+              message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" updates unknown object "${objectId}" on ${outcome}.`,
+            })
+            continue
+          }
+
+          if (objectId && !authoredRuntimeObjectIds.has(objectId)) {
+            pushRuntimeValidationWarning(warnings, seenWarnings, {
+              code: 'runtime-object-state-update-not-authored',
+              sectionId,
+              interactionId,
+              message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" updates object "${objectId}" that is never authored as a runtime reveal.`,
+            })
+          }
+        }
+
+        for (const runtimeObject of result?.revealRuntime?.objects || []) {
+          const runtimeObjectId = String(runtimeObject?.id || '').trim()
+          const runtimeObjectSectionId = String(runtimeObject?.sectionId || sectionId || '').trim() || null
+          const runtimeObjectLabel = String(runtimeObject?.label || '').trim()
+
+          if (!runtimeObjectId) {
+            pushRuntimeValidationWarning(warnings, seenWarnings, {
+              code: 'runtime-revealed-object-id-missing',
+              sectionId,
+              interactionId,
+              message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" reveals an object without an id on ${outcome}.`,
+            })
+          } else if (!objectRegistry[runtimeObjectId]) {
+            pushRuntimeValidationWarning(warnings, seenWarnings, {
+              code: 'runtime-revealed-object-unknown',
+              sectionId,
+              interactionId,
+              message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" reveals object "${runtimeObjectId}" that is missing from OBJECT_REGISTRY.`,
+            })
+          }
+
+          if (!runtimeObjectLabel) {
+            pushRuntimeValidationWarning(warnings, seenWarnings, {
+              code: 'runtime-revealed-object-label-missing',
+              sectionId,
+              interactionId,
+              message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" reveals object "${runtimeObjectId || 'unknown'}" without a player-facing label.`,
+            })
+          }
+
+          if (runtimeObjectSectionId && !sectionIds.has(runtimeObjectSectionId)) {
+            pushRuntimeValidationWarning(warnings, seenWarnings, {
+              code: 'runtime-revealed-object-section-unknown',
+              sectionId,
+              interactionId,
+              message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" reveals object "${runtimeObjectId || 'unknown'}" into unknown section "${runtimeObjectSectionId}".`,
+            })
+          }
+        }
+
+        for (const revealedInteraction of result?.revealRuntime?.interactions || []) {
+          const revealedInteractionId = String(revealedInteraction?.id || '').trim()
+          const revealedInteractionLabel = String(revealedInteraction?.label || '').trim()
+          const revealedInteractionSectionId = String(revealedInteraction?.sectionId || sectionId || '').trim() || null
+          const revealedInteractionKind = String(revealedInteraction?.kind || '').trim().toLowerCase()
+          const revealedTarget = String(revealedInteraction?.target || '').trim()
+
+          if (!revealedInteractionId) {
+            pushRuntimeValidationWarning(warnings, seenWarnings, {
+              code: 'runtime-revealed-interaction-id-missing',
+              sectionId,
+              interactionId,
+              message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" reveals an interaction without an id on ${outcome}.`,
+            })
+          }
+
+          if (!revealedInteractionLabel) {
+            pushRuntimeValidationWarning(warnings, seenWarnings, {
+              code: 'runtime-revealed-interaction-label-missing',
+              sectionId,
+              interactionId,
+              message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" reveals interaction "${revealedInteractionId || 'unknown'}" without a label on ${outcome}.`,
+            })
+          }
+
+          if (revealedInteractionSectionId && !sectionIds.has(revealedInteractionSectionId)) {
+            pushRuntimeValidationWarning(warnings, seenWarnings, {
+              code: 'runtime-revealed-interaction-section-unknown',
+              sectionId,
+              interactionId,
+              message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" reveals interaction "${revealedInteractionId || 'unknown'}" into unknown section "${revealedInteractionSectionId}".`,
+            })
+          }
+
+          if (revealedInteractionKind === 'talk') {
+            if (!revealedTarget) {
+              pushRuntimeValidationWarning(warnings, seenWarnings, {
+                code: 'runtime-revealed-talk-target-missing',
+                sectionId,
+                interactionId,
+                message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" reveals talk interaction "${revealedInteractionId || 'unknown'}" without an NPC target.`,
+              })
+            } else if (!npcRegistry[revealedTarget]) {
+              pushRuntimeValidationWarning(warnings, seenWarnings, {
+                code: 'runtime-revealed-talk-target-unknown',
+                sectionId,
+                interactionId,
+                message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" reveals talk interaction "${revealedInteractionId || 'unknown'}" for unknown NPC "${revealedTarget}".`,
+              })
+            }
+          }
+        }
       }
 
       if (interaction.check) continue
       if (checkPolicy === 'none') continue
 
-      warnings.push({
+      pushRuntimeValidationWarning(warnings, seenWarnings, {
         code: 'runtime-check-decision-missing',
-        sectionId: section.id,
-        interactionId: interaction.id || null,
-        message: `Runtime interaction "${interaction.id || interaction.label || 'unknown'}" must define check or checkPolicy: none.`,
+        sectionId,
+        interactionId,
+        message: `Runtime interaction "${interactionId || interaction.label || 'unknown'}" must define check or checkPolicy: none.`,
       })
     }
   }
