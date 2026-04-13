@@ -83,7 +83,14 @@ export async function verifyEmail(token) {
   })
 }
 
-export async function resendVerification() {
+export async function resendVerification(email) {
+  if (email) {
+    return apiFetch('/auth/resend-verification-request', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+  }
+
   return apiFetch('/auth/resend-verification', { method: 'POST' })
 }
 

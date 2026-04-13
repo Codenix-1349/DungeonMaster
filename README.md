@@ -66,6 +66,26 @@ Dann im Browser öffnen: **http://localhost:5173**
 - Chat-Anfragen laufen über einen Server-Proxy (Key bleibt serverseitig)
 - Sitzungsdaten werden lokal im Browser gespeichert
 
+## E-Mail Setup
+
+Für Verifizierungsmails und Passwort-Resets nutzt das Backend SMTP. Die Beispielkonfiguration in `server/.env.example` ist auf Brevo ausgelegt:
+
+```env
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=<Brevo SMTP Login>
+SMTP_PASS=<Brevo SMTP Key>
+SMTP_FROM=no-reply@auth.dungeons-daggers.app
+SMTP_FROM_NAME=Dungeons & Daggers
+SMTP_REPLY_TO=support@dungeons-daggers.app
+```
+
+Wichtig:
+- `SMTP_PASS` ist der Brevo-SMTP-Schlüssel, nicht dein Brevo-Login-Passwort.
+- `SMTP_FROM` muss auf einer in Brevo bestätigten Domain oder Subdomain liegen.
+- Beim Serverstart wird die SMTP-Verbindung einmal geprüft und bei Fehlkonfiguration direkt geloggt.
+
 ## Build
 
 ```bash

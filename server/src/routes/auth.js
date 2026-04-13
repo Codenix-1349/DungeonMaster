@@ -9,6 +9,12 @@ import { sendVerificationEmail, sendPasswordResetEmail } from '../services/email
 
 const router = Router()
 
+async function issueVerificationEmailForUser(userId, email) {
+  await invalidateTokens(userId, 'email_verify')
+  const verifyToken = await createToken(userId, 'email_verify')
+  await sendVerificationEmail(email, verifyToken)
+}
+
 // ── Dev auto-login (only when DEV_AUTO_LOGIN is set) ────────────────────────
 
 if (config.devAutoLogin) {
@@ -79,8 +85,7 @@ router.post('/register', async (req, res, next) => {
 
     // Send verification email
     try {
-      const verifyToken = await createToken(user.id, 'email_verify')
-      await sendVerificationEmail(user.email, verifyToken)
+      await issueVerificationEmailForUser(user.id, user.email)
     } catch (err) {
       console.error('Failed to send verification email:', err.message)
     }
@@ -191,9 +196,7 @@ router.post('/resend-verification', authenticate, async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Benutzer nicht gefunden.' })
     if (rows[0].email_verified) return res.json({ message: 'E-Mail bereits bestätigt.' })
 
-    await invalidateTokens(req.user.id, 'email_verify')
-    const verifyToken = await createToken(req.user.id, 'email_verify')
-    await sendVerificationEmail(rows[0].email, verifyToken)
+    await issueVerificationEmailForUser(req.user.id, rows[0].email)
 
     res.json({ success: true, message: 'Bestätigungsmail erneut gesendet.' })
   } catch (err) {
@@ -202,6 +205,26 @@ router.post('/resend-verification', authenticate, async (req, res, next) => {
 })
 
 // ── Forgot password (request reset) ────────────────────────────────────────
+
+router.post('/resend-verification-request', async (req, res, next) => {
+  try {
+    const { email } = req.body
+    if (!email) return res.status(400).json({ error: 'Email ist erforderlich.' })
+
+    const { rows } = await pool.query(
+      'SELECT id, email, email_verified FROM users WHERE email = $1',
+      [email.toLowerCase().trim()]
+    )
+
+    if (rows.length > 0 && !rows[0].email_verified) {
+      await issueVerificationEmailForUser(rows[0].id, rows[0].email)
+    }
+
+    res.json({ success: true, message: 'Falls ein unbestÃ¤tigtes Konto existiert, wurde eine BestÃ¤tigungsmail gesendet.' })
+  } catch (err) {
+    next(err)
+  }
+})
 
 router.post('/forgot-password', async (req, res, next) => {
   try {

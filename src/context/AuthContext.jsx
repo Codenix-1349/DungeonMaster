@@ -4,6 +4,7 @@ import {
   verifyEmail as apiVerifyEmail, resendVerification as apiResendVerification,
   devLogin as apiDevLogin,
 } from '../services/api'
+import { hasPendingAuthLinkAction } from '../utils/authLinkParams'
 
 const AuthContext = createContext(null)
 
@@ -13,6 +14,14 @@ export function AuthProvider({ children }) {
 
   // On mount: check if we have a valid token, or try dev auto-login
   useEffect(() => {
+    // Password-reset and verification links must always land on the auth screen.
+    if (hasPendingAuthLinkAction(window.location.search)) {
+      apiLogout()
+      setUser(null)
+      setLoading(false)
+      return
+    }
+
     const token = getToken()
     if (token) {
       fetchMe()

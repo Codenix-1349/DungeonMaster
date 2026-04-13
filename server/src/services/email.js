@@ -3,6 +3,14 @@ import { config } from '../config.js'
 
 let transporter = null
 
+function buildFromHeader() {
+  const fromName = config.smtp.fromName?.trim()
+  const fromEmail = config.smtp.from?.trim()
+
+  if (!fromName) return fromEmail
+  return `"${fromName.replace(/"/g, '\\"')}" <${fromEmail}>`
+}
+
 function getTransporter() {
   if (transporter) return transporter
 
@@ -14,7 +22,7 @@ function getTransporter() {
   const opts = {
     host: config.smtp.host,
     port: config.smtp.port,
-    secure: config.smtp.port === 465,
+    secure: config.smtp.secure || config.smtp.port === 465,
   }
 
   // Only add auth if credentials are provided (Mailpit etc. don't need auth)
@@ -26,7 +34,15 @@ function getTransporter() {
   return transporter
 }
 
-async function sendMail({ to, subject, html }) {
+export async function verifyEmailTransport() {
+  const t = getTransporter()
+  if (!t) return false
+
+  await t.verify()
+  return true
+}
+
+async function sendMail({ to, subject, text, html }) {
   const t = getTransporter()
 
   if (!t) {
@@ -34,17 +50,25 @@ async function sendMail({ to, subject, html }) {
     console.log('═══ EMAIL (no SMTP configured) ═══')
     console.log(`To: ${to}`)
     console.log(`Subject: ${subject}`)
+    console.log(text)
     console.log(html)
     console.log('═══════════════════════════════════')
     return
   }
 
-  await t.sendMail({
-    from: config.smtp.from,
+  const message = {
+    from: buildFromHeader(),
     to,
     subject,
+    text,
     html,
-  })
+  }
+
+  if (config.smtp.replyTo) {
+    message.replyTo = config.smtp.replyTo
+  }
+
+  await t.sendMail(message)
 }
 
 export async function sendVerificationEmail(email, token) {
@@ -53,6 +77,14 @@ export async function sendVerificationEmail(email, token) {
   await sendMail({
     to: email,
     subject: 'Dungeons & Daggers — E-Mail bestätigen',
+    text: [
+      'Dungeons & Daggers',
+      '',
+      'Bitte bestätige deine E-Mail-Adresse:',
+      url,
+      '',
+      'Der Link ist 24 Stunden gültig. Falls du dich nicht registriert hast, ignoriere diese Mail.',
+    ].join('\n'),
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="color: #d4a017;">Dungeons &amp; Daggers</h2>
@@ -70,6 +102,14 @@ export async function sendPasswordResetEmail(email, token) {
   await sendMail({
     to: email,
     subject: 'Dungeons & Daggers — Passwort zurücksetzen',
+    text: [
+      'Dungeons & Daggers',
+      '',
+      'Du hast eine Passwort-Zurücksetzung angefordert:',
+      url,
+      '',
+      'Der Link ist 30 Minuten gültig. Falls du dies nicht angefordert hast, ignoriere diese Mail.',
+    ].join('\n'),
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="color: #d4a017;">Dungeons &amp; Daggers</h2>
