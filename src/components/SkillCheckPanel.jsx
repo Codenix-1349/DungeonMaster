@@ -1,11 +1,15 @@
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { SKILLS, ATTR_LABELS, ATTR_SHORT_LABELS, resolveSkillCheck } from '../data/srd'
 import D20Animation from './D20Animation'
+import { preloadAllD20Sheets } from './d20Preload'
 
 export default function SkillCheckPanel({ check, character, onResult, choiceLabel }) {
   const [result, setResult] = useState(null)
   const [rolling, setRolling] = useState(false)
   const animationRunIdRef = useRef(0)
+
+  // Preload all 20 sprite sheets while the user sees the pending state
+  useEffect(() => { preloadAllD20Sheets() }, [])
 
   const skillDef = SKILLS.find(s => s.key === check.skillOrAbility)
   const isSkill = Boolean(skillDef)
@@ -42,9 +46,10 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
 
   const handleAnimComplete = useCallback(() => {
     setRolling(false)
-    if (result) {
-      setTimeout(() => onResult(result, choiceLabel), 1500)
-    }
+  }, [])
+
+  const handleDismiss = useCallback(() => {
+    if (result) onResult(result, choiceLabel)
   }, [result, onResult, choiceLabel])
 
   // Rolling state: show D20 animation
@@ -98,9 +103,6 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
           <div className="font-body text-sm text-stone-400">
             d20({result.d20Result}) {result.modifier >= 0 ? '+' : '−'} {Math.abs(result.modifier)} = <span className="text-parchment font-heading">{result.total}</span>
           </div>
-          {isProficient && (
-            <div className="font-body text-xs text-gold-600 mt-1">Geübt (+{profBonus})</div>
-          )}
         </div>
 
         <div className={`rounded border p-3 text-center mt-2 ${successStyle}`}>
@@ -111,6 +113,10 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
             Ergebnis {result.total} vs SG {result.dc}
           </p>
         </div>
+
+        <button onClick={handleDismiss} className="mt-3 w-full py-1.5 text-xs font-heading tracking-wider text-stone-400 hover:text-parchment border border-stone-700/50 hover:border-stone-600 rounded transition-colors">
+          Weiter
+        </button>
       </div>
     )
   }
