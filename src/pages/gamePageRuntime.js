@@ -534,7 +534,7 @@ function mapRuntimeSuspicion(value = 0) {
 
 function normalizeRuntimeEngagementState(value = 'open') {
   const normalized = String(value || '').trim().toLowerCase()
-  if (['warned', 'withdrawn', 'hostile'].includes(normalized)) return normalized
+  if (['warned', 'withdrawn', 'hostile', 'calling_guards', 'fled', 'expelled'].includes(normalized)) return normalized
   return 'open'
 }
 
@@ -620,6 +620,89 @@ function resolveRuntimeEscalationTarget({ structure = null, sceneState = null, s
   }
 }
 
+function normalizeRuntimeEscalationOutcome(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['warning', 'withdrawn', 'combat_start', 'call_guards', 'flee', 'scene_fallback'].includes(normalized)) {
+    return normalized
+  }
+  return 'scene_fallback'
+}
+
+function normalizeRuntimeEscalationNpcState(rawState = null) {
+  if (!rawState || typeof rawState !== 'object') return null
+
+  const normalized = {}
+  if (rawState.currentlyVisible != null) normalized.currentlyVisible = rawState.currentlyVisible === true
+  if (rawState.state != null) normalized.state = String(rawState.state || '').trim().toLowerCase()
+  if (rawState.sectionId != null) normalized.sectionId = String(rawState.sectionId || '').trim() || null
+  return Object.keys(normalized).length ? normalized : null
+}
+
+function normalizeRuntimeEscalationConsequence(rawConsequence = null) {
+  if (!rawConsequence || typeof rawConsequence !== 'object') return null
+
+  const setFlags = Array.isArray(rawConsequence.setFlags)
+    ? rawConsequence.setFlags.map(flag => String(flag || '').trim()).filter(Boolean)
+    : []
+  const transitionToSectionId = String(rawConsequence.transitionToSectionId || '').trim() || null
+  const activeNpcId = String(rawConsequence.activeNpcId || '').trim() || null
+  const consequenceText = String(rawConsequence.consequenceText || '').trim() || ''
+
+  return {
+    outcome: normalizeRuntimeEscalationOutcome(rawConsequence.outcome),
+    setFlags,
+    transitionToSectionId,
+    clearActiveNpc: rawConsequence.clearActiveNpc === true,
+    activeNpcId,
+    engagementState: rawConsequence.engagementState
+      ? normalizeRuntimeEngagementState(rawConsequence.engagementState)
+      : null,
+    targetNpcState: normalizeRuntimeEscalationNpcState(rawConsequence.targetNpcState),
+    threatDelta: Number.isFinite(Number(rawConsequence.threatDelta)) ? Number(rawConsequence.threatDelta) : 0,
+    suspicionDelta: Number.isFinite(Number(rawConsequence.suspicionDelta)) ? Number(rawConsequence.suspicionDelta) : 0,
+    warningsDelta: Number.isFinite(Number(rawConsequence.warningsDelta)) ? Number(rawConsequence.warningsDelta) : 0,
+    consequenceText,
+  }
+}
+
+function getRuntimeEscalationConsequences(policy = {}) {
+  const rawConsequences = policy?.consequences && typeof policy.consequences === 'object'
+    ? policy.consequences
+    : {}
+  const normalized = {}
+
+  for (const [intentKey, rawConsequence] of Object.entries(rawConsequences)) {
+    const intent = String(intentKey || '').trim().toLowerCase()
+    if (!['insult', 'threat', 'attack'].includes(intent)) continue
+    const consequence = normalizeRuntimeEscalationConsequence(rawConsequence)
+    if (!consequence) continue
+    normalized[intent] = consequence
+  }
+
+  return normalized
+}
+
+function getDefaultRuntimeEscalationEngagementState(outcome = 'warning') {
+  if (outcome === 'combat_start') return 'hostile'
+  if (outcome === 'withdrawn') return 'withdrawn'
+  if (outcome === 'call_guards') return 'calling_guards'
+  if (outcome === 'flee') return 'fled'
+  if (outcome === 'scene_fallback') return 'expelled'
+  return 'warned'
+}
+
+function interpolateRuntimeEscalationText(text = '', context = {}) {
+  const replacements = {
+    npcName: context.npcName || '',
+    intent: context.intent || '',
+    outcome: context.outcome || '',
+  }
+
+  return String(text || '').replace(/\{(\w+)\}/g, (match, key) => (
+    Object.prototype.hasOwnProperty.call(replacements, key) ? replacements[key] : match
+  )).trim()
+}
+
 function getRuntimeEscalationPolicy(npcDef = {}) {
   const policy = npcDef?.escalationPolicy || {}
   const combatPreset = policy.combatPreset || npcDef?.combatPreset || null
@@ -633,6 +716,7 @@ function getRuntimeEscalationPolicy(npcDef = {}) {
     canStartCombat,
     combatPreset,
     combatProfile,
+    consequences: getRuntimeEscalationConsequences(policy),
   }
 }
 
@@ -664,7 +748,14 @@ function buildRuntimeCombatEnemy(npc = {}, npcDef = {}) {
   }
 }
 
-function getEscalationConsequenceText({ intent, outcome, npcName }) {
+function getEscalationConsequenceText({ intent, outcome, npcName, authoredText = '' }) {
+  const interpolatedAuthoredText = interpolateRuntimeEscalationText(authoredText, {
+    npcName,
+    intent,
+    outcome,
+  })
+  if (interpolatedAuthoredText) return interpolatedAuthoredText
+
   if (outcome === 'combat_start') {
     return `${npcName} reagiert sofort feindselig, und die Situation kippt in offenen Kampf.`
   }
@@ -676,6 +767,15 @@ function getEscalationConsequenceText({ intent, outcome, npcName }) {
       return `${npcName} erstarrt kurz, zieht sich dann sichtbar von dir zurueck und verweigert jedes weitere Gespraech.`
     }
     return `${npcName} verhaertet den Blick, beendet das Gespraech und zieht sich deutlich von dir zurueck.`
+  }
+  if (outcome === 'call_guards') {
+    return `${npcName} ruft sofort nach Hilfe und setzt eine authorisierte Eskalationsfolge in Gang.`
+  }
+  if (outcome === 'flee') {
+    return `${npcName} nutzt den ersten freien Moment zur Flucht und entzieht sich der Szene.`
+  }
+  if (outcome === 'scene_fallback') {
+    return `${npcName} reagiert sofort und zwingt die Szene in eine authorisierte Folge, die nicht frei von der KI entschieden wird.`
   }
   if (intent === 'threat') {
     return `${npcName} spannt sich sichtbar an und warnt dich scharf, dass weitere Drohungen Folgen haben werden.`
@@ -720,27 +820,40 @@ function resolveRuntimeEscalation({
 
   const npcDef = structure?.module?.npcRegistry?.[targetNpc.id] || {}
   const policy = getRuntimeEscalationPolicy(npcDef)
+  const authoredConsequence = policy.consequences?.[intent] || null
   const currentRelation = createRuntimeNpcRelation(
     structure,
     targetNpc.id,
     sceneState?.dialogueState?.npcRelations?.[targetNpc.id]
   )
 
-  const threatDelta = intent === 'attack' ? 4 : intent === 'threat' ? 2 : 1
-  const suspicionDelta = intent === 'attack' ? 3 : intent === 'threat' ? 2 : 1
-  const warningsDelta = intent === 'attack' ? 1 : 1
+  const threatDelta = (intent === 'attack' ? 4 : intent === 'threat' ? 2 : 1) + (authoredConsequence?.threatDelta || 0)
+  const suspicionDelta = (intent === 'attack' ? 3 : intent === 'threat' ? 2 : 1) + (authoredConsequence?.suspicionDelta || 0)
+  const warningsDelta = 1 + (authoredConsequence?.warningsDelta || 0)
   const nextThreat = clampRuntimeMeter(currentRelation.threat + threatDelta)
   const nextSuspicion = clampRuntimeMeter(currentRelation.suspicion + suspicionDelta)
   const warningsIssued = currentRelation.warningsIssued + warningsDelta
   const worsenedDisposition = shiftRuntimeDisposition(currentRelation.disposition, -1)
 
   const canResolveCombat = policy.canStartCombat && Boolean(policy.combatPreset || policy.combatProfile)
-  const combatTriggered = canResolveCombat && (
+  const defaultCombatTriggered = canResolveCombat && (
     (intent === 'attack' && policy.immediateCombatOnAttack) ||
     nextThreat >= policy.combatThreshold
   )
-  const withdrawn = !combatTriggered && (intent === 'attack' || nextThreat >= policy.withdrawThreshold)
-  const outcome = combatTriggered ? 'combat_start' : withdrawn ? 'withdrawn' : 'warning'
+  const defaultWithdrawn = !defaultCombatTriggered && (intent === 'attack' || nextThreat >= policy.withdrawThreshold)
+  const defaultOutcome = defaultCombatTriggered ? 'combat_start' : defaultWithdrawn ? 'withdrawn' : 'warning'
+  const requestedOutcome = authoredConsequence?.outcome || null
+  const combatTriggered = requestedOutcome === 'combat_start'
+    ? canResolveCombat
+    : defaultCombatTriggered
+  const outcome = combatTriggered ? 'combat_start' : (requestedOutcome || defaultOutcome)
+  const transitionSection = authoredConsequence?.transitionToSectionId
+    ? findSectionById(structure, authoredConsequence.transitionToSectionId)
+    : null
+  const transitionPlotFlags = transitionSection?.setsOnEntry || []
+  const targetNpcStatePatch = authoredConsequence?.targetNpcState || (outcome === 'flee'
+    ? { currentlyVisible: false, state: 'fled', sectionId: null }
+    : null)
 
   const nextRelation = {
     ...currentRelation,
@@ -748,24 +861,79 @@ function resolveRuntimeEscalation({
     suspicion: nextSuspicion,
     threat: outcome === 'combat_start' ? Math.max(nextThreat, policy.combatThreshold) : nextThreat,
     warningsIssued,
-    engagementState: outcome === 'combat_start'
-      ? 'hostile'
-      : outcome === 'withdrawn'
-        ? 'withdrawn'
-        : 'warned',
+    engagementState: authoredConsequence?.engagementState || getDefaultRuntimeEscalationEngagementState(outcome),
     lastTopic: String(userText || '').trim().slice(0, 80),
   }
 
+  const nextPlotFlags = {
+    ...(sceneState.gmState?.plotFlags || {}),
+    ...Object.fromEntries((authoredConsequence?.setFlags || []).map(flag => [flag, true])),
+    ...Object.fromEntries(transitionPlotFlags.map(flag => [flag, true])),
+  }
+  const nextNpcStates = { ...(sceneState.gmState?.npcStates || {}) }
+  if (targetNpcStatePatch) {
+    nextNpcStates[targetNpc.id] = {
+      ...(nextNpcStates[targetNpc.id] || {}),
+      ...targetNpcStatePatch,
+    }
+  }
+  const targetStillVisible = targetNpcStatePatch?.currentlyVisible !== false
+  const desiredActiveNpcId = authoredConsequence?.clearActiveNpc
+    ? null
+    : authoredConsequence?.activeNpcId || (targetStillVisible ? targetNpc.id : null)
+  const nextNpcRelations = {
+    ...(sceneState.dialogueState?.npcRelations || {}),
+    [targetNpc.id]: nextRelation,
+  }
+  if (desiredActiveNpcId && desiredActiveNpcId !== targetNpc.id) {
+    nextNpcRelations[desiredActiveNpcId] = createRuntimeNpcRelation(
+      structure,
+      desiredActiveNpcId,
+      nextNpcRelations[desiredActiveNpcId]
+    )
+  }
+  const nextSectionId = transitionSection?.id || sceneState.gmState?.currentSectionId || section.id
+  const nextRuntimeObjects = Object.fromEntries(
+    Object.entries(sceneState.gmState?.runtimeObjects || {}).map(([objectId, runtimeObject]) => {
+      const inCurrentSection = runtimeObject?.sectionId ? runtimeObject.sectionId === nextSectionId : true
+      return [objectId, {
+        ...runtimeObject,
+        visible: runtimeObject?.suppressed !== true && inCurrentSection,
+      }]
+    })
+  )
+  const nextRuntimeInteractions = Object.fromEntries(
+    Object.entries(sceneState.gmState?.runtimeInteractions || {}).map(([interactionId, runtimeInteraction]) => {
+      const inCurrentSection = runtimeInteraction?.sectionId ? runtimeInteraction.sectionId === nextSectionId : true
+      return [interactionId, {
+        ...runtimeInteraction,
+        visible: runtimeInteraction?.suppressed !== true && inCurrentSection,
+      }]
+    })
+  )
+
   const nextSceneState = {
     ...sceneState,
+    gmState: {
+      ...(sceneState.gmState || {}),
+      currentSectionId: nextSectionId,
+      plotFlags: nextPlotFlags,
+      npcStates: nextNpcStates,
+      runtimeObjects: nextRuntimeObjects,
+      runtimeInteractions: nextRuntimeInteractions,
+    },
     dialogueState: {
       ...(sceneState.dialogueState || {}),
-      activeNpcId: targetNpc.id,
-      npcRelations: {
-        ...(sceneState.dialogueState?.npcRelations || {}),
-        [targetNpc.id]: nextRelation,
-      },
+      activeNpcId: desiredActiveNpcId,
+      npcRelations: nextNpcRelations,
     },
+  }
+  if (transitionSection) {
+    nextSceneState.currentSectionTitle = transitionSection.title || nextSceneState.currentSectionTitle
+    nextSceneState.currentLocation = transitionSection.location || transitionSection.title || nextSceneState.currentLocation
+    nextSceneState.currentObjective = transitionSection.playerObjective || transitionSection.objective || nextSceneState.currentObjective
+    nextSceneState.summary = transitionSection.introText || transitionSection.summary || nextSceneState.summary
+    nextSceneState.activeQuest = structure?.module?.playerPrimaryObjective || structure?.module?.primaryObjective || nextSceneState.activeQuest
   }
 
   const combatEnemy = outcome === 'combat_start'
@@ -775,6 +943,7 @@ function resolveRuntimeEscalation({
     intent,
     outcome,
     npcName: targetNpc.name,
+    authoredText: authoredConsequence?.consequenceText || '',
   })
 
   return {
@@ -791,6 +960,7 @@ function resolveRuntimeEscalation({
       npcId: targetNpc.id,
       npcName: targetNpc.name,
       consequence,
+      transitionToSectionId: transitionSection?.id || null,
     },
     recentActionKey: `esc:${intent}:${targetNpc.id}`,
   }

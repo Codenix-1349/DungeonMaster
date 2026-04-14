@@ -22,6 +22,7 @@ RUNTIME_RULES:
 PLOT_FLAGS:
   - ELSA_BRIEFED
   - LENO_BRIEFED
+  - LENO_CALLED_FOR_ELSA
   - STACKS_OPEN
   - DESK_INSPECTED
   - SECRET_DRAWER_OPENED
@@ -61,6 +62,14 @@ NPC_REGISTRY:
     currentlyVisible: true
     relationship: neutral
     suspicion: none
+    escalationPolicy:
+      consequences:
+        threat:
+          outcome: call_guards
+          setFlags: [LENO_CALLED_FOR_ELSA]
+          activeNpcId: elsa
+          engagementState: calling_guards
+          consequenceText: "{npcName} faehrt erschrocken zurueck und ruft laut nach Elsa, statt weiter selbst mit dir zu sprechen."
     knownFacts: []
     secretsUnlocked: []
     lastTopic: null
@@ -71,6 +80,19 @@ NPC_REGISTRY:
     currentlyVisible: false
     relationship: wary
     suspicion: medium
+    escalationPolicy:
+      consequences:
+        attack:
+          outcome: flee
+          setFlags: [MIRA_ESCAPED]
+          transitionToSectionId: collapsed_gallery
+          clearActiveNpc: true
+          engagementState: fled
+          targetNpcState:
+            currentlyVisible: false
+            state: fled
+            sectionId: null
+          consequenceText: "{npcName} reisst sich los, flieht durch den schmalen Rueckweg und entzieht sich deiner Reichweite."
     knownFacts: []
     secretsUnlocked: []
     lastTopic: null
