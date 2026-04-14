@@ -11,6 +11,23 @@ Use the docs in this order instead:
 3. `docs/ai-next-steps.md`
 4. `docs/ai-progress.md`
 
+## 2026-04-15 - Phase 4.2 Slice 5: Authored Escalation Consequences
+
+### Done - runtime escalation can now resolve to authored guards, flight, and scene fallback paths
+
+- Runtime escalation policies can now declare authored consequence objects per intent instead of only relying on the built-in warning/withdrawal/combat ladder.
+- Authored escalation consequences now support engine-owned flags, target NPC engagement-state changes, forced active-NPC handoff, and optional scene transitions.
+- The runtime escalation layer now recognizes and preserves additional authoritative engagement states such as `calling_guards`, `fled`, and `expelled`.
+- Talk choices for escalated NPCs stay suppressed when they are calling guards, have fled, or were otherwise authoritatively removed from normal dialogue flow.
+- Graufurt now includes:
+  - a guard-call consequence on Leno that hands authority over to Elsa
+  - a flight consequence on Mira that forces a scene fallback back to the collapsed gallery
+- Added regression coverage for:
+  - authored guard-call escalation
+  - authored flee escalation with section transition
+  - talk-choice suppression after non-combat escalation outcomes
+- Full test suite green (`211/211`) and build green after the slice.
+
 ## 2026-04-14 - Phase 4.2 Slice 4: Authored Intent Slots
 
 ### Done - runtime free text now resolves through authored slot data, not only visible wording

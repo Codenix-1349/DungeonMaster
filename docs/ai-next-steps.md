@@ -1,6 +1,6 @@
 # Next Steps
 
-Last updated: 2026-04-14
+Last updated: 2026-04-15
 
 ## Canonical reading order
 
@@ -24,7 +24,7 @@ The active gate is now Phase 4: backend/prompt authority.
 
 ## Current next step
 
-**Phase 4 - current slice: runtime free-text / intent authority, then server-side state loading.**
+**Phase 4 - current slice: server-side state loading / memory authority on the proxy path.**
 
 Phase 4.1 slice 1 is now done:
 - proxy-backed chat sends raw history + `promptContext`
@@ -45,9 +45,10 @@ Current follow-up goal:
 - [done] allow authored NPC escalation to suppress talk actions or start combat through explicit runtime metadata (`canStartCombat`, `combatPreset`, `escalationPolicy`)
 - [done] mark app-resolved escalation in the prompt path so AI only narrates the already-decided consequence
 - [done] move runtime intent resolution onto authored target/tool/topic slots so slot-aware free text is no longer only label/alias matching
-- next inside 4.2:
-  - broaden escalation outcomes beyond dialogue/combat into authored help-calls, flight, guards, and scene-specific fallback consequences
-- after that, continue reducing trust in client-passed state on the proxy path and move session memory/state loading server-side
+- [done] broaden escalation outcomes beyond dialogue/combat into authored help-calls, flight, guards, and scene-specific fallback consequences
+- next:
+  - continue reducing trust in client-passed state on the proxy path and move session memory/state loading server-side
+  - start with Phase 4.3 session-memory compaction and server-owned state loading instead of client-passed runtime context
 
 ## Runtime rules to preserve
 
@@ -77,7 +78,7 @@ Current follow-up goal:
 - In runtime modules, free text is an intent input, not only a second way to repeat visible button text.
 - Free text may resolve natural variants, synonyms, and parameterized phrasings against visible, app-authorized affordances.
 - Harmless flavor actions may receive narration without canonical state mutation.
-- Escalating text such as insulting, threatening, arguing, or attacking must route into engine-owned consequence systems, not free AI canon.
+- Escalating text such as insulting, threatening, arguing, or attacking must route into engine-owned consequence systems such as warnings, guards/help-calls, flight, combat, or other authored scene fallbacks, not free AI canon.
 - If target or authored consequence data is missing, the app must clarify or route to a bounded non-canonical fallback explicitly instead of sending it through as free narration.
 - If the input is ambiguous or unavailable, the app should clarify or reject it explicitly instead of silently doing nothing or inventing world truth.
 

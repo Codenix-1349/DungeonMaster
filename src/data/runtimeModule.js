@@ -163,7 +163,7 @@ function isNpcTalkInteractionBlocked(interaction, sceneState) {
 
   const relation = sceneState?.dialogueState?.npcRelations?.[interaction.target]
   const engagementState = String(relation?.engagementState || 'open').toLowerCase()
-  return engagementState === 'withdrawn' || engagementState === 'hostile'
+  return ['withdrawn', 'hostile', 'calling_guards', 'fled', 'expelled'].includes(engagementState)
 }
 
 export function isSectionExitAllowed(exit, sceneState) {

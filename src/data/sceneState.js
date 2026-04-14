@@ -107,7 +107,7 @@ function mapRuntimeSuspicion(value = 0) {
 
 function normalizeRuntimeEngagementState(value = 'open') {
   const normalized = String(value || '').trim().toLowerCase()
-  if (['warned', 'withdrawn', 'hostile'].includes(normalized)) return normalized
+  if (['warned', 'withdrawn', 'hostile', 'calling_guards', 'fled', 'expelled'].includes(normalized)) return normalized
   return 'open'
 }
 

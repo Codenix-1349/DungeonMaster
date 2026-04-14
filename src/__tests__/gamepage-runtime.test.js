@@ -732,6 +732,53 @@ describe('GamePage runtime check flow helpers', () => {
     }))
   })
 
+  it('routes authored threat escalation into a guard-call consequence and suppresses the escalated npc talk path', () => {
+    const adventure = loadGraufurtModule()
+    const sceneState = createInitialSceneState(adventure)
+    const section = findSectionById(adventure.structure, 'archive_foyer')
+    const resolution = resolveUnmatchedRuntimeInput({
+      userText: 'Ich drohe Leno.',
+      choices: [
+        {
+          label: 'Elsa nach der Sperrung fragen',
+          kind: 'talk',
+          interactionId: 'ask_elsa_about_lockdown',
+          actionKey: 'intr:ask_elsa_about_lockdown',
+        },
+        {
+          label: 'Leno nach Mira fragen',
+          kind: 'talk',
+          interactionId: 'ask_leno_about_mira',
+          actionKey: 'intr:ask_leno_about_mira',
+        },
+      ],
+      adventure,
+      sceneState,
+      section,
+    })
+
+    expect(resolution?.type).toBe('authoritative_escalation')
+    expect(resolution?.runtimeResolution).toEqual(expect.objectContaining({
+      intent: 'threat',
+      outcome: 'call_guards',
+      npcId: 'leno',
+      npcName: 'Leno Falk',
+    }))
+    expect(resolution?.sceneStateOverride?.gmState?.plotFlags?.LENO_CALLED_FOR_ELSA).toBe(true)
+    expect(resolution?.sceneStateOverride?.dialogueState?.activeNpcId).toBe('elsa')
+    expect(resolution?.sceneStateOverride?.dialogueState?.npcRelations?.leno).toEqual(expect.objectContaining({
+      engagementState: 'calling_guards',
+    }))
+
+    const rebuiltChoices = rebuildVisibleChoices({
+      section,
+      sceneState: resolution.sceneStateOverride,
+      runtimeModule: true,
+    })
+    expect(rebuiltChoices.some(choice => choice.interactionId === 'ask_leno_about_mira')).toBe(false)
+    expect(rebuiltChoices.some(choice => choice.interactionId === 'ask_elsa_about_lockdown')).toBe(true)
+  })
+
   it('starts authored combat for escalation targets with an explicit combat preset', () => {
     const adventure = loadGraufurtModule()
     const sceneState = createInitialSceneState(adventure)
@@ -779,6 +826,56 @@ describe('GamePage runtime check flow helpers', () => {
     expect(resolution?.sceneStateOverride?.dialogueState?.npcRelations?.elsa).toEqual(expect.objectContaining({
       disposition: 'hostile',
       engagementState: 'hostile',
+    }))
+  })
+
+  it('routes authored attack escalation into a flee consequence with a scene transition', () => {
+    const adventure = loadGraufurtModule()
+    const base = createInitialSceneState(adventure)
+    const sceneState = {
+      ...base,
+      gmState: {
+        ...base.gmState,
+        currentSectionId: 'witness_alcove',
+        plotFlags: {
+          ...base.gmState.plotFlags,
+          CATWALK_CROSSED: true,
+        },
+      },
+    }
+    const section = findSectionById(adventure.structure, 'witness_alcove')
+    const resolution = resolveUnmatchedRuntimeInput({
+      userText: 'Ich greife Mira an.',
+      choices: [
+        {
+          label: 'Mira vorsichtig beruhigen',
+          kind: 'talk',
+          interactionId: 'calm_mira',
+          actionKey: 'intr:calm_mira',
+        },
+      ],
+      adventure,
+      sceneState,
+      section,
+    })
+
+    expect(resolution?.type).toBe('authoritative_escalation')
+    expect(resolution?.runtimeResolution).toEqual(expect.objectContaining({
+      intent: 'attack',
+      outcome: 'flee',
+      npcId: 'mira',
+      npcName: 'Mira Sen',
+      transitionToSectionId: 'collapsed_gallery',
+    }))
+    expect(resolution?.sceneStateOverride?.gmState?.currentSectionId).toBe('collapsed_gallery')
+    expect(resolution?.sceneStateOverride?.gmState?.plotFlags?.MIRA_ESCAPED).toBe(true)
+    expect(resolution?.sceneStateOverride?.gmState?.npcStates?.mira).toEqual(expect.objectContaining({
+      currentlyVisible: false,
+      state: 'fled',
+    }))
+    expect(resolution?.sceneStateOverride?.dialogueState?.activeNpcId).toBeNull()
+    expect(resolution?.sceneStateOverride?.dialogueState?.npcRelations?.mira).toEqual(expect.objectContaining({
+      engagementState: 'fled',
     }))
   })
 
