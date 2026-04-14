@@ -20,24 +20,34 @@ function getLatestUserText(messages = []) {
   return latestUserMessage?.content || ''
 }
 
-function buildConditionalRulesBlock(combatActive, isRuntimeModule = false) {
+function buildConditionalRulesBlock(combatActive, isRuntimeModule = false, combatHasEnemies = false) {
   if (combatActive) {
     // ── KAMPF-MODUS: Volle Kampfregeln, nur Kurzhinweis für Proben ──
+    const kampfbeginnSection = combatHasEnemies
+      ? `### Kampf bereits gestartet (engine-seitig)
+- Der Kampf wurde bereits von der App gestartet. Die Gegner sind der App bekannt.
+- Schreibe KEIN "KAMPF BEGINNT" und KEINE [GEGNER:]-Tags.
+- Beschreibe den Auftakt des Kampfes kurz und dramatisch in 2-3 Sätzen. Dann **STOPP**.
+- Führe KEINEN Angriff aus, würfle NICHTS, erfinde KEINE Schadenszahlen.
+- Frage NICHT "Was tust du?" — die App zeigt dem Spieler automatisch Aktions-Buttons.`
+      : `### Kampfbeginn
+- Wenn ein Kampf beginnt, schreibe **KAMPF BEGINNT** und dann direkt danach für JEDEN Gegner eine Zeile im Format:
+  [GEGNER:Name|HP:X|AC:Y|ATK:+Z|DMG:WdX+N|XP:N]
+  Beispiel: [GEGNER:Goblin|HP:7|AC:15|ATK:+4|DMG:1d6+2|XP:50]
+- Diese Gegner-Zeilen kommen unmittelbar nach KAMPF BEGINNT, vor jeder erzählerischen Beschreibung.
+- Beschreibe die Szene kurz und dramatisch (2-3 Sätze), dann **STOPP**. Führe KEINEN Angriff aus und würfle NICHTS. Frage NICHT "Was tust du?".`
+
     return `## Proben
 - Im Kampf KEINE [PROBE:]- oder [PROBE_HINWEIS:]-Tags verwenden. Proben nur außerhalb des Kampfes.
 - Erfinde NIEMALS selbst Würfelergebnisse.
 
 ## Kampfstruktur
-### Kampfbeginn
-- Wenn ein Kampf beginnt, schreibe **KAMPF BEGINNT** und dann direkt danach für JEDEN Gegner eine Zeile im Format:
-  [GEGNER:Name|HP:X|AC:Y|ATK:+Z|DMG:WdX+N|XP:N]
-  Beispiel: [GEGNER:Goblin|HP:7|AC:15|ATK:+4|DMG:1d6+2|XP:50]
-- Diese Gegner-Zeilen kommen unmittelbar nach KAMPF BEGINNT, vor jeder erzählerischen Beschreibung.
-- Beschreibe die Szene kurz und dramatisch (2-3 Sätze), dann **STOPP**. Führe KEINEN Angriff aus und würfle NICHTS. Frage NICHT "Was tust du?".
+${kampfbeginnSection}
 
 ### Während des Kampfes — STRENGE REGELN
 - Die App übernimmt die GESAMTE Kampfmechanik: Initiative, Angriffswürfe, Schadenswürfe, HP-Tracking, Zauberslots.
 - Du würfelst im Kampf NIEMALS selbst. KEINE Trefferzahlen, KEINE Schadenszahlen erfinden.
+- Verwende im laufenden Kampf KEINE freien System-, Aktions- oder Schadens-Tags wie [FEUERPFEIL], [ANGRIFF], [SCHADEN] oder ähnliche Eigenformate.
 - Frage im Kampf NIEMALS "Was tust du?" — die App zeigt dem Spieler automatisch Aktions-Buttons.
 - Du erhältst Kampfrunden-Zusammenfassungen vom System. Deine EINZIGE Aufgabe: Beschreibe diese Ergebnisse narrativ und atmosphärisch in 2-4 Sätzen.
 
@@ -175,9 +185,11 @@ function buildChoiceStyleInstruction(userText = '', combatActive = false, isRunt
     return `## Ausgabeformat — Strukturiertes Modul (STRENG)
 - Die App zeigt dem Spieler automatisch alle verfügbaren Aktionen als Buttons.
 - Deine Aufgabe: Beschreibe die Szene, sprich als NSCs, erzeuge Atmosphäre.
+- Generiere KEINE nummerierten Optionslisten.
 - Generiere KEINE Listen jeder Art — keine nummerierten Listen, keine Aufzählungen mit Sternchen oder Spiegelstrichen, keine Handlungsvorschläge oder Optionen. Beschreibe alles in Fließtext.
+- Schreibe NIEMALS Aufforderungen wie "Wähle eine Aktion aus", "Du kannst jetzt..." oder "Folgende Optionen stehen dir offen".
 - Generiere KEINE [PROBE:]-, [PROBE_HINWEIS:]- oder [WÜRFEL:]-Tags. Die App steuert alle Proben.
-- Wenn ein NSC spricht, beginne die Zeile immer mit dem Namen: **Mara:** „…" — damit klar ist wer redet.
+- Wenn ein NSC spricht, beginne die Zeile immer mit dem passenden Namen: **NSC-Name:** „…" — damit klar ist wer redet.
 - Halte Antworten kompakt (3-6 Sätze). Keine langen Monologe.
 - Erfinde KEINE neuen Objekte, NPCs, Hinweise, Orte oder Geräusche. NUR was im Szenenkontext oben steht existiert — nichts anderes.
 - Schreibe KEINE Zusammenfassungen, Statusnotizen oder Aufzählungen am Ende. Nur Fließtext.`
@@ -225,7 +237,7 @@ ${consequence}
 - Veraendere diese Folge NICHT und fuehre keine zusaetzlichen mechanischen Konsequenzen ein.
 - Respektiere den gelieferten Szenen- und Dialogzustand als kanonische Wahrheit.
 ${combatActive || runtimeResolution?.outcome === 'combat_start'
-    ? '- Der Kampf ist bereits engine-seitig gestartet. Beschreibe nur den unmittelbaren Auftakt des laufenden Kampfes in 2-4 Saetzen. KEINE [GEGNER]-Tags und KEIN "KAMPF BEGINNT".'
+    ? '- Der Kampf ist bereits engine-seitig gestartet. Beschreibe nur den unmittelbaren Auftakt des laufenden Kampfes in 2-4 Saetzen. KEINE [GEGNER]-Tags, KEIN "KAMPF BEGINNT" und KEINE eigenen Kampf-Tags wie [FEUERPFEIL], [ANGRIFF] oder [SCHADEN].'
     : '- Beschreibe nur die direkte Reaktion des vorhandenen NSC und der aktuellen Szene. Keine neuen Fakten, keine neuen NSCs, keine neuen Auftraege.'}`
       .replace(/\n\n+/g, '\n')
       .trim()
@@ -487,7 +499,7 @@ ${runtimeModule ? '- Beende die Szene OHNE Fragen wie "Was tust du?" — die App
 - Behalte Ressourcen, Gefahren, Hinweise und laufende Situationen im Blick.
 - Vermeide unnötig lange Monologe, vor allem in sensiblen Dialog- und Reaktionsmomenten.
 
-${buildConditionalRulesBlock(Boolean(combat?.active), runtimeModule)}
+${buildConditionalRulesBlock(Boolean(combat?.active), runtimeModule, Boolean(combat?.enemies?.length))}
 
 ${SRD_CORE_PROMPT_RULES.trim()}
 
@@ -553,11 +565,14 @@ ${(() => {
     const enemyList = (combat.enemies || []).map(e =>
       `${e.name}: ${e.currentHP}/${e.maxHP} HP${e.currentHP <= 0 ? ' (besiegt)' : ''}`
     ).join(', ')
+    const consequenceHint = combat.consequenceText
+      ? `\n**Erzählhinweis:** ${combat.consequenceText}`
+      : ''
     prompt += `\n\n## Kampfsituation
 **Kampfstatus:** AKTIV — Du beschreibst NUR Ergebnisse, würfelst NICHT, fragst NICHT "Was tust du?"
 **Runde:** ${combat.round || 1}
 **Gegner:** ${enemyList || 'keine'}
-${combat.playerInitiative ? `**Spieler-Initiative:** ${combat.playerInitiative}` : ''}`
+${combat.playerInitiative ? `**Spieler-Initiative:** ${combat.playerInitiative}` : ''}${consequenceHint}`
   }
 
   if (adventure) {

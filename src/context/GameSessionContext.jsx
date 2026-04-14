@@ -23,6 +23,7 @@ import {
   createAdventure as apiCreateAdventure,
   deleteAdventureApi,
 } from '../services/api'
+import { getUserCreatedAdventures, mergeBuiltinAdventures } from '../data/builtinAdventures'
 
 const GameSessionContext = createContext(null)
 
@@ -66,7 +67,8 @@ export function deriveSyncedSceneState({
 function buildInitialSessionState(characterStore) {
   const adventures = (() => {
     const stored = loadFromStorage('dm_adventures', [])
-    return Array.isArray(stored) ? stored.map(normalizeAdventureEntry).filter(Boolean) : []
+    const normalized = Array.isArray(stored) ? stored.map(normalizeAdventureEntry).filter(Boolean) : []
+    return mergeBuiltinAdventures(normalized)
   })()
 
   const storedSessions = normalizeSessionList(loadFromStorage('dm_sessions', DEFAULT_SESSIONS), adventures)
@@ -155,12 +157,13 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
     if (!isLoggedIn) return
     Promise.all([fetchSessions(), fetchAdventures()])
       .then(([sessData, advData]) => {
-        if (advData.adventures?.length) {
-          const advList = advData.adventures.map(normalizeAdventureEntry).filter(Boolean)
-          adventuresRef.current = advList
-          setAdventuresState(advList)
-          saveToStorage('dm_adventures', advList)
-        }
+        const fetchedAdventures = advData.adventures?.length
+          ? advData.adventures.map(normalizeAdventureEntry).filter(Boolean)
+          : []
+        const advList = mergeBuiltinAdventures(fetchedAdventures)
+        adventuresRef.current = advList
+        setAdventuresState(advList)
+        saveToStorage('dm_adventures', advList)
         if (sessData.sessions?.length) {
           const sessList = normalizeSessionList(sessData.sessions, adventuresRef.current)
           const activeId = sessData.activeSessionId || null
@@ -331,9 +334,10 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
   const setAdventures = useCallback((val) => {
     const prevAdventures = adventuresRef.current
     const nextValue = typeof val === 'function' ? val(prevAdventures) : val
-    const normalized = Array.isArray(nextValue)
+    const normalizedCustom = Array.isArray(nextValue)
       ? nextValue.map(normalizeAdventureEntry).filter(Boolean)
       : []
+    const normalized = mergeBuiltinAdventures(normalizedCustom)
 
     adventuresRef.current = normalized
     setAdventuresState(normalized)
@@ -356,12 +360,14 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
 
     // Sync to backend: create new, delete removed
     if (isLoggedIn) {
-      const prevIds = new Set(prevAdventures.map(a => a.id))
-      const nextIds = new Set(normalized.map(a => a.id))
-      for (const adv of normalized) {
+      const prevCustom = getUserCreatedAdventures(prevAdventures)
+      const nextCustom = getUserCreatedAdventures(normalized)
+      const prevIds = new Set(prevCustom.map(a => a.id))
+      const nextIds = new Set(nextCustom.map(a => a.id))
+      for (const adv of nextCustom) {
         if (!prevIds.has(adv.id)) apiCreateAdventure(adv).catch(() => {})
       }
-      for (const adv of prevAdventures) {
+      for (const adv of prevCustom) {
         if (!nextIds.has(adv.id)) deleteAdventureApi(adv.id).catch(() => {})
       }
     }
@@ -387,14 +393,28 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
     applyLiveSceneState(activeAdventure ? createInitialSceneState(activeAdventure) : null)
   }, [applyLiveCombat, applyLiveGameLog, applyLiveSceneState])
 
-  const startCombat = useCallback((enemies) => {
-    setCombat({
-      active: true,
-      round: 1,
-      enemies: enemies || [],
-      playerInitiative: 0,
-      phase: 'initiative',
-    })
+  const startCombat = useCallback((combatConfig = null) => {
+    const normalizedCombatConfig = combatConfig && typeof combatConfig === 'object' && !Array.isArray(combatConfig)
+      ? combatConfig
+      : null
+    const nextCombat = Array.isArray(combatConfig)
+      ? {
+        active: true,
+        round: 1,
+        enemies: combatConfig,
+        playerInitiative: 0,
+        phase: 'initiative',
+      }
+      : {
+        ...(normalizedCombatConfig || {}),
+        active: normalizedCombatConfig?.active ?? true,
+        round: normalizedCombatConfig?.round ?? 1,
+        enemies: Array.isArray(normalizedCombatConfig?.enemies) ? normalizedCombatConfig.enemies : [],
+        playerInitiative: normalizedCombatConfig?.playerInitiative ?? 0,
+        phase: normalizedCombatConfig?.phase || 'initiative',
+      }
+
+    setCombat(nextCombat)
   }, [setCombat])
 
   const endCombat = useCallback(() => {

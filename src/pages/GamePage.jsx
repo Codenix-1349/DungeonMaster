@@ -8,7 +8,7 @@ import CombatTracker from '../components/CombatTracker'
 import SkillCheckPanel from '../components/SkillCheckPanel'
 import MessageBubble, { TypingIndicator } from '../components/game/MessageBubble'
 import SessionCard from '../components/game/SessionCard'
-import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findSectionById } from '../data/srd'
+import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findInteractionDef, findSectionById } from '../data/srd'
 import { isRuntimeStructure } from '../data/runtimeModule'
 import {
   applyPendingCheckResult,
@@ -204,9 +204,49 @@ export default function GamePage() {
     return dynamicChoices
   }, [adventure, sceneState, combat?.active, dynamicChoices])
 
+  const buildLocalRuntimeOpeningText = useCallback((activeAdventure, activeSceneState) => {
+    const section = getCurrentSection(activeAdventure, activeSceneState)
+    const frame = getPlayerFacingRuntimeFrame(activeAdventure, activeSceneState, section)
+    return String(frame?.summary || section?.introText || '').trim()
+  }, [])
+
+  const appendLocalRuntimeNarration = useCallback(({
+    assistantText = '',
+    userText = '',
+    adventureOverride = adventure,
+    sceneStateOverride = sceneState,
+    combatOverride = combat,
+    recentActionKey = null,
+  } = {}) => {
+    const narration = String(assistantText || '').trim()
+    const spokenUserText = String(userText || '').trim()
+    if (!narration) return null
+
+    const transcript = [...gameLog.slice(-14)]
+    if (spokenUserText) {
+      const userMsg = addMessage('user', spokenUserText)
+      transcript.push(userMsg)
+    }
+
+    const assistantMsg = addMessage('assistant', narration)
+    transcript.push(assistantMsg)
+
+    syncSceneState({
+      messages: transcript,
+      adventureOverride,
+      combatOverride,
+      previousSceneStateOverride: sceneStateOverride,
+      fallbackUserText: spokenUserText,
+      fallbackUserActionKey: recentActionKey,
+    })
+
+    return assistantMsg
+  }, [adventure, sceneState, combat, gameLog, addMessage, syncSceneState])
+
   async function submitResolvedChoice(choice, options = {}) {
     const activeAdventure = options.adventureOverride ?? adventure
     const activeSceneState = options.sceneStateOverride ?? sceneState
+    const activeRuntimeModule = isRuntimeModule(activeAdventure)
     const resolution = resolveResolvedChoiceSubmission({
       choice,
       sceneState: activeSceneState,
@@ -231,11 +271,34 @@ export default function GamePage() {
     if (resolution.sceneStateOverride) {
       setSceneState(resolution.sceneStateOverride)
     }
+    if (resolution.combatOverride?.enemies?.length) {
+      startCombat(resolution.combatOverride)
+    }
     for (const itemName of resolution.inventoryAdds || []) addItem(itemName)
+
+    const runtimeInteractionDef = activeRuntimeModule && choice.interactionId
+      ? findInteractionDef(normalizeAdventureEntry(activeAdventure)?.structure, choice.interactionId)
+      : null
+    const localRuntimeNarration = activeRuntimeModule
+      ? String(resolution.combatOverride?.consequenceText || runtimeInteractionDef?.aiNarrationHint || '').trim()
+      : ''
+
+    if (localRuntimeNarration) {
+      appendLocalRuntimeNarration({
+        assistantText: localRuntimeNarration,
+        userText: resolution.submitText,
+        adventureOverride: activeAdventure,
+        sceneStateOverride: resolution.sceneStateOverride || activeSceneState,
+        combatOverride: resolution.combatOverride || combat,
+        recentActionKey: resolution.recentActionKey || null,
+      })
+      return
+    }
 
     return handleSend(resolution.submitText, {
       ...options,
       ...(resolution.sceneStateOverride ? { sceneStateOverride: resolution.sceneStateOverride } : {}),
+      ...(resolution.combatOverride ? { combatOverride: resolution.combatOverride } : {}),
       ...resolution.sendOptions,
     })
   }
@@ -307,7 +370,7 @@ export default function GamePage() {
       setSceneState(runtimeSceneStateOverride)
     }
     if (runtimeCombatOverride?.enemies?.length) {
-      startCombat(runtimeCombatOverride.enemies)
+      startCombat(runtimeCombatOverride)
     }
     const userMsg = addMessage('user', text)
 
@@ -496,7 +559,10 @@ export default function GamePage() {
     const {
       sceneState: nextSceneState,
       inventoryAdds,
+      combatOverride,
       recentActionKey,
+      runtimeRequestMode,
+      runtimeResolution,
     } = applyPendingCheckResult({
       result,
       choiceMeta: choiceMeta ? { ...choiceMeta, label: choiceLabel || '' } : null,
@@ -510,7 +576,12 @@ export default function GamePage() {
       : null
 
     if (stateOverride) setSceneState(stateOverride)
+    if (combatOverride?.enemies?.length) startCombat(combatOverride)
     for (const itemName of inventoryAdds) addItem(itemName)
+
+    const runtimeInteractionDef = runtimeModule && choiceMeta?.interactionId
+      ? findInteractionDef(normalizeAdventureEntry(adventure)?.structure, choiceMeta.interactionId)
+      : null
 
     let rollStr = `d20(${result.d20Result})`
     if (result.roll2 !== null) {
@@ -523,19 +594,43 @@ export default function GamePage() {
 
     const probeText = `[Probe] ${result.label}: ${rollStr} ${modStr} = ${result.total} vs SG ${result.dc} → ${successLabel}`
     const failHint = !result.success && choiceMeta?.onFail ? ` | [Erzählhinweis: ${choiceMeta.onFail}]` : ''
+    const localRuntimeNarration = runtimeModule
+      ? String(
+        combatOverride?.consequenceText ||
+        (!result.success && choiceMeta?.onFail) ||
+        runtimeInteractionDef?.aiNarrationHint ||
+        ''
+      ).trim()
+      : ''
+
+    if (localRuntimeNarration) {
+      appendLocalRuntimeNarration({
+        assistantText: localRuntimeNarration,
+        userText: choiceLabel ? `${choiceLabel} | ${probeText}` : probeText,
+        adventureOverride: adventure,
+        sceneStateOverride: stateOverride || sceneState,
+        combatOverride: combatOverride || combat,
+        recentActionKey,
+      })
+      return
+    }
+
     const sendOpts = {
       allowEngineCheckInference: false,
       // Probe follow-ups are app-driven and must not be re-resolved as a fresh visible choice.
       skipTextChoiceResolution: true,
       recentActionKey,
+      ...(combatOverride ? { combatOverride } : {}),
       ...(stateOverride ? { sceneStateOverride: stateOverride } : {}),
+      ...(runtimeRequestMode ? { runtimeRequestMode } : {}),
+      ...(runtimeResolution ? { runtimeResolution } : {}),
     }
     if (choiceLabel) {
       handleSend(`${choiceLabel} | ${probeText}${failHint}`, sendOpts)
     } else {
       handleSend(`${probeText}${failHint}`, sendOpts)
     }
-  }, [handleSend, sceneState, setSceneState, character, adventure, addItem])
+  }, [handleSend, sceneState, setSceneState, character, adventure, addItem, startCombat, runtimeModule, appendLocalRuntimeNarration, combat])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -568,18 +663,27 @@ export default function GamePage() {
       characterId: selectedCharacter.id,
       adventureId: selectedAdventure?.id || null,
     })
+    const initialSceneState = session?.sceneState || resetSceneState(selectedAdventure)
 
     setError('')
     navigate('/game', { replace: true })
 
+    if (isRuntimeModule(selectedAdventure)) {
+      const openingText = buildLocalRuntimeOpeningText(selectedAdventure, initialSceneState)
+      if (openingText) {
+        addMessage('assistant', openingText)
+        return
+      }
+    }
+
     handleSend(startAdventurePrompt(selectedAdventure), {
       characterOverride: selectedCharacter,
       adventureOverride: selectedAdventure,
-      sceneStateOverride: session?.sceneState || resetSceneState(selectedAdventure),
+      sceneStateOverride: initialSceneState,
       historyOverride: [],
       rawHistoryOverride: [],
     })
-  }, [apiReady, selectedAdventure, selectedCharacter, createSession, navigate, handleSend, startAdventurePrompt, resetSceneState])
+  }, [apiReady, selectedAdventure, selectedCharacter, createSession, navigate, handleSend, startAdventurePrompt, resetSceneState, buildLocalRuntimeOpeningText, addMessage])
 
   const handleContinueSession = useCallback((sessionId) => {
     const session = loadSession(sessionId)

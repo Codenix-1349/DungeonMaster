@@ -28,6 +28,10 @@ function rollDamageStr(diceStr = '1d6+0') {
   return Math.max(1, total)
 }
 
+function formatSignedBonus(value = 0) {
+  return `${value >= 0 ? '+' : ''}${value}`
+}
+
 // Estimate enemy save modifier from XP (rough CR approximation)
 function estimateSaveMod(enemy) {
   const xp = enemy.xp || 0
@@ -163,6 +167,13 @@ export default function CombatTracker({ onCombatAction }) {
   const [resultBanner, setResultBanner] = useState(null)
   const bannerTimerRef = useRef(null)
   const bannerAnimationRunIdRef = useRef(0)
+  const combatPlayerBuffs = combat?.playerBuffs || null
+  const playerAttackBonusBuff = Number(combatPlayerBuffs?.attackBonus || 0)
+  const playerArmorClassBuff = Number(combatPlayerBuffs?.armorClassBonus || 0)
+  const playerInitiativeBuff = Number(combatPlayerBuffs?.initiativeBonus || 0)
+  const playerDamageBuff = Number(combatPlayerBuffs?.damageBonus || 0)
+  const playerSpellAttackBuff = Number(combatPlayerBuffs?.spellAttackBonus || 0)
+  const playerSpellSaveDcBuff = Number(combatPlayerBuffs?.spellSaveDcBonus || 0)
 
   // State machine for player turn
   // null | 'selectAction' | 'selectTarget' | 'attack' | 'damage' |
@@ -246,7 +257,7 @@ export default function CombatTracker({ onCombatAction }) {
   const rollInitiative = useCallback(() => {
     const roll = rollDie(20)
     const dexMod = character ? getModifier(character.attributes?.dex || 10) : 0
-    const playerInit = roll + dexMod
+    const playerInit = roll + dexMod + playerInitiativeBuff
     const enemies = (combat?.enemies || []).map(e => ({
       ...e,
       initiative: rollDie(20) + (e.initiativeBonus || 0),
@@ -261,7 +272,7 @@ export default function CombatTracker({ onCombatAction }) {
         if (runEnemyTurnRef.current) runEnemyTurnRef.current()
       }, 600)
     }
-  }, [character, combat, getModifier, setCombat, addLog])
+  }, [character, combat, getModifier, setCombat, addLog, playerInitiativeBuff])
 
   useEffect(() => {
     if (!combat?.active || combat?.phase !== 'initiative' || !character) return
@@ -321,7 +332,7 @@ export default function CombatTracker({ onCombatAction }) {
       }
 
       const atkTotal = attackRoll + (enemy.attackBonus || 3)
-      const playerAC = character.armorClass || 12
+      const playerAC = (character.armorClass || 12) + playerArmorClassBuff
       if (attackRoll === 1) {
         logs.push(`${enemy.name}: Patzer! Verfehlt.`)
       } else if (attackRoll === 20 || atkTotal >= playerAC) {
@@ -363,7 +374,7 @@ export default function CombatTracker({ onCombatAction }) {
     setSelectedCastLevel(null)
     setFreeActionText('')
     setPlayerPhase('selectAction')
-  }, [character, combat, dodgeActive, updateCharacterHP, addLog, flushTurnSummary, setCombat, endCombat])
+  }, [character, combat, dodgeActive, updateCharacterHP, addLog, flushTurnSummary, setCombat, endCombat, playerArmorClassBuff])
 
   // Ref to always access latest runEnemyTurnAndFlush (avoids stale closures in setTimeout)
   const runEnemyTurnRef = useRef(runEnemyTurnAndFlush)
@@ -396,7 +407,7 @@ export default function CombatTracker({ onCombatAction }) {
     if (!target || target.currentHP <= 0) return
 
     const roll = rollDie(20)
-    const attackBonus = Number(character?.attackBonus ?? 0)
+    const attackBonus = Number(character?.attackBonus ?? 0) + playerAttackBonusBuff
     const total = roll + attackBonus
     const isCrit = roll === 20
     const isFumble = roll === 1
@@ -425,7 +436,7 @@ export default function CombatTracker({ onCombatAction }) {
       setPendingAttack(null)
       finishPlayerTurn()
     }
-  }, [playerPhase, selectedTargetId, combat, character, addLog, finishPlayerTurn])
+  }, [playerPhase, selectedTargetId, combat, character, addLog, finishPlayerTurn, playerAttackBonusBuff])
 
   const rollDamageAction = useCallback(() => {
     if (playerPhase !== 'damage' || !pendingAttack) return
@@ -438,8 +449,9 @@ export default function CombatTracker({ onCombatAction }) {
       ? { damageDice: equippedWeapon.properties?.damageDice || '1d6', abilityMod: equippedWeapon.properties?.abilityMod || 'str', label: equippedWeapon.name }
       : getClassWeaponDefaults(character?.class)
     const abilityMod = getModifier(character?.attributes?.[weaponInfo.abilityMod] || 10)
+    const totalDamageBonus = abilityMod + playerDamageBuff
     const diceStr = weaponInfo.damageDice
-    const fullDice = `${diceStr}${abilityMod >= 0 ? `+${abilityMod}` : `${abilityMod}`}`
+    const fullDice = `${diceStr}${totalDamageBonus >= 0 ? `+${totalDamageBonus}` : `${totalDamageBonus}`}`
     let dmg = rollDamageStr(fullDice)
     if (pendingAttack.isCrit) dmg += rollDamageStr(diceStr)
 
@@ -461,7 +473,7 @@ export default function CombatTracker({ onCombatAction }) {
     turnActionsRef.current.push(msg)
 
     checkAllDead(updatedEnemies)
-  }, [playerPhase, pendingAttack, combat, character, getModifier, setCombat, addLog])
+  }, [playerPhase, pendingAttack, combat, character, getModifier, setCombat, addLog, playerDamageBuff, showBanner])
 
   // ── Action: Cast Spell ──────────────────────────────────────────────────
 
@@ -488,8 +500,8 @@ export default function CombatTracker({ onCombatAction }) {
       spellLevel: spell.level,
       castLevel,
       casterLevel: character.level || 1,
-      spellAttackBonus: character.spellAttackBonus || 0,
-      spellSaveDC: character.spellSaveDC || 10,
+      spellAttackBonus: (character.spellAttackBonus || 0) + playerSpellAttackBuff,
+      spellSaveDC: (character.spellSaveDC || 10) + playerSpellSaveDcBuff,
       abilityMod: getModifier(character.attributes?.[spellcastingAttr] || 10),
       targetAC: target?.ac ?? 10,
       targetName: target?.name || 'Ziel',
@@ -644,6 +656,7 @@ export default function CombatTracker({ onCombatAction }) {
     if (allDead) {
       const totalXP = updatedEnemies.reduce((sum, e) => sum + (e.xp || 0), 0)
       const playerLevel = character?.level || 1
+      const restoreAfterVictory = updatedEnemies.some(e => e.restorePlayerAfterVictory)
 
       // Engine is sole authority for combat rewards (XP, gold, loot)
       if (awardXP) awardXP(totalXP)
@@ -653,12 +666,18 @@ export default function CombatTracker({ onCombatAction }) {
       for (const itemKey of itemLoot) {
         if (addItem) addItem(itemKey)
       }
+      if (restoreAfterVictory && character?.maxHP) {
+        updateCharacterHP(character.maxHP)
+        if (restoreSpellSlots) restoreSpellSlots()
+        addLog('Das Trainingsfeld stellt dich nach dem Sieg vollstaendig wieder her.', 'heal')
+      }
 
       // Build reward summary
       const rewardParts = [`+${totalXP} XP`]
       if (goldReward.gm) rewardParts.push(`+${goldReward.gm} GM`)
       if (goldReward.sm) rewardParts.push(`+${goldReward.sm} SM`)
       if (itemLoot.length) rewardParts.push(itemLoot.map(k => ITEM_CATALOG[k]?.name || k).join(', '))
+      if (restoreAfterVictory) rewardParts.push('volle Heilung')
 
       const victoryMsg = `Alle Gegner besiegt! ${rewardParts.join(' · ')}`
       addLog(victoryMsg, 'victory')
@@ -670,7 +689,7 @@ export default function CombatTracker({ onCombatAction }) {
       setPendingAttack(null)
       finishPlayerTurn()
     }
-  }, [addLog, awardXP, endCombat, flushTurnSummary, finishPlayerTurn, character, updateCurrency, addItem])
+  }, [addLog, awardXP, endCombat, flushTurnSummary, finishPlayerTurn, character, updateCurrency, addItem, updateCharacterHP, restoreSpellSlots])
 
   const handleEndCombat = useCallback(() => {
     addLog('Kampf beendet.')
@@ -693,9 +712,20 @@ export default function CombatTracker({ onCombatAction }) {
     ? { damageDice: equippedWeaponRender.properties?.damageDice || '1d6', abilityMod: equippedWeaponRender.properties?.abilityMod || 'str', label: equippedWeaponRender.name }
     : getClassWeaponDefaults(character?.class)
   const abilityMod = character ? getModifier(character.attributes?.[weaponInfo.abilityMod] || 10) : 0
+  const totalWeaponDamageBonus = abilityMod + playerDamageBuff
+  const effectiveAttackBonus = Number(character?.attackBonus ?? 0) + playerAttackBonusBuff
+  const effectivePlayerAC = Number(character?.armorClass || 12) + playerArmorClassBuff
   const isSpellcaster = availableSpells.length > 0
   const hasUsableItems = usableItems.length > 0
   const selectedTarget = enemies.find(e => e.id === selectedTargetId)
+  const buffSummaryParts = [
+    playerInitiativeBuff ? `INI ${formatSignedBonus(playerInitiativeBuff)}` : '',
+    playerAttackBonusBuff ? `ATK ${formatSignedBonus(playerAttackBonusBuff)}` : '',
+    playerArmorClassBuff ? `AC ${formatSignedBonus(playerArmorClassBuff)}` : '',
+    playerDamageBuff ? `DMG ${formatSignedBonus(playerDamageBuff)}` : '',
+    playerSpellAttackBuff ? `ZA ${formatSignedBonus(playerSpellAttackBuff)}` : '',
+    playerSpellSaveDcBuff ? `SG ${formatSignedBonus(playerSpellSaveDcBuff)}` : '',
+  ].filter(Boolean)
 
   // Slot levels available for the selected spell
   const availableSlotLevels = useMemo(() => {
@@ -777,6 +807,21 @@ export default function CombatTracker({ onCombatAction }) {
       {character && (
         <div>
           <HpBar current={playerHP} max={playerMaxHP} label={character.name} />
+          {combatPlayerBuffs && (
+            <div className="rounded border border-emerald-700/40 bg-emerald-900/15 px-3 py-2">
+              <p className="font-heading text-xs text-emerald-300">
+                {combatPlayerBuffs.label || 'Aktiver Kampfbuff'}
+              </p>
+              {buffSummaryParts.length > 0 && (
+                <p className="font-body text-[11px] text-stone-400 mt-1">
+                  {buffSummaryParts.join(' · ')}
+                </p>
+              )}
+            </div>
+          )}
+          <p className="font-body text-xs text-stone-500 mt-2">
+            AC {effectivePlayerAC}{playerArmorClassBuff ? ` (${combatPlayerBuffs?.label || 'Buff'} aktiv)` : ''}
+          </p>
         </div>
       )}
 
@@ -803,7 +848,7 @@ export default function CombatTracker({ onCombatAction }) {
             <div className="space-y-1.5">
               <p className="section-subtitle mb-1">Aktion waehlen</p>
               <button onClick={startAttack} className="btn-primary w-full text-sm text-left px-3">
-                ⚔️ Angriff ({weaponInfo.label}, {weaponInfo.damageDice}{abilityMod >= 0 ? `+${abilityMod}` : abilityMod})
+                ⚔️ Angriff ({weaponInfo.label}, {weaponInfo.damageDice}{totalWeaponDamageBonus >= 0 ? `+${totalWeaponDamageBonus}` : totalWeaponDamageBonus})
               </button>
               {isSpellcaster && (
                 <button onClick={startSpellCast} className="btn-primary w-full text-sm text-left px-3 bg-blue-900/40 border-blue-700/40 hover:bg-blue-800/50">
@@ -932,7 +977,7 @@ export default function CombatTracker({ onCombatAction }) {
             <div className="space-y-1.5">
               <button onClick={() => setPlayerPhase('selectAction')} className="btn-ghost text-xs px-2 py-0.5">Zurueck</button>
               <button onClick={rollAttack} className="btn-primary w-full text-sm">
-                ⚔️ Angriff auf {selectedTarget.name} (d20{character?.attackBonus >= 0 ? '+' : ''}{character?.attackBonus} vs AC {selectedTarget.ac})
+                ⚔️ Angriff auf {selectedTarget.name} (d20{effectiveAttackBonus >= 0 ? '+' : ''}{effectiveAttackBonus} vs AC {selectedTarget.ac})
               </button>
             </div>
           )}
@@ -944,7 +989,7 @@ export default function CombatTracker({ onCombatAction }) {
                 {pendingAttack?.isCrit ? 'KRITISCHER TREFFER! Doppelter Schaden!' : 'Treffer! Wuerfle Schaden:'}
               </div>
               <button onClick={rollDamageAction} className="btn-primary w-full text-sm">
-                💥 Schaden ({weaponInfo.label}: {weaponInfo.damageDice}{abilityMod >= 0 ? `+${abilityMod}` : abilityMod}){pendingAttack?.isCrit ? ' KRIT!' : ''}
+                💥 Schaden ({weaponInfo.label}: {weaponInfo.damageDice}{totalWeaponDamageBonus >= 0 ? `+${totalWeaponDamageBonus}` : totalWeaponDamageBonus}){pendingAttack?.isCrit ? ' KRIT!' : ''}
               </button>
             </div>
           )}
