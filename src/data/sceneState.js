@@ -14,6 +14,7 @@ import {
   normalizeRuntimeNpcState,
   resolveRuntimeNpcId,
 } from './runtimeModule.js'
+import { ENEMY_PRESETS } from './characterRules.js'
 
 export const SCENE_STATE_VERSION = 3
 
@@ -246,14 +247,97 @@ function buildPortableTakeEffects(sceneState, interaction, module, outcome = 'su
   }
 }
 
+function toRuntimeCombatNumber(value, fallback = 0, { min = null } = {}) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  const rounded = Math.round(numeric)
+  return min != null ? Math.max(min, rounded) : rounded
+}
+
+function normalizeCombatPlayerBuffs(rawBuffs = null) {
+  if (!rawBuffs || typeof rawBuffs !== 'object') return null
+
+  const buffs = {
+    label: String(rawBuffs.label || '').trim(),
+    attackBonus: toRuntimeCombatNumber(rawBuffs.attackBonus, 0),
+    armorClassBonus: toRuntimeCombatNumber(rawBuffs.armorClassBonus, 0),
+    initiativeBonus: toRuntimeCombatNumber(rawBuffs.initiativeBonus, 0),
+    damageBonus: toRuntimeCombatNumber(rawBuffs.damageBonus, 0),
+    spellAttackBonus: toRuntimeCombatNumber(rawBuffs.spellAttackBonus, 0),
+    spellSaveDcBonus: toRuntimeCombatNumber(rawBuffs.spellSaveDcBonus, 0),
+  }
+
+  const hasEffect = buffs.label || buffs.attackBonus || buffs.armorClassBonus || buffs.initiativeBonus || buffs.damageBonus || buffs.spellAttackBonus || buffs.spellSaveDcBonus
+  return hasEffect ? buffs : null
+}
+
+function buildStructuredCombatEnemy(definition = {}, index = 0) {
+  if (!definition || typeof definition !== 'object') return null
+
+  const presetKey = String(definition.preset || '').trim().toLowerCase()
+  const preset = presetKey ? ENEMY_PRESETS[presetKey] || null : null
+  const profile = definition.profile && typeof definition.profile === 'object'
+    ? definition.profile
+    : {}
+  const maxHP = toRuntimeCombatNumber(profile.hp ?? definition.hp ?? preset?.hp, 1, { min: 1 })
+
+  return {
+    id: String(definition.id || `structured-combat-${index + 1}`).trim() || `structured-combat-${index + 1}`,
+    name: String(profile.name || definition.name || preset?.name || `Gegner ${index + 1}`).trim(),
+    maxHP,
+    currentHP: maxHP,
+    ac: toRuntimeCombatNumber(profile.ac ?? definition.ac ?? preset?.ac, 10, { min: 1 }),
+    attackBonus: toRuntimeCombatNumber(profile.attackBonus ?? definition.attackBonus ?? preset?.attackBonus, 0),
+    damageDice: String(profile.damageDice || definition.damageDice || preset?.damageDice || '1d4').trim(),
+    damageBonus: toRuntimeCombatNumber(profile.damageBonus ?? definition.damageBonus ?? preset?.damageBonus, 0),
+    xp: toRuntimeCombatNumber(profile.xp ?? definition.xp ?? preset?.xp, 0, { min: 0 }),
+    restorePlayerAfterVictory: Boolean(
+      definition.restorePlayerAfterVictory || profile.restorePlayerAfterVictory
+    ),
+  }
+}
+
+function buildInteractionCombatStart(result = null) {
+  const startCombat = result?.startCombat
+  if (!startCombat || typeof startCombat !== 'object') return null
+
+  const enemyDefinitions = Array.isArray(startCombat.enemies)
+    ? startCombat.enemies
+    : [startCombat]
+  const applyRestore = Boolean(startCombat.restorePlayerAfterVictory)
+  const playerBuffs = normalizeCombatPlayerBuffs(startCombat.playerBuffs)
+  const consequenceText = String(startCombat.consequenceText || '').trim()
+  const enemies = enemyDefinitions
+    .map((definition, index) => buildStructuredCombatEnemy(definition, index))
+    .filter(Boolean)
+    .map(enemy => (
+      applyRestore && !enemy.restorePlayerAfterVictory
+        ? { ...enemy, restorePlayerAfterVictory: true }
+        : enemy
+    ))
+
+  if (!enemies.length) return null
+
+  return {
+    active: true,
+    round: 1,
+    enemies,
+    playerInitiative: 0,
+    phase: 'initiative',
+    playerBuffs,
+    consequenceText,
+  }
+}
+
 export function resolveInteractionOutcome(sceneState, interaction, module, outcome = 'success') {
   const result = getInteractionResult(interaction, outcome)
-  if (!result || !sceneState) return { sceneState, inventoryAdds: [] }
+  if (!result || !sceneState) return { sceneState, inventoryAdds: [], combatStart: null }
 
   let gm = { ...sceneState.gmState }
   let pk = { ...sceneState.playerKnowledge }
   let dialogueState = { ...(sceneState.dialogueState || {}) }
   const takeEffects = buildPortableTakeEffects(sceneState, interaction, module, outcome)
+  const combatStart = buildInteractionCombatStart(result)
 
   // 1. Set flags
   if (result.setFlags?.length) {
@@ -375,6 +459,7 @@ export function resolveInteractionOutcome(sceneState, interaction, module, outco
   return {
     sceneState: { ...sceneState, gmState: gm, playerKnowledge: pk, dialogueState },
     inventoryAdds: takeEffects.inventoryAdds,
+    combatStart,
   }
 }
 

@@ -120,9 +120,11 @@ export default function AdventurePage() {
   }, [activeSession, releaseSessionLock, setAdventure])
 
   const deleteAdventure = useCallback((id) => {
+    const target = adventures.find(entry => entry.id === id)
+    if (target?.builtin) return
     setAdventures(prev => prev.filter(a => a.id !== id))
     if (adventure?.id === id && !activeSession) setAdventure(null)
-  }, [setAdventures, adventure, setAdventure, activeSession])
+  }, [setAdventures, adventure, setAdventure, activeSession, adventures])
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -236,6 +238,7 @@ export default function AdventurePage() {
                   <p className="font-heading text-parchment text-sm leading-tight mb-0.5">{adv.title}</p>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="badge-gold">{adv.pages}</span>
+                    {adv.builtin && <span className="badge-gold">Demo</span>}
                     <span className="font-body text-xs text-stone-600">
                       {(adv.charCount || 0).toLocaleString()} Zeichen
                     </span>
@@ -259,6 +262,7 @@ export default function AdventurePage() {
                   <button onClick={() => navigate('/game?mode=new')} className="btn-ghost text-xs px-3 py-1.5">
                     Neue Session
                   </button>
+                  {!adv.builtin && (
                   <button
                     onClick={() => deleteAdventure(adv.id)}
                     className="btn-danger text-xs px-3 py-1.5"
@@ -266,6 +270,7 @@ export default function AdventurePage() {
                   >
                     🗑
                   </button>
+                  )}
                 </div>
               </div>
             ))}

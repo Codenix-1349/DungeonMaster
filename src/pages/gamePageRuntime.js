@@ -36,6 +36,20 @@ export function createPendingCheckFromChoice(choice) {
   }
 }
 
+function buildCombatNarrationOptions(combatOverride = null, context = {}) {
+  if (!combatOverride?.active) return {}
+
+  return {
+    runtimeRequestMode: 'runtime_authoritative_resolution',
+    runtimeResolution: {
+      kind: context.kind || 'interaction_resolution',
+      outcome: 'combat_start',
+      interactionId: context.interactionId || null,
+      consequence: combatOverride.consequenceText || 'Ein Kampf beginnt sofort.',
+    },
+  }
+}
+
 export function resolveResolvedChoiceSubmission({
   choice = null,
   sceneState = null,
@@ -59,6 +73,7 @@ export function resolveResolvedChoiceSubmission({
 
   let nextSceneState = null
   let inventoryAdds = []
+  let combatOverride = null
 
   if (choice.interactionId && sceneState && adventure) {
     const normalizedAdventure = normalizeAdventureEntry(adventure)
@@ -67,6 +82,7 @@ export function resolveResolvedChoiceSubmission({
     const resolved = resolveInteractionOutcome(sceneState, interactionDef, structure?.module, 'success')
     if (resolved?.sceneState) nextSceneState = resolved.sceneState
     if (resolved?.inventoryAdds?.length) inventoryAdds = resolved.inventoryAdds
+    if (resolved?.combatStart) combatOverride = resolved.combatStart
   }
 
   return {
@@ -75,10 +91,15 @@ export function resolveResolvedChoiceSubmission({
     recentActionKey: choice.actionKey || null,
     sceneStateOverride: nextSceneState,
     inventoryAdds,
+    combatOverride,
     sendOptions: {
       allowEngineCheckInference: false,
       skipTextChoiceResolution: true,
       recentActionKey: choice.actionKey || null,
+      ...(combatOverride ? { combatOverride } : {}),
+      ...buildCombatNarrationOptions(combatOverride, {
+        interactionId: choice.interactionId || null,
+      }),
     },
   }
 }
@@ -100,6 +121,7 @@ export function applyPendingCheckResult({
 
   let nextSceneState = sceneState
   let inventoryAdds = []
+  let combatOverride = null
 
   if (!result.success) {
     const record = {
@@ -138,6 +160,7 @@ export function applyPendingCheckResult({
     )
     if (resolved?.sceneState) nextSceneState = resolved.sceneState
     if (resolved?.inventoryAdds?.length) inventoryAdds = resolved.inventoryAdds
+    if (resolved?.combatStart) combatOverride = resolved.combatStart
   } else if (result.success && choiceMeta?.target && structure) {
     const currentSection = findSectionById(structure, nextSceneState.gmState?.currentSectionId)
     if (currentSection) {
@@ -151,7 +174,11 @@ export function applyPendingCheckResult({
   return {
     sceneState: nextSceneState,
     inventoryAdds,
+    combatOverride,
     recentActionKey: result.success ? (choiceMeta?.actionKey || null) : null,
+    ...buildCombatNarrationOptions(combatOverride, {
+      interactionId: choiceMeta?.interactionId || null,
+    }),
   }
 }
 
@@ -809,6 +836,9 @@ function stripAiGeneratedOptions(text = '') {
     // Headers like "Sichtbare Optionen:", "Deine Möglichkeiten:", "Optionen:"
     .replace(/^[ \t]*\*{0,2}(Sichtbare\s+)?Optionen\s*:?\*{0,2}[ \t]*$/gim, '')
     .replace(/^[ \t]*\*{0,2}(Deine\s+)?(Möglichkeiten|Handlungsoptionen|Auswahlmöglichkeiten)\s*:?\*{0,2}[ \t]*$/gim, '')
+    .replace(/^[ \t]*Du\s+siehst\s+\w+\s+Möglichkeiten\s*:?[ \t]*$/gim, '')
+    .replace(/^[ \t]*Welche\s+Aktion\s+wählst\s+du\??[ \t]*$/gim, '')
+    .replace(/^[ \t]*Was\s+willst\s+du\s+als\s+erstes\s+tun\??[ \t]*$/gim, '')
     // Trailing "Was tust du?" / "Was möchtest du tun?" / "Wie möchtest du vorgehen?"
     .replace(/\s*(Was\s+(tust|möchtest|machst)\s+du\s*\??|Wie\s+möchtest\s+du\s+vorgehen\s*\??)\s*$/gi, '')
     // Trailing summary fragments: short lines at the end without sentence punctuation

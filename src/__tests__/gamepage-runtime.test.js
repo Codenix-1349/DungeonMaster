@@ -719,6 +719,16 @@ describe('GamePage runtime check flow helpers', () => {
     expect(text).toBe('Du bemerkst das Schloss.')
   })
 
+  it('strips hallucinated option boilerplate from runtime-module narration', () => {
+    const text = formatAssistantTextForDisplay(
+      'Der Altar summt kurz auf.\n\nDu siehst drei M\u00f6glichkeiten:\n\nWelche Aktion w\u00e4hlst du?',
+      skill => skill,
+      { runtimeModule: true }
+    )
+
+    expect(text).toBe('Der Altar summt kurz auf.')
+  })
+
   it('keeps probe hint formatting in legacy narration', () => {
     const text = formatAssistantTextForDisplay(
       '1. Die Tür prüfen [PROBE_HINWEIS:investigation|SG:12]',
