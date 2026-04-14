@@ -220,6 +220,48 @@ describe('GamePage runtime check flow helpers', () => {
     }))
   })
 
+  it('keeps authored intent slots on dynamically revealed runtime interactions', () => {
+    const adventure = loadGraufurtModule()
+    const base = createInitialSceneState(adventure)
+    const sceneState = {
+      ...base,
+      gmState: {
+        ...base.gmState,
+        currentSectionId: 'sealed_stacks',
+        runtimeObjects: {
+          service_drawer: {
+            id: 'service_drawer',
+            sectionId: 'sealed_stacks',
+            label: 'Versteckte Schublade im Schreiberpult',
+            visible: true,
+            state: 'sealed',
+          },
+        },
+      },
+    }
+
+    const resolution = resolveResolvedChoiceSubmission({
+      choice: {
+        label: 'Die versteckte Schublade aufziehen',
+        kind: 'manipulate',
+        target: 'service_drawer',
+        interactionId: 'open_service_drawer',
+        actionKey: 'intr:open_service_drawer',
+      },
+      sceneState,
+      adventure,
+    })
+
+    expect(resolution.sceneStateOverride?.gmState?.runtimeInteractions?.read_service_map?.intent).toEqual({
+      explicit: true,
+      actions: ['lesen', 'studieren', 'entziffern'],
+      targets: ['Servicekarte', 'Karte', 'Plan'],
+      tools: [],
+      topics: [],
+      requiredSlots: [],
+    })
+  })
+
   it('applies authored runtime success checks directly to engine state and keeps the stable action key', () => {
     const adventure = loadBirkenhainModule()
     const structure = adventure.structure
@@ -491,6 +533,42 @@ describe('GamePage runtime check flow helpers', () => {
     expect(choice?.interactionId).toBe('ask_elsa_to_open_stacks')
   })
 
+  it('resolves same-label runtime choices through authored topic slots', () => {
+    const choice = resolveRuntimeChoiceFromText({
+      userText: 'Ich frage Mara nach dem Schluessel.',
+      choices: [
+        {
+          label: 'Mara befragen',
+          kind: 'talk',
+          target: 'mara',
+          interactionId: 'ask_mara_about_key',
+          actionKey: 'intr:ask_mara_about_key',
+          intent: {
+            actions: ['fragen', 'befragen'],
+            targets: ['Mara'],
+            topics: ['Schluessel', 'Kellerschluessel'],
+            requiredSlots: ['topic'],
+          },
+        },
+        {
+          label: 'Mara befragen',
+          kind: 'talk',
+          target: 'mara',
+          interactionId: 'ask_mara_about_tomas',
+          actionKey: 'intr:ask_mara_about_tomas',
+          intent: {
+            actions: ['fragen', 'befragen'],
+            targets: ['Mara'],
+            topics: ['Tomas', 'Vermissten'],
+            requiredSlots: ['topic'],
+          },
+        },
+      ],
+    })
+
+    expect(choice?.interactionId).toBe('ask_mara_about_key')
+  })
+
   it('matches parameterized runtime free text to the choice with the stronger entity overlap', () => {
     const choice = resolveRuntimeChoiceFromText({
       userText: 'Ich benutze die Fackel am Brunnen.',
@@ -553,6 +631,30 @@ describe('GamePage runtime check flow helpers', () => {
     })
 
     expect(choice).toBeNull()
+  })
+
+  it('asks for clarification when runtime text only names an authored tool slot without a full valid action target', () => {
+    const resolution = resolveUnmatchedRuntimeInput({
+      userText: 'Ich benutze den Schluessel.',
+      choices: [
+        {
+          label: 'Die Kellertuer aufschliessen',
+          kind: 'use_item',
+          target: 'cellar_door',
+          interactionId: 'unlock_cellar_door',
+          actionKey: 'intr:unlock_cellar_door',
+          intent: {
+            actions: ['aufschliessen', 'oeffnen', 'entriegeln'],
+            targets: ['Kellertuer', 'Schloss'],
+            tools: ['Schluessel', 'Kellerschluessel'],
+            requiredSlots: ['tool'],
+          },
+        },
+      ],
+    })
+
+    expect(resolution?.type).toBe('needs_clarification')
+    expect(resolution?.message).toContain('nicht eindeutig')
   })
 
   it('treats harmless unmatched runtime free text as flavor-only', () => {

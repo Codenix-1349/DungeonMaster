@@ -1,5 +1,7 @@
 // ─── Shared Text Utilities ──────────────────────────────────────────────────
 
+import { normalizeRuntimeIntent } from './runtimeModule.js'
+
 const GERMAN_STOPWORDS = new Set([
   'aber','alle','allen','aller','alles','auch','auf','aus','bei','bin','bis','bist','da','dadurch','daher','darum','das','dass','dein','deine','dem','den','der','des','dessen','deshalb','die','dies','diese','diesem','diesen','dieser','dieses','doch','dort','du','durch','ein','eine','einem','einen','einer','eines','er','es','euer','eure','für','hat','hattest','hatte','hatten','hier','hinter','ich','ihr','ihre','im','in','ist','ja','jede','jedem','jeden','jeder','jedes','jetzt','kann','kannst','kein','keine','keinem','keinen','keiner','keines','mit','muss','nach','nicht','noch','nun','oder','seid','sein','seine','sich','sie','sind','so','solche','solchem','solchen','solcher','solches','soll','sollen','sollte','sondern','sonst','über','um','und','uns','unser','unsere','unter','vom','von','vor','war','waren','warst','was','weg','weil','weiter','welche','welchem','welchen','welcher','welches','wenn','werde','werden','wie','wieder','will','wir','wird','wirst','wo','wollen','wollte','würde','würden','zu','zum','zur','zurück'
 ])
@@ -1119,6 +1121,7 @@ function parseRuntimeModule(text, title = 'Abenteuer') {
       label: e.label || '',
       targetId: e.targetSectionId || '',
       aliases: Array.isArray(e.aliases) ? e.aliases.map(alias => String(alias || '').trim()).filter(Boolean) : [],
+      intent: normalizeRuntimeIntent(e.intent),
       requiresFlags: Array.isArray(e.requiresFlags) ? e.requiresFlags : [],
     }))
 
@@ -1128,6 +1131,7 @@ function parseRuntimeModule(text, title = 'Abenteuer') {
       aliases: Array.isArray(intr.aliases) ? intr.aliases.map(alias => String(alias || '').trim()).filter(Boolean) : [],
       kind: intr.kind || 'action',
       target: intr.target || null,
+      intent: normalizeRuntimeIntent(intr.intent, { fallbackTarget: intr.target || null }),
       requiresFlags: Array.isArray(intr.requiresFlags) ? intr.requiresFlags : [],
       blocksIfFlags: Array.isArray(intr.blocksIfFlags) ? intr.blocksIfFlags : [],
       availability: intr.availability || {},

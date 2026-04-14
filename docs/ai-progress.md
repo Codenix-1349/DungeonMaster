@@ -11,6 +11,20 @@ Use the docs in this order instead:
 3. `docs/ai-next-steps.md`
 4. `docs/ai-progress.md`
 
+## 2026-04-14 - Phase 4.2 Slice 4: Authored Intent Slots
+
+### Done - runtime free text now resolves through authored slot data, not only visible wording
+
+- Runtime choice resolution now evaluates authored `intent` metadata with explicit `target`, `tool`, and `topic` slots before falling back to weaker label/alias heuristics.
+- Slot-aware clarification now also triggers when the player only names an authored tool or topic without enough context to execute a canonical action.
+- Static runtime interactions, rebuilt visible choices, and dynamically revealed runtime interactions now all carry the same normalized intent-slot data through parser, state, and choice layers.
+- Birkenhain and Graufurt now include authored slot examples for tool- and topic-driven runtime resolution.
+- Added regression coverage for:
+  - same-label runtime choices split by authored topic slots
+  - clarification when only an authored tool slot is referenced
+  - preservation of slot metadata on dynamically revealed runtime interactions
+- Full test suite green (`209/209`) and build green after the slice.
+
 ## 2026-04-13 - Phase 4.2 Slice 3: Engine-Owned Runtime Escalation Ladder
 
 ### Done - escalating runtime free text now resolves through app-owned consequences

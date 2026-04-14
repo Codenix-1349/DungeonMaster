@@ -203,6 +203,11 @@ SECTIONS:
         label: Die Kellertuer aufschliessen
         kind: use_item
         target: cellar_door
+        intent:
+          actions: [aufschliessen, oeffnen, entriegeln]
+          targets: [Kellertuer, Schloss]
+          tools: [Schluessel, Kellerschluessel]
+          requiredSlots: [tool]
         checkPolicy: none
         requiresFlags: [HAS_CELLAR_KEY]
         blocksIfFlags: [CELLAR_UNLOCKED]

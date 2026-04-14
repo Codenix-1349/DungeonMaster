@@ -2,6 +2,63 @@ function hasEntries(value) {
   return Boolean(value && typeof value === 'object' && Object.keys(value).length > 0)
 }
 
+function normalizeRuntimeIntentList(value = null) {
+  const list = Array.isArray(value) ? value : value == null ? [] : [value]
+  const normalized = []
+  const seen = new Set()
+
+  for (const entry of list) {
+    const text = String(entry || '').trim()
+    if (!text) continue
+    const key = text.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    normalized.push(text)
+  }
+
+  return normalized
+}
+
+export function normalizeRuntimeIntent(rawIntent = null, { fallbackAction = null, fallbackTarget = null } = {}) {
+  const hasExplicitIntent = Boolean(rawIntent && typeof rawIntent === 'object')
+
+  if (!rawIntent || typeof rawIntent !== 'object') {
+    const fallbackTargets = normalizeRuntimeIntentList(fallbackTarget)
+    if (!fallbackAction && !fallbackTargets.length) return null
+
+    return {
+      explicit: false,
+      actions: normalizeRuntimeIntentList(fallbackAction),
+      targets: fallbackTargets,
+      tools: [],
+      topics: [],
+      requiredSlots: [],
+    }
+  }
+
+  const actions = normalizeRuntimeIntentList(rawIntent.actions ?? rawIntent.action ?? fallbackAction)
+  const targets = normalizeRuntimeIntentList(rawIntent.targets ?? rawIntent.target ?? fallbackTarget)
+  const tools = normalizeRuntimeIntentList(rawIntent.tools ?? rawIntent.tool)
+  const topics = normalizeRuntimeIntentList(rawIntent.topics ?? rawIntent.topic)
+  const allowedRequiredSlots = new Set(['target', 'tool', 'topic'])
+  const requiredSlots = normalizeRuntimeIntentList(rawIntent.requiredSlots ?? rawIntent.requires)
+    .map(slot => slot.toLowerCase())
+    .filter(slot => allowedRequiredSlots.has(slot))
+
+  if (!actions.length && !targets.length && !tools.length && !topics.length && !requiredSlots.length) {
+    return null
+  }
+
+  return {
+    explicit: hasExplicitIntent,
+    actions,
+    targets,
+    tools,
+    topics,
+    requiredSlots,
+  }
+}
+
 export function isRuntimeStructure(structure) {
   if (structure?.format !== 'structured') return false
   if (structure?.module?.runtimeMode === 'engine') return true

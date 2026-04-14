@@ -132,6 +132,20 @@ SECTIONS:
     expect(room.interactions[0].aliases).toEqual(['Den Waechter das Schloss aufschliessen lassen'])
   })
 
+  it('parses authored runtime intent slots for structured interactions', () => {
+    const hall = loadModule().structure.sections.find(section => section.id === 'rear_hall_cellar_door')
+    const unlockDoor = hall?.interactions.find(interaction => interaction.id === 'unlock_cellar_door')
+
+    expect(unlockDoor?.intent).toEqual({
+      explicit: true,
+      actions: ['aufschliessen', 'oeffnen', 'entriegeln'],
+      targets: ['Kellertuer', 'Schloss'],
+      tools: ['Schluessel', 'Kellerschluessel'],
+      topics: [],
+      requiredSlots: ['tool'],
+    })
+  })
+
   it('parses old_brewery with inspect_counter interaction', () => {
     const sections = loadModule().structure.sections
     const brewery = sections.find(s => s.id === 'old_brewery')
