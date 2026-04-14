@@ -2,6 +2,7 @@ export const AI_PROVIDER_OPENROUTER = 'openrouter'
 export const AI_PROVIDER_OLLAMA = 'ollama'
 
 export const OLLAMA_LOCAL_BASE_URL = 'http://localhost:11434'
+export const DEFAULT_OLLAMA_MODEL = 'llama3.2'
 
 export function normalizeAiProvider(value = '') {
   return String(value || '').trim().toLowerCase() === AI_PROVIDER_OLLAMA

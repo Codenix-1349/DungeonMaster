@@ -30,6 +30,32 @@ function providerCardClass(selected) {
     : 'border-stone-800 hover:border-stone-600'
 }
 
+function getOllamaModelNames(models = []) {
+  return models
+    .map(model => String(model?.name || '').trim())
+    .filter(Boolean)
+}
+
+function matchesOllamaModel(input, modelNames = []) {
+  const normalizedInput = String(input || '').trim()
+  if (!normalizedInput) return false
+
+  return modelNames.some(name =>
+    name === normalizedInput || name.replace(/:latest$/i, '') === normalizedInput
+  )
+}
+
+function getOllamaModelError(input, models = []) {
+  const modelNames = getOllamaModelNames(models)
+  if (!modelNames.length || matchesOllamaModel(input, modelNames)) {
+    return ''
+  }
+
+  const suggestions = modelNames.slice(0, 3).join(', ')
+  const suffix = modelNames.length > 3 ? ', ...' : ''
+  return `Lokales Ollama-Modell "${input}" wurde nicht gefunden. Verfuegbar: ${suggestions}${suffix}`
+}
+
 export default function SettingsPage() {
   const {
     apiKey,
@@ -171,6 +197,13 @@ export default function SettingsPage() {
           setTestResult({ type: 'error', msg: 'Bitte ein lokales Ollama-Modell angeben.' })
           return
         }
+
+        const modelError = getOllamaModelError(model, ollamaModels)
+        if (modelError) {
+          setTestResult({ type: 'error', msg: modelError })
+          return
+        }
+
         setOllamaBaseUrl(normalizedBaseUrl)
         setSelectedModel(model)
         setTestResult({ type: 'success', msg: 'Ollama-Konfiguration gespeichert.' })
@@ -212,6 +245,12 @@ export default function SettingsPage() {
       const model = ollamaModelInput.trim()
       if (!model) {
         setTestResult({ type: 'error', msg: 'Bitte ein lokales Ollama-Modell angeben.' })
+        return
+      }
+
+      const modelError = getOllamaModelError(model, ollamaModels)
+      if (modelError) {
+        setTestResult({ type: 'error', msg: modelError })
         return
       }
 

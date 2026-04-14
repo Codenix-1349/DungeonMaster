@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { DEFAULT_MODEL_ID, normalizeModelId, ensureFreeUnlessExplicit } from '../services/models'
+import { AVAILABLE_MODELS, DEFAULT_MODEL_ID, normalizeModelId, ensureFreeUnlessExplicit } from '../services/models'
 import {
+  DEFAULT_OLLAMA_MODEL,
   AI_PROVIDER_OLLAMA,
   AI_PROVIDER_OPENROUTER,
   normalizeAiProvider,
@@ -18,8 +19,20 @@ function getStoredOpenRouterModel() {
   return safe
 }
 
+export function resolveStoredOllamaModel(modelId = '') {
+  const normalized = String(modelId || '').trim()
+  if (!normalized) return DEFAULT_OLLAMA_MODEL
+
+  const normalizedOpenRouterModel = normalizeModelId(normalized, AI_PROVIDER_OPENROUTER)
+  const isKnownOpenRouterModel = AVAILABLE_MODELS.some(model => model.id === normalizedOpenRouterModel)
+
+  return isKnownOpenRouterModel ? DEFAULT_OLLAMA_MODEL : normalized
+}
+
 function getStoredOllamaModel() {
-  return String(localStorage.getItem('dm_ollamaModel') || '').trim()
+  const safe = resolveStoredOllamaModel(localStorage.getItem('dm_ollamaModel'))
+  localStorage.setItem('dm_ollamaModel', safe)
+  return safe
 }
 
 function getInitialProvider() {
