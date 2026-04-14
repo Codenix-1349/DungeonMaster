@@ -11,6 +11,7 @@ import {
   buildInitialRuntimeNpcStates,
   getVisibleRuntimeNpcs,
   isRuntimeStructure,
+  normalizeRuntimeIntent,
   normalizeRuntimeNpcState,
   resolveRuntimeNpcId,
 } from './runtimeModule.js'
@@ -374,7 +375,10 @@ export function resolveInteractionOutcome(sceneState, interaction, module, outco
   if (result.revealRuntime?.interactions?.length) {
     const interactions = { ...(gm.runtimeInteractions || {}) }
     for (const intr of result.revealRuntime.interactions) {
-      interactions[intr.id] = { ...intr }
+      interactions[intr.id] = {
+        ...intr,
+        intent: normalizeRuntimeIntent(intr.intent, { fallbackTarget: intr.target || null }),
+      }
     }
     gm = { ...gm, runtimeInteractions: interactions }
   }

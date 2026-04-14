@@ -192,6 +192,11 @@ SECTIONS:
         label: Elsa bitten, das Magazin zu oeffnen
         kind: talk
         target: elsa
+        intent:
+          actions: [bitten, fragen, oeffnen]
+          targets: [Elsa]
+          topics: [Magazin, Archiv, Gitter]
+          requiredSlots: [topic]
         checkPolicy: none
         requiresFlags: [LENO_BRIEFED]
         blocksIfFlags: [STACKS_OPEN]
@@ -291,6 +296,9 @@ SECTIONS:
                   label: Die Servicekarte lesen
                   kind: read
                   target: service_map
+                  intent:
+                    actions: [lesen, studieren, entziffern]
+                    targets: [Servicekarte, Karte, Plan]
                   visible: true
                   state: available
                   source: open_service_drawer
@@ -301,6 +309,9 @@ SECTIONS:
         label: Die Servicekarte lesen
         kind: read
         target: service_map
+        intent:
+          actions: [lesen, studieren, entziffern]
+          targets: [Servicekarte, Karte, Plan]
         checkPolicy: none
         availability:
           runtimeObjectVisible: service_map

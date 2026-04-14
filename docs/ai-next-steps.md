@@ -1,6 +1,6 @@
 # Next Steps
 
-Last updated: 2026-04-13
+Last updated: 2026-04-14
 
 ## Canonical reading order
 
@@ -44,8 +44,8 @@ Current follow-up goal:
 - [done] route runtime escalation (`insult` / `threat` / `attack`) into engine-owned dialogue/consequence state instead of free AI canon
 - [done] allow authored NPC escalation to suppress talk actions or start combat through explicit runtime metadata (`canStartCombat`, `combatPreset`, `escalationPolicy`)
 - [done] mark app-resolved escalation in the prompt path so AI only narrates the already-decided consequence
+- [done] move runtime intent resolution onto authored target/tool/topic slots so slot-aware free text is no longer only label/alias matching
 - next inside 4.2:
-  - richer intent slots where target + tool/topic become first-class authored data instead of only text matching
   - broaden escalation outcomes beyond dialogue/combat into authored help-calls, flight, guards, and scene-specific fallback consequences
 - after that, continue reducing trust in client-passed state on the proxy path and move session memory/state loading server-side
 

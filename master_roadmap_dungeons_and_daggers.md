@@ -1,6 +1,6 @@
 # Dungeons & Daggers – Master-Roadmap
 
-Last updated: 2026-04-13 (v4)
+Last updated: 2026-04-14 (v5)
 
 ## Zweck dieser Datei
 
@@ -97,7 +97,7 @@ Der Runtime-Kern ist bereits weit vorangekommen:
 ### Realistischer Status
 - Phase 3: **abgeschlossen**
 - Phase 4: **gestartet, 4.1 erledigt, 4.2 in mehreren Slices aktiv**
-- Nächster notwendiger Klärungsblock: **authoring-staerkere Intent-Slots und breitere Eskalationsfolgen innerhalb von 4.2**
+- Nächster notwendiger Klärungsblock: **breitere Eskalationsfolgen innerhalb von 4.2**
 - Größter Restblock: **Runtime-Input-Autorität plus serverseitige State-/Memory-Autorität**
 
 ### Warum Phase 4 jetzt dran ist
@@ -238,7 +238,7 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 - Clientseitig eingeschleuste `system` Messages werden auf dem Proxy-Pfad verworfen.
 - Noch offen: serverseitiges Laden von State statt clientgegebener `promptContext`-Daten.
 
-### 4.2 Runtime-Freitext als echten Intent-Layer ausbauen ← nächster Slice
+### 4.2 Runtime-Freitext als echten Intent-Layer ausbauen ← aktiver Slice
 - Buttons und aufgelöster Freitext teilen denselben app-seitigen Execute-Pfad.
 - Freitext muss mehr können als Button-Labels nur zu wiederholen: natürliche Varianten, Synonyme und parameterisierte Intents müssen auf erlaubte Runtime-Aktionen gemappt werden können.
 - Beispiele für sinnvollen Runtime-Freitext:
@@ -269,6 +269,7 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 - erledigt:
   - Button und gematchter Freitext teilen denselben Execute-Pfad
   - parameterisierte/entity-lastige Freitexte werden besser auf sichtbare Runtime-Aktionen gemappt
+  - authored `intent`-Slots fuer `target`, `tool` und `topic` laufen jetzt als echte Runtime-Metadaten durch Parser, Choice-Layer und dynamisch enthüllte Interaktionen
   - nicht gematchter Runtime-Freitext wird app-seitig in Flavor-only, Klaerung oder autoritative Eskalation getrennt
   - Flavor-only Runtime-Freitext wird im Prompt explizit als nicht-kanonisch markiert
   - engine-owned Eskalation fuer sichtbare Runtime-NPCs schreibt autoritativ nach `dialogueState` (`disposition`, `suspicion`, `threat`, `warningsIssued`, `engagementState`)
@@ -276,7 +277,6 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
   - entzogene oder feindselige Runtime-NPCs unterdruecken ihre authored Talk-Interaktionen im Choice-/Context-Layer
   - authored NPCs koennen jetzt ueber `canStartCombat`, `combatPreset` und `escalationPolicy` einen engine-gesteuerten Kampfstart aus Runtime-Freitext erlauben
 - offen:
-  - Intent-Aufloesung weiter von reinem Text-Matching auf authored Target-/Tool-/Topic-Slots ziehen
   - Eskalationsfolgen ueber Warnung/Rueckzug/Kampf hinaus auf authored Hilfe-rufen-, Flucht- und Guards-Pfade ausweiten
   - serverseitige State-/Memory-Autoritaet in 4.3 weiter nachziehen, sobald der Runtime-Input-Vertrag stabil genug ist
 

@@ -12,6 +12,7 @@ import {
 import {
   getVisibleRuntimeNpcs,
   isRuntimeStructure,
+  normalizeRuntimeIntent,
 } from '../data/runtimeModule'
 
 export function createPendingChoiceMeta(choice) {
@@ -194,8 +195,8 @@ const RUNTIME_MATCH_STOPWORDS = new Set([
 // Verb synonym groups — stems in the same group are treated as equivalent during matching.
 const VERB_SYNONYM_GROUPS = [
   ['untersuch', 'inspizier', 'pruef', 'schau', 'betracht', 'anschau', 'ansehen', 'durchsuch'],
-  ['sprich', 'red', 'frag', 'unterhal', 'befrag', 'ansprech'],
-  ['oeffn', 'aufmach', 'aufzieh', 'aufbrech'],
+  ['sprich', 'red', 'frag', 'unterhal', 'befrag', 'ansprech', 'bitt'],
+  ['oeffn', 'aufmach', 'aufzieh', 'aufbrech', 'aufschliess', 'entriegel', 'entsperr', 'knack'],
   ['nimm', 'greif', 'aufheb', 'einsteck', 'mitnehm'],
   ['kletter', 'erklimm', 'hinauf', 'hochklett'],
   ['ueberzeug', 'beruhig', 'ueberred', 'besaenftig', 'zureden'],
@@ -209,6 +210,7 @@ const VERB_SYNONYM_GROUPS = [
 
 const RUNTIME_STRUCTURED_ACTION_STEMS = [
   'benutz', 'verwend', 'nutz', 'einsetz', 'gebrauch',
+  'oeffn', 'aufschliess', 'entriegel', 'entsperr', 'knack',
   'zuend', 'anzuend', 'entzuend', 'beleucht', 'leucht',
   'geh', 'kehr', 'weiter', 'folg', 'verlass', 'betret',
   'les', 'studier', 'entschluessel',
@@ -316,6 +318,55 @@ function getEntityRuntimeTokens(tokens = []) {
   return tokens.filter(token => !isVerbLikeRuntimeToken(token))
 }
 
+function appendUniqueRuntimeTokens(target = [], source = []) {
+  for (const token of source) {
+    if (!target.includes(token)) target.push(token)
+  }
+  return target
+}
+
+function collectRuntimeTokensFromTexts(texts = [], { entityOnly = false } = {}) {
+  const tokens = []
+  for (const text of texts) {
+    const nextTokens = tokenizeRuntimeChoiceText(text)
+    appendUniqueRuntimeTokens(tokens, entityOnly ? getEntityRuntimeTokens(nextTokens) : nextTokens)
+  }
+  return tokens
+}
+
+function getNormalizedChoiceIntent(choice = {}) {
+  return normalizeRuntimeIntent(choice.intent, { fallbackTarget: choice.target || null })
+}
+
+function getChoiceIntentSlotTexts(choice = {}, slotName = 'target') {
+  const intent = getNormalizedChoiceIntent(choice)
+  if (!intent) return []
+  if (slotName === 'target') return intent.targets || []
+  if (slotName === 'tool') return intent.tools || []
+  if (slotName === 'topic') return intent.topics || []
+  return []
+}
+
+function getChoiceIntentSlotTokens(choice = {}, slotName = 'target') {
+  return collectRuntimeTokensFromTexts(getChoiceIntentSlotTexts(choice, slotName), { entityOnly: slotName !== 'action' })
+}
+
+function getChoiceIntentActionTokens(choice = {}) {
+  const intent = getNormalizedChoiceIntent(choice)
+  return collectRuntimeTokensFromTexts(intent?.actions || [])
+}
+
+function getChoiceKnownEntityTokens(choice = {}) {
+  const tokens = []
+  appendUniqueRuntimeTokens(tokens, getChoiceIntentSlotTokens(choice, 'target'))
+  appendUniqueRuntimeTokens(tokens, getChoiceIntentSlotTokens(choice, 'tool'))
+  appendUniqueRuntimeTokens(tokens, getChoiceIntentSlotTokens(choice, 'topic'))
+  if (!tokens.length) {
+    appendUniqueRuntimeTokens(tokens, getEntityRuntimeTokens(getChoiceResolutionTokens(choice)))
+  }
+  return tokens
+}
+
 function getChoiceResolutionTokens(choice = {}) {
   const tokens = []
   for (const text of getChoiceResolutionTexts(choice)) {
@@ -330,6 +381,68 @@ function countRuntimeTokenOverlaps(sourceTokens = [], candidateTokens = []) {
   return sourceTokens.filter(sourceToken => (
     candidateTokens.some(candidateToken => runtimeTokensMatch(sourceToken, candidateToken))
   ))
+}
+
+function scoreAuthoredIntentMatch(choice, inputTokens) {
+  const intent = getNormalizedChoiceIntent(choice)
+  if (!intent) return 0
+
+  const hasExplicitIntentStructure = Boolean(
+    intent.explicit ||
+    intent.actions?.length ||
+    intent.tools?.length ||
+    intent.topics?.length
+  )
+  if (!hasExplicitIntentStructure) return 0
+
+  const actionTokens = getChoiceIntentActionTokens(choice)
+  const hasActionConstraint = actionTokens.length > 0
+  const actionHit = !hasActionConstraint || inputTokens.some(inputToken => (
+    actionTokens.some(actionToken => runtimeTokensMatch(inputToken, actionToken))
+  ))
+  if (!actionHit) return 0
+
+  const slotDefs = [
+    { name: 'target', tokens: getChoiceIntentSlotTokens(choice, 'target') },
+    { name: 'tool', tokens: getChoiceIntentSlotTokens(choice, 'tool') },
+    { name: 'topic', tokens: getChoiceIntentSlotTokens(choice, 'topic') },
+  ].filter(slot => slot.tokens.length)
+
+  if (!slotDefs.length) return 0
+
+  const requiredSlots = new Set(intent.requiredSlots || [])
+  let matchedSlotCount = 0
+  let matchedSlotTokenCount = 0
+  for (const slot of slotDefs) {
+    const matchedTokens = countRuntimeTokenOverlaps(slot.tokens, inputTokens)
+    if (matchedTokens.length) {
+      matchedSlotCount += 1
+      matchedSlotTokenCount += matchedTokens.length
+      continue
+    }
+    if (requiredSlots.has(slot.name)) return 0
+  }
+
+  if (!matchedSlotCount) return 0
+
+  const authoredTokens = [
+    ...actionTokens,
+    ...slotDefs.flatMap(slot => slot.tokens),
+  ]
+  const matchedInputTokens = countRuntimeTokenOverlaps(inputTokens, authoredTokens).length
+
+  // Guard against over-resolving very sparse input onto a single weak slot.
+  if (matchedSlotCount === 1 && matchedInputTokens < 2 && !requiredSlots.size) {
+    return 0
+  }
+
+  let score = 760
+  score += matchedSlotCount * 75
+  score += matchedSlotTokenCount * 15
+  score += matchedInputTokens * 8
+  if (matchedSlotCount === slotDefs.length) score += 35
+  if (requiredSlots.size) score += requiredSlots.size * 10
+  return score
 }
 
 function scoreParameterizedChoiceMatch(choice, inputTokens) {
@@ -362,7 +475,8 @@ function scoreParameterizedChoiceMatch(choice, inputTokens) {
 // "untersuche Schreibtisch" → finds interaction with target label containing "Schreibtisch".
 function scoreTargetMatch(choice, inputTokens) {
   if (!choice.target) return 0
-  const targetTokens = getEntityRuntimeTokens(getChoiceResolutionTokens(choice))
+  const targetTokens = getChoiceIntentSlotTokens(choice, 'target')
+  if (!targetTokens.length) return 0
   // At least one input token must match a target-related token in the label
   const targetHit = inputTokens.some(it => targetTokens.some(tt => runtimeTokensMatch(it, tt)))
   if (!targetHit) return 0
@@ -376,7 +490,7 @@ function inputReferencesKnownRuntimeEntity(inputTokens = [], choices = []) {
   if (!inputEntityTokens.length) return false
 
   return choices.some(choice => {
-    const choiceEntityTokens = getEntityRuntimeTokens(getChoiceResolutionTokens(choice))
+    const choiceEntityTokens = getChoiceKnownEntityTokens(choice)
     return inputEntityTokens.some(inputToken => (
       choiceEntityTokens.some(choiceToken => runtimeTokensMatch(inputToken, choiceToken))
     ))
@@ -767,6 +881,13 @@ export function resolveVisibleChoiceFromText({ userText = '', choices = [] } = {
         if (score == null) continue
         if (!best || score > best.score) {
           best = { choice, score, exact: false }
+        }
+      }
+
+      if (!best || best.score < 700) {
+        const authoredIntentScore = scoreAuthoredIntentMatch(choice, inputTokens)
+        if (authoredIntentScore > 0 && (!best || authoredIntentScore > best.score)) {
+          best = { choice, score: authoredIntentScore, exact: false }
         }
       }
 

@@ -10,7 +10,7 @@
 //
 // The UI consumes only normalized Choice objects — never raw AI text.
 
-import { getAllowedRuntimeInteractions, getAllowedSectionExits } from '../data/runtimeModule.js'
+import { getAllowedRuntimeInteractions, getAllowedSectionExits, normalizeRuntimeIntent } from '../data/runtimeModule.js'
 
 // ─── Choice Schema ──────────────────────────────────────────────────────────
 // {
@@ -172,6 +172,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
       id: `exit-${i}`,
       label: exit.label,
       aliases: exit.aliases || [],
+      intent: normalizeRuntimeIntent(exit.intent),
       source: 'structured',
       kind: 'exit',
       target: exit.targetId || null,
@@ -229,6 +230,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
           id: `intr-${intr.id}`,
           label: intr.label,
           aliases: intr.aliases || [],
+          intent: normalizeRuntimeIntent(intr.intent, { fallbackTarget: intr.target || null }),
           source: 'structured',
           kind: intr.kind || 'action',
           target: intr.target || null,
@@ -260,6 +262,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
           id: `intr-${intr.id}`,
           label: intr.label,
           aliases: intr.aliases || [],
+          intent: normalizeRuntimeIntent(intr.intent, { fallbackTarget: intr.target || null }),
           source: 'structured',
           kind: intr.kind || 'action',
           target: intr.target || null,
@@ -286,6 +289,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
           id: `intr-${intrId}`,
           label: intr.label,
           aliases: intr.aliases || [],
+          intent: normalizeRuntimeIntent(intr.intent, { fallbackTarget: intr.target || null }),
           source: 'structured',
           kind: intr.kind || 'action',
           target: intr.target || null,
