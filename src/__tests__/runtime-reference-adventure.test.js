@@ -173,6 +173,32 @@ describe('runtime reference module', () => {
     expect(afterLeno.dialogueState.activeNpcId).toBe('leno')
   })
 
+  it('hides authored talk actions for NPCs that have withdrawn after an engine-owned escalation', () => {
+    const state = makeState(adventure, 'archive_foyer')
+    state.dialogueState = {
+      activeNpcId: 'elsa',
+      npcRelations: {
+        ...state.dialogueState.npcRelations,
+        elsa: {
+          disposition: 'hostile',
+          suspicion: 4,
+          threat: 2,
+          warningsIssued: 2,
+          engagementState: 'withdrawn',
+          lastTopic: 'Beleidigung',
+        },
+      },
+    }
+
+    const surfaces = collectRuntimeSurfaces(adventure, state)
+
+    expectChoiceLabelsOmit(surfaces, [askElsaLabel, askElsaOpenLabel])
+    expectChoiceLabelsContain(surfaces, [askLenoLabel])
+    expectContextAndPromptOmit(surfaces, [askElsaLabel, askElsaOpenLabel])
+    expectContextAndPromptContain(surfaces, ['Elsa Dorn'])
+    expect(surfaces.promptText).toContain('Status: withdrawn')
+  })
+
   it('keeps the sealed-stacks reveal chain aligned across choices, context, and prompt', () => {
     const stacksState = makeState(adventure, 'sealed_stacks', { STACKS_OPEN: true })
     const before = collectRuntimeSurfaces(adventure, stacksState)

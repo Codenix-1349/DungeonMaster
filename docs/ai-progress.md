@@ -11,6 +11,24 @@ Use the docs in this order instead:
 3. `docs/ai-next-steps.md`
 4. `docs/ai-progress.md`
 
+## 2026-04-13 - Phase 4.2 Slice 3: Engine-Owned Runtime Escalation Ladder
+
+### Done - escalating runtime free text now resolves through app-owned consequences
+
+- Runtime escalation input no longer hard-blocks by default; `beleidigen`, `drohen`, and `angreifen` now resolve against visible runtime NPCs engine-side when the target is clear.
+- Runtime NPC dialogue state now carries authoritative escalation fields such as `threat`, `warningsIssued`, and `engagementState` alongside seeded registry defaults for disposition and suspicion.
+- Authored `npcUpdates.relationshipDelta` now lands in runtime `dialogueState`, so relationship shifts and escalation share the same authoritative state layer.
+- Talk interactions targeting a withdrawn or hostile runtime NPC are hidden by the choice/context layer instead of reappearing unchanged after escalation.
+- Prompt building now distinguishes app-resolved runtime outcomes from free narration so AI only narrates the already-decided warning, withdrawal, or combat start.
+- Graufurt now includes an authored escalation combat hook on Elsa (`canStartCombat`, `combatPreset`, `escalationPolicy`) to prove the combat-start path without free AI combat canon.
+- Added regression coverage for:
+  - authoritative warning escalation against Mara
+  - authored combat start on Elsa
+  - clarification in multi-NPC escalation without an explicit target
+  - talk-choice suppression after NPC withdrawal
+  - prompt/proxy transport of authoritative runtime resolution metadata
+- Full test suite green (`197/197`) and build green after the slice.
+
 ## 2026-04-13 - Phase 4.2 Slice 2: Runtime Free-Text Intent Layer Expanded
 
 ### Done - runtime free text now has more value than repeating visible button text

@@ -40,10 +40,13 @@ Current follow-up goal:
 - [done] separate two immediate runtime text outcomes clearly:
   - authoritative resolved action
   - flavor-only narration without canonical state mutation
-- [done] block or clarify non-matched structured/escalating runtime text app-side instead of silently looping
+- [done] block or clarify non-matched structured runtime text app-side instead of silently looping
+- [done] route runtime escalation (`insult` / `threat` / `attack`) into engine-owned dialogue/consequence state instead of free AI canon
+- [done] allow authored NPC escalation to suppress talk actions or start combat through explicit runtime metadata (`canStartCombat`, `combatPreset`, `escalationPolicy`)
+- [done] mark app-resolved escalation in the prompt path so AI only narrates the already-decided consequence
 - next inside 4.2:
-  - engine-owned escalation paths for threat, conflict, disposition shifts, and combat starts
   - richer intent slots where target + tool/topic become first-class authored data instead of only text matching
+  - broaden escalation outcomes beyond dialogue/combat into authored help-calls, flight, guards, and scene-specific fallback consequences
 - after that, continue reducing trust in client-passed state on the proxy path and move session memory/state loading server-side
 
 ## Runtime rules to preserve
@@ -75,7 +78,7 @@ Current follow-up goal:
 - Free text may resolve natural variants, synonyms, and parameterized phrasings against visible, app-authorized affordances.
 - Harmless flavor actions may receive narration without canonical state mutation.
 - Escalating text such as insulting, threatening, arguing, or attacking must route into engine-owned consequence systems, not free AI canon.
-- Until those engine paths exist, the app must block or clarify such input explicitly instead of sending it through as normal narration.
+- If target or authored consequence data is missing, the app must clarify or route to a bounded non-canonical fallback explicitly instead of sending it through as free narration.
 - If the input is ambiguous or unavailable, the app should clarify or reject it explicitly instead of silently doing nothing or inventing world truth.
 
 ### State ownership rule

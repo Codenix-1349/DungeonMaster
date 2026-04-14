@@ -28,7 +28,8 @@ export function buildProxyMessages({ messages = [], promptContext = null } = {})
     sanitizedMessages,
     promptContext.combat || null,
     promptContext.sceneState || null,
-    promptContext.runtimeRequestMode || null
+    promptContext.runtimeRequestMode || null,
+    promptContext.runtimeResolution || null
   )
 
   return [

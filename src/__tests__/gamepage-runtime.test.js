@@ -12,7 +12,7 @@ import {
   resolveRuntimeChoiceFromText,
   shouldBuildChoicesAfterResponse,
 } from '../pages/gamePageRuntime.js'
-import { createInitialSceneState, findInteractionDef, normalizeAdventureEntry } from '../data/srd.js'
+import { createInitialSceneState, findInteractionDef, findSectionById, normalizeAdventureEntry } from '../data/srd.js'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
@@ -596,21 +596,117 @@ describe('GamePage runtime check flow helpers', () => {
     expect(resolution?.message).toContain('nicht eindeutig')
   })
 
-  it('blocks escalating runtime free text from becoming free AI canon', () => {
+  it('routes escalating free text against a visible runtime NPC through the authoritative warning path', () => {
+    const adventure = loadBirkenhainModule()
+    const sceneState = createInitialSceneState(adventure)
+    const section = findSectionById(adventure.structure, 'inn_common_room')
     const resolution = resolveUnmatchedRuntimeInput({
-      userText: 'Ich beleidige Mara und greife sie an.',
+      userText: 'Ich beleidige Mara.',
       choices: [
         {
           label: 'Mara ruhig nach dem Vermissten fragen',
           kind: 'talk',
-          interactionId: 'ask_mara_about_missing_person',
-          actionKey: 'intr:ask_mara_about_missing_person',
+          interactionId: 'ask_mara_about_tomas',
+          actionKey: 'intr:ask_mara_about_tomas',
         },
       ],
+      adventure,
+      sceneState,
+      section,
     })
 
-    expect(resolution?.type).toBe('blocked_escalation')
-    expect(resolution?.message).toContain('Eskalierende Aktionen')
+    expect(resolution?.type).toBe('authoritative_escalation')
+    expect(resolution?.runtimeRequestMode).toBe('runtime_authoritative_resolution')
+    expect(resolution?.runtimeResolution).toEqual(expect.objectContaining({
+      intent: 'insult',
+      outcome: 'warning',
+      npcId: 'mara',
+      npcName: 'Mara Birken',
+    }))
+    expect(resolution?.sceneStateOverride?.dialogueState?.activeNpcId).toBe('mara')
+    expect(resolution?.sceneStateOverride?.dialogueState?.npcRelations?.mara).toEqual(expect.objectContaining({
+      disposition: 'wary',
+      engagementState: 'warned',
+    }))
+  })
+
+  it('starts authored combat for escalation targets with an explicit combat preset', () => {
+    const adventure = loadGraufurtModule()
+    const sceneState = createInitialSceneState(adventure)
+    const section = findSectionById(adventure.structure, 'archive_foyer')
+    const resolution = resolveUnmatchedRuntimeInput({
+      userText: 'Ich greife Elsa an.',
+      choices: [
+        {
+          label: 'Elsa nach der Sperrung fragen',
+          kind: 'talk',
+          interactionId: 'ask_elsa_about_lockdown',
+          actionKey: 'intr:ask_elsa_about_lockdown',
+        },
+        {
+          label: 'Leno nach Mira fragen',
+          kind: 'talk',
+          interactionId: 'ask_leno_about_mira',
+          actionKey: 'intr:ask_leno_about_mira',
+        },
+      ],
+      adventure,
+      sceneState,
+      section,
+    })
+
+    expect(resolution?.type).toBe('authoritative_escalation')
+    expect(resolution?.runtimeResolution).toEqual(expect.objectContaining({
+      intent: 'attack',
+      outcome: 'combat_start',
+      npcId: 'elsa',
+      npcName: 'Elsa Dorn',
+    }))
+    expect(resolution?.combatOverride).toEqual(expect.objectContaining({
+      active: true,
+      phase: 'initiative',
+      enemies: [
+        expect.objectContaining({
+          id: 'runtime-enemy-elsa',
+          name: 'Elsa Dorn',
+          ac: 16,
+          xp: 25,
+        }),
+      ],
+    }))
+    expect(resolution?.sceneStateOverride?.dialogueState?.npcRelations?.elsa).toEqual(expect.objectContaining({
+      disposition: 'hostile',
+      engagementState: 'hostile',
+    }))
+  })
+
+  it('asks for clarification when escalating free text does not identify one visible NPC in a multi-npc scene', () => {
+    const adventure = loadGraufurtModule()
+    const sceneState = createInitialSceneState(adventure)
+    const section = findSectionById(adventure.structure, 'archive_foyer')
+    const resolution = resolveUnmatchedRuntimeInput({
+      userText: 'Ich beleidige euch beide.',
+      choices: [
+        {
+          label: 'Elsa nach der Sperrung fragen',
+          kind: 'talk',
+          interactionId: 'ask_elsa_about_lockdown',
+          actionKey: 'intr:ask_elsa_about_lockdown',
+        },
+        {
+          label: 'Leno nach Mira fragen',
+          kind: 'talk',
+          interactionId: 'ask_leno_about_mira',
+          actionKey: 'intr:ask_leno_about_mira',
+        },
+      ],
+      adventure,
+      sceneState,
+      section,
+    })
+
+    expect(resolution?.type).toBe('needs_clarification')
+    expect(resolution?.message).toContain('Nenne die Person direkt')
   })
 
   it('strips probe hint tags from runtime-module narration', () => {

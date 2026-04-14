@@ -101,6 +101,14 @@ function passesFlagGates(entry, plotFlags = {}) {
   return true
 }
 
+function isNpcTalkInteractionBlocked(interaction, sceneState) {
+  if (interaction?.kind !== 'talk' || !interaction?.target) return false
+
+  const relation = sceneState?.dialogueState?.npcRelations?.[interaction.target]
+  const engagementState = String(relation?.engagementState || 'open').toLowerCase()
+  return engagementState === 'withdrawn' || engagementState === 'hostile'
+}
+
 export function isSectionExitAllowed(exit, sceneState) {
   if (!exit?.label) return false
   const plotFlags = sceneState?.gmState?.plotFlags || {}
@@ -122,6 +130,7 @@ function isInteractionAllowed(interaction, sceneState, requireVisibleAvailabilit
   const isExplicitlyVisible = availability.visible === true || !hasAvailability
 
   if (!passesFlagGates(interaction, plotFlags)) return false
+  if (isNpcTalkInteractionBlocked(interaction, sceneState)) return false
 
   if (availability.runtimeObjectVisible) {
     if (!runtimeObjects[availability.runtimeObjectVisible]?.visible) return false

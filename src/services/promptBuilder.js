@@ -20,7 +20,7 @@ function getLatestUserText(messages = []) {
   return latestUserMessage?.content || ''
 }
 
-function buildConditionalRulesBlock(combatActive) {
+function buildConditionalRulesBlock(combatActive, isRuntimeModule = false) {
   if (combatActive) {
     // ── KAMPF-MODUS: Volle Kampfregeln, nur Kurzhinweis für Proben ──
     return `## Proben
@@ -67,7 +67,31 @@ Passe Gegnerwerte an die Stufe des Spielercharakters an. Solo-Held ohne Gruppe �
 - Schaden (Falle, Gift, Sturz): **[HP:-N]** — Heilung (Zauber, Quelle): **[HP:+N]** — Tags am Ende des Absatzes.`
   }
 
-  // ── ERKUNDUNGS-MODUS: Volle Probenregeln, nur Kurzhinweis für Kampf ──
+  if (isRuntimeModule) {
+    // Runtime-Module: Proben kommen aus dem Modul, keine AI-Tags nötig
+    return `## Proben
+- Generiere KEINE [PROBE:]-, [PROBE_HINWEIS:]- oder [WÜRFEL:]-Tags. Die App steuert alle Proben über das Abenteuermodul.
+- Erfinde NIEMALS selbst Würfelergebnisse.
+
+## Kampf
+- Wenn ein Kampf beginnt: **KAMPF BEGINNT** + [GEGNER:Name|HP:X|AC:Y|ATK:+Z|DMG:WdX+N|XP:N] für jeden Gegner.
+- Passe Gegnerwerte an die Spielerstufe an (Solo-Held, faire Kämpfe).
+- Die App übernimmt alle Würfe und Mechanik im Kampf.
+
+## Beute & Inventar-Tags
+- Gegenstand gefunden: **[BEUTE:Gegenstandsname]** — Gegenstand verloren: **[VERLOREN:Gegenstandsname]**
+- Gold erhalten: **[GM:+N]** (auch [SM:+N], [KM:+N]) — Tags am Ende des Absatzes setzen.
+- Vergib Beute NACH gewonnenen Kämpfen und bei Durchsuchung.
+
+## XP
+- Nach Kampfende: [XP:N] (Summe aller besiegten Gegner).
+- Außerhalb: [XP:10-25] für gefährliche Proben, [XP:25-50] soziale Meilensteine, [XP:25-100] Rätsel. Sparsam vergeben.
+
+## HP-Änderungen außerhalb des Kampfes
+- Schaden (Falle, Gift, Sturz): **[HP:-N]** — Heilung (Zauber, Quelle): **[HP:+N]** — Tags am Ende des Absatzes.`
+  }
+
+  // ── ERKUNDUNGS-MODUS (Legacy/Prose): Volle Probenregeln, nur Kurzhinweis für Kampf ──
   return `## Proben & Fertigkeitsproben — STRENGE REGELN
 
 ### CHECKLISTE — Bei JEDER Antwort mit Auswahlmöglichkeiten PRÜFEN:
@@ -150,12 +174,13 @@ function buildChoiceStyleInstruction(userText = '', combatActive = false, isRunt
   if (isRuntimeModule) {
     return `## Ausgabeformat — Strukturiertes Modul (STRENG)
 - Die App zeigt dem Spieler automatisch alle verfügbaren Aktionen als Buttons.
-- Generiere KEINE nummerierten Optionslisten. KEINE Auswahlmöglichkeiten auflisten.
+- Deine Aufgabe: Beschreibe die Szene, sprich als NSCs, erzeuge Atmosphäre.
+- Generiere KEINE Listen jeder Art — keine nummerierten Listen, keine Aufzählungen mit Sternchen oder Spiegelstrichen, keine Handlungsvorschläge oder Optionen. Beschreibe alles in Fließtext.
 - Generiere KEINE [PROBE:]-, [PROBE_HINWEIS:]- oder [WÜRFEL:]-Tags. Die App steuert alle Proben.
-- Deine EINZIGE Aufgabe: Beschreibe die Szene, sprich als NSCs, erzeuge Atmosphäre.
-- Beende mit "Was tust du?" oder einer ähnlichen offenen Frage — OHNE Optionen.
+- Wenn ein NSC spricht, beginne die Zeile immer mit dem Namen: **Mara:** „…" — damit klar ist wer redet.
 - Halte Antworten kompakt (3-6 Sätze). Keine langen Monologe.
-- Erfinde KEINE neuen Objekte, NPCs, Hinweise oder Orte. Nur was im Kontext steht existiert.`
+- Erfinde KEINE neuen Objekte, NPCs, Hinweise, Orte oder Geräusche. NUR was im Szenenkontext oben steht existiert — nichts anderes.
+- Schreibe KEINE Zusammenfassungen, Statusnotizen oder Aufzählungen am Ende. Nur Fließtext.`
   }
 
   return `## Ausgabeformat für Entscheidungsszenen
@@ -173,15 +198,40 @@ WICHTIG: Beende JEDE Antwort außerhalb des Kampfes mit 3 bis 5 nummerierten, si
 - Schreibe NIEMALS zwei Optionen auf dieselbe Zeile. IMMER Zeilenumbruch vor jeder Nummer.`
 }
 
-function buildRuntimeRequestModeInstruction(runtimeRequestMode = null, isRuntimeModule = false) {
-  if (!isRuntimeModule || runtimeRequestMode !== 'runtime_flavor_only') return ''
+function buildRuntimeRequestModeInstruction(runtimeRequestMode = null, runtimeResolution = null, isRuntimeModule = false, combatActive = false) {
+  if (!isRuntimeModule) return ''
 
-  return `## Runtime-Freitextmodus: Flavor-only
+  if (runtimeRequestMode === 'runtime_flavor_only') {
+    return `## Runtime-Freitextmodus: Flavor-only
 - Die letzte Spieleraktion ist NUR eine freie Flavor-Handlung innerhalb der aktuellen Szene.
 - Veraendere KEINE kanonischen Fakten, Reveals, Beziehungen, Inventargegenstaende, Ortswechsel oder Quest-Zustaende.
 - Fuehre KEINE versteckten Checks, Belohnungen, Schaeden oder sonstige mechanische Konsequenzen ein.
 - Beschreibe nur die unmittelbare, harmlose Reaktion der bestehenden Szene in 1-3 Saetzen.
 - Wenn die Handlung keine echte Wirkung hat, schildere genau das knapp und in-world.`
+  }
+
+  if (runtimeRequestMode === 'runtime_authoritative_resolution') {
+    const npcName = runtimeResolution?.npcName ? `- Betroffener NSC: ${runtimeResolution.npcName}.` : ''
+    const intent = runtimeResolution?.intent ? `- Erkannter Intent: ${runtimeResolution.intent}.` : ''
+    const consequence = runtimeResolution?.consequence
+      ? `- Die unmittelbare Folge ist bereits app-seitig entschieden: ${runtimeResolution.consequence}`
+      : '- Die unmittelbare Folge ist bereits app-seitig entschieden.'
+
+    return `## Runtime-Freitextmodus: App-aufgeloest
+- Die letzte Spieleraktion wurde bereits autoritativ durch die App ausgewertet.
+${npcName}
+${intent}
+${consequence}
+- Veraendere diese Folge NICHT und fuehre keine zusaetzlichen mechanischen Konsequenzen ein.
+- Respektiere den gelieferten Szenen- und Dialogzustand als kanonische Wahrheit.
+${combatActive || runtimeResolution?.outcome === 'combat_start'
+    ? '- Der Kampf ist bereits engine-seitig gestartet. Beschreibe nur den unmittelbaren Auftakt des laufenden Kampfes in 2-4 Saetzen. KEINE [GEGNER]-Tags und KEIN "KAMPF BEGINNT".'
+    : '- Beschreibe nur die direkte Reaktion des vorhandenen NSC und der aktuellen Szene. Keine neuen Fakten, keine neuen NSCs, keine neuen Auftraege.'}`
+      .replace(/\n\n+/g, '\n')
+      .trim()
+  }
+
+  return ''
 }
 
 function getDialogueNpcDisplayName(sceneState = null, structure = null, runtimeModule = false) {
@@ -253,6 +303,8 @@ function buildSceneStateContext(sceneState = null, { runtimeModule = false, stru
     const dlgParts = [`Aktiver Gesprächspartner: ${activeNpcLabel}`]
     if (rel?.disposition) dlgParts.push(`Haltung: ${rel.disposition}`)
     if (rel?.suspicion > 0) dlgParts.push(`Misstrauen: ${rel.suspicion}/10`)
+    if (rel?.threat > 0) dlgParts.push(`Bedrohung: ${rel.threat}/10`)
+    if (rel?.engagementState && rel.engagementState !== 'open') dlgParts.push(`Status: ${rel.engagementState}`)
     lines.push(`**Dialog:** ${dlgParts.join(' · ')}`)
   }
 
@@ -392,7 +444,7 @@ function formatCurrencyForPrompt(character) {
 /**
  * Build the system prompt
  */
-export function buildSystemPrompt(character, adventure, messages = [], combat = null, sceneState = null, runtimeRequestMode = null) {
+export function buildSystemPrompt(character, adventure, messages = [], combat = null, sceneState = null, runtimeRequestMode = null, runtimeResolution = null) {
   const userText = getLatestUserText(messages)
   const normalizedAdventure = normalizeAdventureEntry(adventure)
   const structure = normalizedAdventure?.structure || null
@@ -404,7 +456,12 @@ export function buildSystemPrompt(character, adventure, messages = [], combat = 
     combat,
   })
   const runtimeModule = Boolean(adventureContext.runtimeModule)
-  const runtimeRequestInstruction = buildRuntimeRequestModeInstruction(runtimeRequestMode, runtimeModule)
+  const runtimeRequestInstruction = buildRuntimeRequestModeInstruction(
+    runtimeRequestMode,
+    runtimeResolution,
+    runtimeModule,
+    Boolean(combat?.active)
+  )
 
   let prompt = `Du bist die in-world-Erzählstimme von ${PROJECT_NAME} für ein Solo-Abenteuer nach ${SRD_VERSION_LABEL}.
 
@@ -423,14 +480,14 @@ export function buildSystemPrompt(character, adventure, messages = [], combat = 
 ## Spielerautonomie
 - Steuere niemals den Spielercharakter — keine Worte, Entscheidungen oder Gefühle erfinden.
 - Wenn ein NSC eine direkte Frage stellt oder eine Reaktion erwartet: stoppe an diesem Moment.
-- Nach Entscheidungsmomenten endet die Szene mit **Was tust du?** oder **Was antwortest du?**.
+${runtimeModule ? '- Beende die Szene OHNE Fragen wie "Was tust du?" — die App zeigt Aktionen als Buttons.' : '- Nach Entscheidungsmomenten endet die Szene mit **Was tust du?** oder **Was antwortest du?**.'}
 
 ## Erzählstil
 - Beschreibe konkret beobachtbare Details statt Meta-Hinweise.
 - Behalte Ressourcen, Gefahren, Hinweise und laufende Situationen im Blick.
 - Vermeide unnötig lange Monologe, vor allem in sensiblen Dialog- und Reaktionsmomenten.
 
-${buildConditionalRulesBlock(Boolean(combat?.active))}
+${buildConditionalRulesBlock(Boolean(combat?.active), runtimeModule)}
 
 ${SRD_CORE_PROMPT_RULES.trim()}
 
