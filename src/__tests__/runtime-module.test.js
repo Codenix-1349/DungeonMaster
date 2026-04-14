@@ -836,6 +836,20 @@ describe('clue registry', () => {
     expect(updated.gmState.revealedClueIds).toContain('tomas_obsessed')
     expect(updated.playerKnowledge.discoveredClues.some(c => /Tomas/i.test(c))).toBe(true)
   })
+
+  it('authoritative npcUpdates also update runtime dialogue relations', () => {
+    const adv = loadModule()
+    const state = createInitialSceneState(adv)
+    const intr = findInteractionDef(adv.structure, 'ask_mara_about_tomas')
+    const updated = applyInteractionSuccess(state, intr, adv.structure.module)
+
+    expect(updated.dialogueState.activeNpcId).toBe('mara')
+    expect(updated.dialogueState.npcRelations.mara).toEqual(expect.objectContaining({
+      disposition: 'friendly',
+      suspicion: 2,
+      lastTopic: 'Tomas',
+    }))
+  })
 })
 
 describe('interaction outcomes', () => {

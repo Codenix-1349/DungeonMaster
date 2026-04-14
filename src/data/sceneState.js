@@ -80,6 +80,71 @@ function buildInitialRuntimeKnownNpcNames(structure, section, npcStates) {
   }).map(entry => entry.name)
 }
 
+function clampRuntimeMeter(value = 0, min = 0, max = 10) {
+  return Math.max(min, Math.min(max, Number(value) || 0))
+}
+
+function normalizeRuntimeDisposition(value = 'neutral') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['friendly', 'helpful', 'ally', 'vertrauensvoll'].includes(normalized)) return 'friendly'
+  if (['wary', 'guarded', 'suspicious', 'misstrauisch'].includes(normalized)) return 'wary'
+  if (['hostile', 'feindselig', 'aggressive'].includes(normalized)) return 'hostile'
+  return 'neutral'
+}
+
+function mapRuntimeSuspicion(value = 0) {
+  if (typeof value === 'number') return clampRuntimeMeter(value)
+
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'none') return 0
+  if (normalized === 'low') return 2
+  if (normalized === 'medium') return 5
+  if (normalized === 'high') return 8
+  return clampRuntimeMeter(Number(value) || 0)
+}
+
+function normalizeRuntimeEngagementState(value = 'open') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['warned', 'withdrawn', 'hostile'].includes(normalized)) return normalized
+  return 'open'
+}
+
+function shiftRuntimeDisposition(disposition = 'neutral', delta = 0) {
+  const ladder = ['hostile', 'wary', 'neutral', 'friendly']
+  const startIndex = ladder.indexOf(normalizeRuntimeDisposition(disposition))
+  const safeIndex = startIndex >= 0 ? startIndex : ladder.indexOf('neutral')
+  const nextIndex = Math.max(0, Math.min(ladder.length - 1, safeIndex + (Number(delta) || 0)))
+  return ladder[nextIndex]
+}
+
+function createRuntimeNpcRelation(source, npcId, previousRelation = null) {
+  const registry = source?.module?.npcRegistry || source?.npcRegistry || {}
+  const definition = registry[npcId] || {}
+  const relation = previousRelation || {}
+
+  return {
+    ...relation,
+    disposition: normalizeRuntimeDisposition(relation.disposition ?? definition.relationship ?? 'neutral'),
+    suspicion: mapRuntimeSuspicion(relation.suspicion ?? definition.suspicion ?? 0),
+    threat: clampRuntimeMeter(relation.threat ?? definition.threat ?? 0),
+    warningsIssued: Math.max(0, Number(relation.warningsIssued) || 0),
+    engagementState: normalizeRuntimeEngagementState(relation.engagementState || 'open'),
+    lastTopic: String(relation.lastTopic ?? definition.lastTopic ?? ''),
+  }
+}
+
+function seedVisibleRuntimeNpcRelations(source, visibleRuntimeNpcs = [], previousRelations = {}) {
+  const nextRelations = { ...(previousRelations || {}) }
+
+  for (const npc of visibleRuntimeNpcs) {
+    const npcId = typeof npc === 'string' ? npc : npc?.id
+    if (!npcId) continue
+    nextRelations[npcId] = createRuntimeNpcRelation(source, npcId, nextRelations[npcId])
+  }
+
+  return nextRelations
+}
+
 export function findSectionById(structure, sectionId) {
   return structure?.sections?.find(section => section.id === sectionId) || null
 }
@@ -187,6 +252,7 @@ export function resolveInteractionOutcome(sceneState, interaction, module, outco
 
   let gm = { ...sceneState.gmState }
   let pk = { ...sceneState.playerKnowledge }
+  let dialogueState = { ...(sceneState.dialogueState || {}) }
   const takeEffects = buildPortableTakeEffects(sceneState, interaction, module, outcome)
 
   // 1. Set flags
@@ -232,6 +298,7 @@ export function resolveInteractionOutcome(sceneState, interaction, module, outco
   // 5. NPC updates
   if (result.npcUpdates?.length) {
     const npcStates = { ...(gm.npcStates || {}) }
+    const npcRelations = { ...(dialogueState.npcRelations || {}) }
     const currentSectionId = gm.currentSectionId || sceneState.gmState?.currentSectionId || null
     for (const upd of result.npcUpdates) {
       const nextState = { ...normalizeRuntimeNpcState(npcStates[upd.npcId]), ...upd }
@@ -239,8 +306,30 @@ export function resolveInteractionOutcome(sceneState, interaction, module, outco
         nextState.sectionId = currentSectionId
       }
       npcStates[upd.npcId] = nextState
+
+      const previousRelation = createRuntimeNpcRelation(module, upd.npcId, npcRelations[upd.npcId])
+      npcRelations[upd.npcId] = {
+        ...previousRelation,
+        disposition: upd.relationshipDelta
+          ? shiftRuntimeDisposition(previousRelation.disposition, upd.relationshipDelta)
+          : previousRelation.disposition,
+        suspicion: upd.suspicionDelta != null
+          ? clampRuntimeMeter(previousRelation.suspicion + Number(upd.suspicionDelta || 0))
+          : previousRelation.suspicion,
+        threat: upd.threatDelta != null
+          ? clampRuntimeMeter(previousRelation.threat + Number(upd.threatDelta || 0))
+          : previousRelation.threat,
+        engagementState: upd.engagementState
+          ? normalizeRuntimeEngagementState(upd.engagementState)
+          : previousRelation.engagementState,
+        lastTopic: String(upd.lastTopic ?? previousRelation.lastTopic ?? ''),
+      }
     }
     gm = { ...gm, npcStates: npcStates }
+    dialogueState = {
+      ...dialogueState,
+      npcRelations,
+    }
   }
 
   // 6. Object state updates
@@ -270,8 +359,21 @@ export function resolveInteractionOutcome(sceneState, interaction, module, outco
     gm = { ...gm, runtimeInteractions }
   }
 
+  if (interaction?.kind === 'talk' && interaction?.target) {
+    const activeNpcId = resolveRuntimeNpcId({ module }, interaction.target) || interaction.target
+    const npcRelations = { ...(dialogueState.npcRelations || {}) }
+    dialogueState = {
+      ...dialogueState,
+      activeNpcId,
+      npcRelations: {
+        ...npcRelations,
+        [activeNpcId]: createRuntimeNpcRelation(module, activeNpcId, npcRelations[activeNpcId]),
+      },
+    }
+  }
+
   return {
-    sceneState: { ...sceneState, gmState: gm, playerKnowledge: pk },
+    sceneState: { ...sceneState, gmState: gm, playerKnowledge: pk, dialogueState },
     inventoryAdds: takeEffects.inventoryAdds,
   }
 }
@@ -424,9 +526,20 @@ export function createInitialSceneState(adventure) {
   const initialRuntimeNpcStates = runtimeStructured
     ? buildInitialRuntimeNpcStates(structure)
     : {}
+  const initialVisibleRuntimeNpcs = runtimeStructured && firstSection
+    ? getVisibleRuntimeNpcs(structure, firstSection, {
+      gmState: {
+        currentSectionId: firstSection.id,
+        npcStates: initialRuntimeNpcStates,
+      },
+    })
+    : []
   const initialKnownRuntimeNpcNames = runtimeStructured
     ? buildInitialRuntimeKnownNpcNames(structure, firstSection, initialRuntimeNpcStates)
     : []
+  const initialRuntimeNpcRelations = runtimeStructured
+    ? seedVisibleRuntimeNpcRelations(structure, initialVisibleRuntimeNpcs, {})
+    : {}
 
   return {
     version: SCENE_STATE_VERSION,
@@ -458,7 +571,7 @@ export function createInitialSceneState(adventure) {
     // ── Dialogue State (NPC interaction tracking) ──
     dialogueState: {
       activeNpcId: null,
-      npcRelations: {},
+      npcRelations: initialRuntimeNpcRelations,
     },
 
     // ── Memory Summary (compact session history) ──
@@ -895,14 +1008,20 @@ export function deriveSceneState({ adventure, previousSceneState = null, message
       shouldTransition,
     })
     : detectActiveNpc(recentMessages, newKnownNpcs)
-  const npcRelations = { ...(prevDlg.npcRelations || {}) }
+  const npcRelations = runtimeStructured
+    ? seedVisibleRuntimeNpcRelations(structure, runtimeNpcView, prevDlg.npcRelations || {})
+    : { ...(prevDlg.npcRelations || {}) }
   if (activeNpc && !npcRelations[activeNpc]) {
-    npcRelations[activeNpc] = { disposition: 'neutral', suspicion: 0, lastTopic: '' }
+    npcRelations[activeNpc] = runtimeStructured
+      ? createRuntimeNpcRelation(structure, activeNpc, npcRelations[activeNpc])
+      : { disposition: 'neutral', suspicion: 0, threat: 0, warningsIssued: 0, engagementState: 'open', lastTopic: '' }
   }
   // Authoritative dialogue: carry forward, update lastTopic only — no AI-derived disposition/suspicion (Phase 2.5)
   if (activeNpc && npcRelations[activeNpc]) {
     npcRelations[activeNpc] = {
-      ...npcRelations[activeNpc],
+      ...(runtimeStructured
+        ? createRuntimeNpcRelation(structure, activeNpc, npcRelations[activeNpc])
+        : npcRelations[activeNpc]),
       lastTopic: truncateText(latestUser, 80),
     }
   }

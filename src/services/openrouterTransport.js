@@ -212,6 +212,7 @@ export async function sendMessage({
   combat,
   sceneState,
   runtimeRequestMode = null,
+  runtimeResolution = null,
   onChunk,
   useProxy = false,
   provider = AI_PROVIDER_OPENROUTER,
@@ -239,6 +240,7 @@ export async function sendMessage({
           combat,
           sceneState,
           runtimeRequestMode,
+          runtimeResolution,
         },
         onChunk: null,
       })
@@ -255,7 +257,7 @@ export async function sendMessage({
     }
   }
 
-  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat, sceneState, runtimeRequestMode)
+  const systemPrompt = buildSystemPrompt(character, adventure, messages, combat, sceneState, runtimeRequestMode, runtimeResolution)
   const fullMessages = [
     { role: 'system', content: systemPrompt },
     ...messages,

@@ -256,6 +256,10 @@ export default function GamePage() {
     const activeAdventure = options.adventureOverride ?? adventure
     const activeSceneState = options.sceneStateOverride ?? sceneState
     const activeRuntimeModule = isRuntimeModule(activeAdventure)
+    const activeSection = activeRuntimeModule
+      ? getCurrentSection(activeAdventure, activeSceneState)
+      : null
+    const activeCombat = options.combatOverride ?? combat
     const history = Array.isArray(options.historyOverride)
       ? options.historyOverride
       : buildHistory()
@@ -275,21 +279,39 @@ export default function GamePage() {
     }
 
     const unresolvedRuntimeInput = activeRuntimeModule && visibleChoices.length
-      ? resolveUnmatchedRuntimeInput({ userText: text, choices: visibleChoices })
+      ? resolveUnmatchedRuntimeInput({
+        userText: text,
+        choices: visibleChoices,
+        adventure: activeAdventure,
+        sceneState: activeSceneState,
+        section: activeSection,
+      })
       : null
 
-    if (
-      unresolvedRuntimeInput?.type === 'blocked_escalation' ||
-      unresolvedRuntimeInput?.type === 'needs_clarification'
-    ) {
+    if (unresolvedRuntimeInput?.type === 'needs_clarification') {
       setError(unresolvedRuntimeInput.message)
       inputRef.current?.focus()
       return
     }
 
+    const runtimeSceneStateOverride = unresolvedRuntimeInput?.type === 'authoritative_escalation'
+      ? unresolvedRuntimeInput.sceneStateOverride
+      : null
+    const runtimeCombatOverride = unresolvedRuntimeInput?.type === 'authoritative_escalation'
+      ? unresolvedRuntimeInput.combatOverride
+      : null
+    const effectiveSceneState = runtimeSceneStateOverride || activeSceneState
+    const effectiveCombat = runtimeCombatOverride || activeCombat
+
     setInput('')
     setError('')
     setDynamicChoices([])
+    if (runtimeSceneStateOverride) {
+      setSceneState(runtimeSceneStateOverride)
+    }
+    if (runtimeCombatOverride?.enemies?.length) {
+      startCombat(runtimeCombatOverride.enemies)
+    }
     const userMsg = addMessage('user', text)
 
     const outboundMessages = [...history, { role: 'user', content: text }]
@@ -306,9 +328,10 @@ export default function GamePage() {
         provider: aiProvider,
         character: activeCharacter,
         adventure: activeAdventure,
-        combat,
-        sceneState: activeSceneState,
-        runtimeRequestMode: unresolvedRuntimeInput?.runtimeRequestMode || null,
+        combat: effectiveCombat,
+        sceneState: effectiveSceneState,
+        runtimeRequestMode: unresolvedRuntimeInput?.runtimeRequestMode || options.runtimeRequestMode || null,
+        runtimeResolution: unresolvedRuntimeInput?.runtimeResolution || options.runtimeResolution || null,
         ollamaBaseUrl,
         useProxy: aiProvider === 'openrouter' && isLoggedIn && hasServerKey,
         onChunk: chunk => {
@@ -324,7 +347,7 @@ export default function GamePage() {
       const responsePendingCheck = resolveResponsePendingCheck({
         aiCheckTag: parseCheckTags(full),
         userText: text,
-        combatActive: combat?.active,
+        combatActive: effectiveCombat?.active,
         allowEngineCheckInference: options.allowEngineCheckInference !== false,
         hasPendingChoiceMeta: Boolean(pendingChoiceMetaRef.current),
         runtimeModule: activeRuntimeModule,
@@ -336,7 +359,7 @@ export default function GamePage() {
       }
 
       // Parse enemies if combat starts — trigger on KAMPF BEGINNT or enemy tags
-      if (!combat?.active) {
+      if (!effectiveCombat?.active) {
         const parsedEnemies = parseEnemyTags(full)
         if (parsedEnemies.length > 0) {
           startCombat(parsedEnemies)
@@ -414,20 +437,20 @@ export default function GamePage() {
       const updatedSceneState = syncSceneState({
         messages: fullTranscript,
         adventureOverride: activeAdventure,
-        combatOverride: combat,
-        previousSceneStateOverride: activeSceneState,
+        combatOverride: effectiveCombat,
+        previousSceneStateOverride: effectiveSceneState,
         fallbackUserText: text,
-        fallbackUserActionKey: options.recentActionKey || null,
+        fallbackUserActionKey: unresolvedRuntimeInput?.recentActionKey || options.recentActionKey || null,
       })
 
       // Build choices from choice engine (structured + AI + fallback)
-      if (shouldBuildChoicesAfterResponse({ combatActive: combat?.active, pendingCheck: responsePendingCheck })) {
+      if (shouldBuildChoicesAfterResponse({ combatActive: effectiveCombat?.active, pendingCheck: responsePendingCheck })) {
         const section = getCurrentSection(activeAdventure, updatedSceneState)
         const choices = rebuildVisibleChoices({
           section,
           sceneState: updatedSceneState,
           assistantText: full,
-          combatActive: combat?.active,
+          combatActive: effectiveCombat?.active,
           runtimeModule: isRuntimeModule(activeAdventure),
           inventoryCount: activeCharacter?.inventory?.length || 0,
         })

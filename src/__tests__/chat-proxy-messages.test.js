@@ -99,4 +99,28 @@ describe('chat proxy prompt authority', () => {
 
     expect(buildProxyMessages({ messages })).toEqual(messages)
   })
+
+  it('passes authoritative runtime resolution metadata into the server-built prompt', () => {
+    const prepared = buildProxyMessages({
+      messages: [{ role: 'user', content: 'Ich greife Elsa an.' }],
+      promptContext: {
+        character: makeCharacter(),
+        adventure: loadRuntimeAdventure(),
+        combat: { active: true, enemies: [] },
+        sceneState: makeSceneState(),
+        runtimeRequestMode: 'runtime_authoritative_resolution',
+        runtimeResolution: {
+          kind: 'escalation',
+          intent: 'attack',
+          outcome: 'combat_start',
+          npcName: 'Elsa Dorn',
+          consequence: 'Elsa reagiert sofort feindselig, und die Situation kippt in offenen Kampf.',
+        },
+      },
+    })
+
+    expect(prepared[0].content).toContain('Runtime-Freitextmodus: App-aufgeloest')
+    expect(prepared[0].content).toContain('Elsa Dorn')
+    expect(prepared[0].content).toContain('offenen Kampf')
+  })
 })

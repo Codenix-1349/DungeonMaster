@@ -45,6 +45,12 @@ NPC_REGISTRY:
     currentlyVisible: true
     relationship: neutral
     suspicion: low
+    canStartCombat: true
+    combatPreset: guard
+    escalationPolicy:
+      withdrawThreshold: 2
+      combatThreshold: 4
+      immediateCombatOnAttack: true
     knownFacts: []
     secretsUnlocked: []
     lastTopic: null

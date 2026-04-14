@@ -87,6 +87,47 @@ describe('Prompt — authoritative state in prompt', () => {
   })
 })
 
+describe('Prompt â€” runtime authoritative resolution mode', () => {
+  it('describes app-resolved escalation outcomes without reopening authority to the model', () => {
+    const prompt = buildSystemPrompt(
+      makeCharacter(),
+      loadRuntimeAdventure(),
+      [{ role: 'user', content: 'Ich beleidige Mara.' }],
+      null,
+      makeSceneState({
+        currentSectionTitle: 'Alte Brauerei',
+        currentLocation: 'Birkenhain',
+        dialogueState: {
+          activeNpcId: 'mara',
+          npcRelations: {
+            mara: {
+              disposition: 'wary',
+              suspicion: 3,
+              threat: 1,
+              engagementState: 'warned',
+              lastTopic: 'Ich beleidige Mara.',
+            },
+          },
+        },
+      }),
+      'runtime_authoritative_resolution',
+      {
+        kind: 'escalation',
+        intent: 'insult',
+        outcome: 'warning',
+        npcName: 'Mara Birken',
+        consequence: 'Mara reagiert sofort gereizt und warnt dich scharf vor weiteren Beschimpfungen.',
+      }
+    )
+
+    expect(prompt).toContain('Runtime-Freitextmodus: App-aufgeloest')
+    expect(prompt).toContain('Mara Birken')
+    expect(prompt).toContain('bereits autoritativ')
+    expect(prompt).toContain('weiteren Beschimpfungen')
+    expect(prompt).toContain('Status: warned')
+  })
+})
+
 describe('Prompt — inferred data marked as non-canonical', () => {
   it('labels inferred section as not canonical', () => {
     const prompt = buildSystemPrompt(makeCharacter(), null, [], null, makeSceneState())

@@ -96,8 +96,8 @@ Der Runtime-Kern ist bereits weit vorangekommen:
 
 ### Realistischer Status
 - Phase 3: **abgeschlossen**
-- Phase 4: **gestartet, 4.1 erster Slice erledigt**
-- Nächster notwendiger Klärungsblock: **Runtime-Freitext als echter, autoritativer Intent-Layer**
+- Phase 4: **gestartet, 4.1 erledigt, 4.2 in mehreren Slices aktiv**
+- Nächster notwendiger Klärungsblock: **authoring-staerkere Intent-Slots und breitere Eskalationsfolgen innerhalb von 4.2**
 - Größter Restblock: **Runtime-Input-Autorität plus serverseitige State-/Memory-Autorität**
 
 ### Warum Phase 4 jetzt dran ist
@@ -269,12 +269,16 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 - erledigt:
   - Button und gematchter Freitext teilen denselben Execute-Pfad
   - parameterisierte/entity-lastige Freitexte werden besser auf sichtbare Runtime-Aktionen gemappt
-  - nicht gematchter Runtime-Freitext wird app-seitig in Flavor-only, Klaerung oder blockierte Eskalation getrennt
+  - nicht gematchter Runtime-Freitext wird app-seitig in Flavor-only, Klaerung oder autoritative Eskalation getrennt
   - Flavor-only Runtime-Freitext wird im Prompt explizit als nicht-kanonisch markiert
+  - engine-owned Eskalation fuer sichtbare Runtime-NPCs schreibt autoritativ nach `dialogueState` (`disposition`, `suspicion`, `threat`, `warningsIssued`, `engagementState`)
+  - authored `npcUpdates.relationshipDelta` und Runtime-Eskalation nutzen denselben autoritativen Dialog-State statt freier KI-Stimmung
+  - entzogene oder feindselige Runtime-NPCs unterdruecken ihre authored Talk-Interaktionen im Choice-/Context-Layer
+  - authored NPCs koennen jetzt ueber `canStartCombat`, `combatPreset` und `escalationPolicy` einen engine-gesteuerten Kampfstart aus Runtime-Freitext erlauben
 - offen:
-  - Eskalation nicht mehr nur blocken, sondern in echte engine-gesteuerte Konsequenzpfade ueberfuehren
-  - einfache Eskalationsleiter fuer `beleidigen` / `drohen` / `angreifen` mit authored Schwellen und optionalem Kampfstart bauen
   - Intent-Aufloesung weiter von reinem Text-Matching auf authored Target-/Tool-/Topic-Slots ziehen
+  - Eskalationsfolgen ueber Warnung/Rueckzug/Kampf hinaus auf authored Hilfe-rufen-, Flucht- und Guards-Pfade ausweiten
+  - serverseitige State-/Memory-Autoritaet in 4.3 weiter nachziehen, sobald der Runtime-Input-Vertrag stabil genug ist
 
 ### Exit-Signal
 - Freitext hat echten Nutzwert jenseits exakter Button-Wiederholung

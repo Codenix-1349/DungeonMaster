@@ -72,6 +72,7 @@ describe('openrouterTransport proxy prompt authority', () => {
         combat,
         sceneState,
         runtimeRequestMode: 'runtime_flavor_only',
+        runtimeResolution: null,
       },
       onChunk: null,
     })
@@ -128,9 +129,43 @@ describe('openrouterTransport proxy prompt authority', () => {
       [{ role: 'user', content: 'Hallo lokal' }],
       { active: false },
       { currentSectionTitle: 'Torhaus' },
-      'runtime_flavor_only'
+      'runtime_flavor_only',
+      null
     )
     expect(result).toBe('normalized:Lokale Antwort')
+  })
+
+  it('forwards authoritative runtime resolution metadata to the proxy', async () => {
+    streamChatProxy.mockResolvedValue('Erzaehlung')
+
+    const runtimeResolution = {
+      kind: 'escalation',
+      intent: 'attack',
+      outcome: 'combat_start',
+      npcName: 'Elsa Dorn',
+      consequence: 'Elsa reagiert sofort feindselig, und die Situation kippt in offenen Kampf.',
+    }
+
+    await sendMessage({
+      messages: [{ role: 'user', content: 'Ich greife Elsa an.' }],
+      model: 'openrouter/free',
+      apiKey: null,
+      character: { name: 'Aria' },
+      adventure: { title: 'Graufurt' },
+      combat: { active: true, enemies: [] },
+      sceneState: { currentSectionTitle: 'Vorhalle' },
+      runtimeRequestMode: 'runtime_authoritative_resolution',
+      runtimeResolution,
+      onChunk: vi.fn(),
+      useProxy: true,
+    })
+
+    expect(streamChatProxy).toHaveBeenCalledWith(expect.objectContaining({
+      promptContext: expect.objectContaining({
+        runtimeRequestMode: 'runtime_authoritative_resolution',
+        runtimeResolution,
+      }),
+    }))
   })
 
   it('lists local Ollama models from api tags', async () => {
