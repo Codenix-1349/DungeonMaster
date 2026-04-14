@@ -21,8 +21,6 @@ import {
   shouldBuildChoicesAfterResponse,
 } from './gamePageRuntime'
 
-const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
-
 // Resolve a skill/ability key to its German display label
 function getCheckLabel(skillOrAbility) {
   const skillDef = SKILLS.find(s => s.key === skillOrAbility)
@@ -121,7 +119,6 @@ export default function GamePage() {
   const [streaming, setStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const [error, setError] = useState('')
-  const [showDice, setShowDice] = useState(true)
   const [showRules, setShowRules] = useState(false)
   const [dynamicChoices, setDynamicChoices] = useState([])
   const [levelUpNotif, setLevelUpNotif] = useState(null)
@@ -547,10 +544,6 @@ export default function GamePage() {
     }
   }
 
-  const rollDice = (sides) => {
-    const result = Math.floor(Math.random() * sides) + 1
-    handleSend(`[Würfelwurf] d${sides}: ${result}`)
-  }
 
   const startAdventurePrompt = useCallback((activeAdventure) => {
     if (activeAdventure) {
@@ -694,7 +687,6 @@ export default function GamePage() {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowRules(!showRules)} className="btn-ghost text-xs px-3 py-1.5">📖</button>
-          <button onClick={() => setShowDice(!showDice)} className="btn-ghost text-xs px-3 py-1.5">🎲</button>
           <button onClick={() => navigate('/game?mode=new')} className="btn-ghost text-xs px-3 py-1.5">Neu</button>
           <button onClick={() => navigate('/game?mode=continue')} className="btn-ghost text-xs px-3 py-1.5">Fortfahren</button>
         </div>
@@ -1000,19 +992,6 @@ export default function GamePage() {
           )}
           {showTranscript && combat?.active && <CombatTracker onCombatAction={handleCombatAction} />}
 
-          {showTranscript && showDice && (
-            <div>
-              <p className="section-subtitle mb-2">Würfelsystem</p>
-              <div className="flex flex-wrap gap-1.5">
-                {DICE_SIDES.map(sides => (
-                  <button key={sides} onClick={() => rollDice(sides)} disabled={streaming || gameLog.length === 0} className="dice-btn w-12 h-12 text-xs">
-                    <span className="text-base">⬡</span>
-                    <span>d{sides}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {showTranscript && sceneState && (
             <div className="panel p-3">
