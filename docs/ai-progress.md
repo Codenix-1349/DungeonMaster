@@ -11,6 +11,23 @@ Use the docs in this order instead:
 3. `docs/ai-next-steps.md`
 4. `docs/ai-progress.md`
 
+## 2026-04-15 - Phase 4.3 Slice 2: Server-Owned Session Memory Summary
+
+### Done - proxy memory now comes from a server summary plus compact authoritative tail
+
+- Added a server-owned `memory_summary` field for sessions via migration `003_session_memory_summary.sql`.
+- Session create/update routes now strip client-passed `sceneState.memorySummary` and recompute memory authority on the backend.
+- Proxy prompt assembly now uses:
+  - server-loaded `memory_summary`
+  - a compact authoritative tail from stored `game_log`
+  - server-owned session/adventure/character/combat state
+- The proxy transport no longer sends raw chat history to `/api/chat/send`.
+- Added regression coverage for:
+  - server-side summary generation from older transcript turns
+  - authoritative game-log tail beating client fallback messages
+  - proxy prompt assembly using server history and server summary
+- Full test suite green (`214/214`) and build green after the slice.
+
 ## 2026-04-15 - Phase 4.3 Slice 1: Server-Side Proxy State Loading
 
 ### Done - proxy prompt context now comes from server-owned session state

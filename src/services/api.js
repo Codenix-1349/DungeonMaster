@@ -208,7 +208,6 @@ export async function updateApiConfig({ apiKey, modelId }) {
 // ── Chat (SSE streaming) ────────────────────────────────────────────────────
 
 export async function streamChatProxy({
-  messages,
   model,
   temperature,
   maxTokens,
@@ -224,7 +223,6 @@ export async function streamChatProxy({
     method: 'POST',
     headers,
     body: JSON.stringify({
-      messages,
       model,
       temperature,
       maxTokens,

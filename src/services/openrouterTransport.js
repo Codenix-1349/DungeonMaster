@@ -235,7 +235,6 @@ export async function sendMessage({
       }
 
       const rawText = await streamChatProxy({
-        messages,
         model: normalizedModel,
         temperature: 0.6,
         maxTokens: 1800,
