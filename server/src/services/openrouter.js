@@ -55,13 +55,15 @@ export async function streamChat({ apiKey, model, messages, temperature = 0.8, m
     throw Object.assign(new Error(`OpenRouter ${status}: ${text}`), { status })
   }
 
-  // Set up SSE headers
+  // Set up SSE headers and flush immediately so chunks stream through
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
     'X-Accel-Buffering': 'no',
   })
+  res.flushHeaders()
+  if (res.socket) res.socket.setNoDelay(true)
 
   const reader = upstream.body.getReader()
   const decoder = new TextDecoder()
