@@ -278,7 +278,6 @@ export async function streamChatProxy({
     }
   }
 
-  if (fullText.trim() && onChunk) onChunk(fullText.trim())
   return fullText.trim()
 }
 
