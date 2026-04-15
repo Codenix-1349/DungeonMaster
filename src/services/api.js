@@ -268,7 +268,10 @@ export async function streamChatProxy({
         const json = JSON.parse(data)
         if (json?.error?.message) throw new Error(json.error.message)
         const delta = json?.choices?.[0]?.delta?.content
-        if (delta) fullText += delta
+        if (delta) {
+          fullText += delta
+          if (onChunk) onChunk(delta)
+        }
       } catch (e) {
         if (e instanceof Error && e.message) throw e
       }

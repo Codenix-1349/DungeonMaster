@@ -103,6 +103,7 @@ async function streamDirectChat({
   provider = AI_PROVIDER_OPENROUTER,
   body,
   headers = {},
+  onChunk = null,
 }) {
   let response
 
@@ -169,6 +170,7 @@ async function streamDirectChat({
         const delta = json?.choices?.[0]?.delta?.content
         if (delta) {
           fullText += delta
+          if (onChunk) onChunk(delta)
         }
       } catch (error) {
         if (error instanceof Error && error.message) {
@@ -201,7 +203,7 @@ export async function fetchOllamaModels(baseUrl = '') {
 
 /**
  * Send a message to OpenRouter with streaming
- * onChunk(text) called once with the final response text
+ * onChunk(delta) called progressively with each streamed text delta
  */
 export async function sendMessage({
   messages,
@@ -241,11 +243,9 @@ export async function sendMessage({
         sessionId,
         runtimeRequestMode,
         runtimeResolution,
-        onChunk: null,
+        onChunk,
       })
-      const normalizedText = normalizeAssistantResponse(rawText)
-      if (normalizedText && onChunk) onChunk(normalizedText)
-      return normalizedText
+      return normalizeAssistantResponse(rawText)
     } catch (proxyErr) {
       // Fallback to direct OpenRouter call if local apiKey is available
       if (apiKey) {
@@ -285,14 +285,10 @@ export async function sendMessage({
     provider: activeProvider,
     body,
     headers,
+    onChunk,
   })
 
-  const normalizedText = normalizeAssistantResponse(rawText)
-  if (normalizedText && onChunk) {
-    onChunk(normalizedText)
-  }
-
-  return normalizedText
+  return normalizeAssistantResponse(rawText)
 }
 
 /**
