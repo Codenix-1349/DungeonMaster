@@ -75,7 +75,7 @@ describe('chat proxy prompt authority', () => {
 
     const prepared = buildProxyMessages({
       messages,
-      promptContext: {
+      authoritativeContext: {
         character: makeCharacter(),
         adventure: loadRuntimeAdventure(),
         combat: { active: false },
@@ -103,7 +103,7 @@ describe('chat proxy prompt authority', () => {
   it('passes authoritative runtime resolution metadata into the server-built prompt', () => {
     const prepared = buildProxyMessages({
       messages: [{ role: 'user', content: 'Ich greife Elsa an.' }],
-      promptContext: {
+      authoritativeContext: {
         character: makeCharacter(),
         adventure: loadRuntimeAdventure(),
         combat: { active: true, enemies: [] },

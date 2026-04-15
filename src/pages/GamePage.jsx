@@ -12,6 +12,7 @@ import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureE
 import { isRuntimeStructure } from '../data/runtimeModule'
 import {
   applyPendingCheckResult,
+  buildLocalRuntimeFlavorOnlyNarration,
   formatAssistantTextForDisplay,
   rebuildVisibleChoices,
   resolveResponsePendingCheck,
@@ -104,8 +105,10 @@ export default function GamePage() {
     resetSceneState,
     sessions,
     activeSession,
+    activeSessionId,
     createSession,
     loadSession,
+    syncProxyAuthorityState,
     deleteSession,
   } = useGame()
   const { isLoggedIn } = useAuth()
@@ -354,6 +357,25 @@ export default function GamePage() {
       return
     }
 
+    if (unresolvedRuntimeInput?.type === 'flavor_only') {
+      const localFlavorNarration = buildLocalRuntimeFlavorOnlyNarration({
+        userText: text,
+        adventure: activeAdventure,
+        sceneState: activeSceneState,
+        section: activeSection,
+      })
+      setInput('')
+      setError('')
+      appendLocalRuntimeNarration({
+        assistantText: localFlavorNarration,
+        userText: text,
+        adventureOverride: activeAdventure,
+        sceneStateOverride: activeSceneState,
+        combatOverride: activeCombat,
+      })
+      return
+    }
+
     const runtimeSceneStateOverride = unresolvedRuntimeInput?.type === 'authoritative_escalation'
       ? unresolvedRuntimeInput.sceneStateOverride
       : null
@@ -362,6 +384,7 @@ export default function GamePage() {
       : null
     const effectiveSceneState = runtimeSceneStateOverride || activeSceneState
     const effectiveCombat = runtimeCombatOverride || activeCombat
+    const useProxy = aiProvider === 'openrouter' && isLoggedIn && hasServerKey
 
     setInput('')
     setError('')
@@ -381,10 +404,18 @@ export default function GamePage() {
 
     let full = ''
     try {
+      if (useProxy) {
+        const didSyncProxyState = await syncProxyAuthorityState(activeSessionId)
+        if (!didSyncProxyState) {
+          throw new Error('Keine aktive Session fuer den Proxy-Chat verfuegbar.')
+        }
+      }
+
       full = await sendMessage({
         messages: outboundMessages,
         model: selectedModel,
         apiKey,
+        sessionId: activeSessionId,
         provider: aiProvider,
         character: activeCharacter,
         adventure: activeAdventure,
@@ -393,7 +424,7 @@ export default function GamePage() {
         runtimeRequestMode: unresolvedRuntimeInput?.runtimeRequestMode || options.runtimeRequestMode || null,
         runtimeResolution: unresolvedRuntimeInput?.runtimeResolution || options.runtimeResolution || null,
         ollamaBaseUrl,
-        useProxy: aiProvider === 'openrouter' && isLoggedIn && hasServerKey,
+        useProxy,
         onChunk: chunk => {
           full += chunk
           setStreamingText(prev => prev + chunk)
@@ -530,6 +561,7 @@ export default function GamePage() {
     apiReady,
     apiKey,
     aiProvider,
+    activeSessionId,
     character,
     adventure,
     sceneState,
@@ -543,9 +575,12 @@ export default function GamePage() {
     awardXP,
     gameLog,
     getVisibleChoices,
+    hasServerKey,
+    isLoggedIn,
     addItem,
     dynamicChoices,
     submitResolvedChoice,
+    syncProxyAuthorityState,
   ])
 
   const handleCombatAction = useCallback(text => handleSend(`[Kampfrunde] ${text}`), [handleSend])

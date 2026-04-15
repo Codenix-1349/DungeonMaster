@@ -34,13 +34,14 @@ describe('openrouterTransport proxy prompt authority', () => {
     fetchMock.mockReset()
   })
 
-  it('sends raw chat history plus prompt context to the proxy', async () => {
+  it('sends raw chat history plus session authority metadata to the proxy', async () => {
     streamChatProxy.mockResolvedValue('Erzaehlung')
 
     const messages = [
       { role: 'user', content: 'Ich oeffne die Tuer.' },
       { role: 'assistant', content: 'Die Scharniere knarren.' },
     ]
+    const sessionId = 'session-graufurt-1'
     const character = { name: 'Aria' }
     const adventure = { title: 'Graufurt' }
     const combat = { active: false }
@@ -51,6 +52,7 @@ describe('openrouterTransport proxy prompt authority', () => {
       messages,
       model: 'openrouter/free',
       apiKey: null,
+      sessionId,
       character,
       adventure,
       combat,
@@ -66,14 +68,9 @@ describe('openrouterTransport proxy prompt authority', () => {
       model: 'normalized:openrouter/free',
       temperature: 0.6,
       maxTokens: 1800,
-      promptContext: {
-        character,
-        adventure,
-        combat,
-        sceneState,
-        runtimeRequestMode: 'runtime_flavor_only',
-        runtimeResolution: null,
-      },
+      sessionId,
+      runtimeRequestMode: 'runtime_flavor_only',
+      runtimeResolution: null,
       onChunk: null,
     })
     expect(buildSystemPrompt).not.toHaveBeenCalled()
@@ -150,6 +147,7 @@ describe('openrouterTransport proxy prompt authority', () => {
       messages: [{ role: 'user', content: 'Ich greife Elsa an.' }],
       model: 'openrouter/free',
       apiKey: null,
+      sessionId: 'session-graufurt-2',
       character: { name: 'Aria' },
       adventure: { title: 'Graufurt' },
       combat: { active: true, enemies: [] },
@@ -161,11 +159,25 @@ describe('openrouterTransport proxy prompt authority', () => {
     })
 
     expect(streamChatProxy).toHaveBeenCalledWith(expect.objectContaining({
-      promptContext: expect.objectContaining({
-        runtimeRequestMode: 'runtime_authoritative_resolution',
-        runtimeResolution,
-      }),
+      sessionId: 'session-graufurt-2',
+      runtimeRequestMode: 'runtime_authoritative_resolution',
+      runtimeResolution,
     }))
+  })
+
+  it('requires an active session id on the proxy path', async () => {
+    await expect(sendMessage({
+      messages: [{ role: 'user', content: 'Hallo' }],
+      model: 'openrouter/free',
+      apiKey: null,
+      character: { name: 'Aria' },
+      adventure: { title: 'Graufurt' },
+      combat: { active: false },
+      sceneState: { currentSectionTitle: 'Torhaus' },
+      runtimeRequestMode: 'runtime_flavor_only',
+      onChunk: vi.fn(),
+      useProxy: true,
+    })).rejects.toThrow('Keine aktive Session')
   })
 
   it('lists local Ollama models from api tags', async () => {

@@ -207,6 +207,7 @@ export async function sendMessage({
   messages,
   model,
   apiKey,
+  sessionId = null,
   character,
   adventure,
   combat,
@@ -229,19 +230,18 @@ export async function sendMessage({
   // Route through backend proxy when logged in with server-stored key
   if (activeProvider === AI_PROVIDER_OPENROUTER && useProxy) {
     try {
+      if (!sessionId) {
+        throw new Error('Keine aktive Session fuer den Chat-Proxy vorhanden.')
+      }
+
       const rawText = await streamChatProxy({
         messages,
         model: normalizedModel,
         temperature: 0.6,
         maxTokens: 1800,
-        promptContext: {
-          character,
-          adventure,
-          combat,
-          sceneState,
-          runtimeRequestMode,
-          runtimeResolution,
-        },
+        sessionId,
+        runtimeRequestMode,
+        runtimeResolution,
         onChunk: null,
       })
       const normalizedText = normalizeAssistantResponse(rawText)

@@ -10,7 +10,13 @@ import { ApiConfigProvider, useApiConfig } from './ApiConfigContext'
 import { GameSessionProvider, useGameSession } from './GameSessionContext'
 import { CharacterProvider, useCharacter } from './CharacterContext'
 import { useAuth } from './AuthContext'
-import { createCharacter as apiCreateChar } from '../services/api'
+import {
+  activateSession as apiActivateSession,
+  createAdventure as apiCreateAdventure,
+  createCharacter as apiCreateChar,
+  createSession as apiCreateSession,
+  updateSession as apiUpdateSession,
+} from '../services/api'
 
 // ─── Combined Hook ───────────────────────────────────────────────────────────
 
@@ -19,6 +25,8 @@ function useGameCombined() {
   const session = useGameSession()
   const char = useCharacter()
   const { isLoggedIn } = useAuth()
+  const syncedServerAdventureIdsRef = React.useRef(new Set())
+  const syncedServerSessionIdsRef = React.useRef(new Set())
 
   // Cross-cutting: createSession also selects the character
   // Ensures the character exists in the DB before creating the session (prevents FK errors)
@@ -47,6 +55,76 @@ function useGameCombined() {
     }
     return result
   }, [session, char])
+
+  const syncProxyAuthorityState = useCallback(async (sessionId = session.activeSessionId) => {
+    if (!isLoggedIn || !sessionId) return false
+
+    const liveSession = session._refs.sessionsRef.current.find(entry => entry.id === sessionId) || null
+    if (!liveSession) return false
+
+    const isActiveSession = session._refs.activeSessionIdRef.current === sessionId
+    const liveAdventureId = isActiveSession
+      ? (session._refs.adventureRef.current?.id || liveSession.adventureId || null)
+      : (liveSession.adventureId || null)
+    const liveAdventure = liveAdventureId
+      ? (
+        session._refs.adventuresRef.current.find(entry => entry.id === liveAdventureId)
+        || (session._refs.adventureRef.current?.id === liveAdventureId ? session._refs.adventureRef.current : null)
+      )
+      : null
+    const liveCharacterId = liveSession.characterId || char.character?.id || null
+    const liveCharacter = liveCharacterId
+      ? char._charactersRef.current.find(entry => entry.id === liveCharacterId) || null
+      : null
+    const sessionPatch = {
+      characterId: liveCharacter?.id || liveSession.characterId || null,
+      adventureId: liveAdventure?.id || liveAdventureId || null,
+      gameLog: isActiveSession ? (session._refs.gameLogRef.current || []) : (liveSession.gameLog || []),
+      combat: isActiveSession ? (session._refs.combatRef.current || null) : (liveSession.combat || null),
+      sceneState: isActiveSession ? (session._refs.sceneStateRef.current || null) : (liveSession.sceneState || null),
+    }
+
+    if (liveCharacter) {
+      await apiCreateChar(liveCharacter)
+    }
+
+    if (liveAdventure && liveAdventure.builtin !== true && !syncedServerAdventureIdsRef.current.has(liveAdventure.id)) {
+      try {
+        await apiCreateAdventure(liveAdventure)
+      } catch (error) {
+        if (error?.status !== 409) throw error
+      }
+      syncedServerAdventureIdsRef.current.add(liveAdventure.id)
+    }
+
+    async function ensureServerSessionExists() {
+      try {
+        await apiCreateSession({
+          ...liveSession,
+          ...sessionPatch,
+          id: sessionId,
+        })
+      } catch (error) {
+        if (error?.status !== 409) throw error
+      }
+      syncedServerSessionIdsRef.current.add(sessionId)
+    }
+
+    if (!syncedServerSessionIdsRef.current.has(sessionId)) {
+      await ensureServerSessionExists()
+    }
+
+    try {
+      await apiUpdateSession(sessionId, sessionPatch)
+    } catch (error) {
+      if (error?.status !== 404) throw error
+      await ensureServerSessionExists()
+      await apiUpdateSession(sessionId, sessionPatch)
+    }
+
+    await apiActivateSession(sessionId).catch(() => {})
+    return true
+  }, [char, isLoggedIn, session])
 
   return {
     // API config
@@ -105,6 +183,7 @@ function useGameCombined() {
     activeSessionId: session.activeSessionId,
     createSession,
     loadSession,
+    syncProxyAuthorityState,
     deleteSession: session.deleteSession,
     leaveSessionSelection: session.leaveSessionSelection,
     unloadActiveSession: session.unloadActiveSession,

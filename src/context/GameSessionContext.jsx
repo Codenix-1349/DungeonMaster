@@ -514,6 +514,10 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
   const _refs = useRef({
     sessionsRef,
     activeSessionIdRef,
+    adventureRef,
+    gameLogRef,
+    combatRef,
+    sceneStateRef,
     adventuresRef,
   })
 
