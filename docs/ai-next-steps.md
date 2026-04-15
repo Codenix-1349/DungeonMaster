@@ -1,6 +1,6 @@
 # Next Steps
 
-Last updated: 2026-04-15
+Last updated: 2026-04-16
 
 ## Canonical reading order
 
@@ -12,50 +12,17 @@ Use the docs in this order:
 
 ## Current execution target
 
-Phase 3 is complete.
-The active gate is now Phase 4: backend/prompt authority.
-
-- [done] runtime interaction identity across buttons, typed input, retries, and remounts (3.1)
-- [done] player-facing validation for spoiler-prone authored text (3.2)
-- [done] acceptance invariants across Birkenhain and Graufurt (3.3)
-- [done] end-to-end authored check flow (3.4)
-- [done] doc cleanup so one operational runtime source stays canonical (3.5)
-- [done] proxy-backed prompt building moved to backend assembly (4.1 slice 1)
+Phase 3 and Phase 4 are complete.
+The active gate is now **Phase 5: Kampf zu echter Engine-Mechanik ausbauen**.
 
 ## Current next step
 
-**Phase 4 - current slice: server-owned session writes / append-style memory refresh.**
+**Phase 5.1 — Encounter-Autorität und Kampfablauf**
 
-Phase 4.1 slice 1 is now done:
-- proxy-backed chat sends raw history + `sessionId` + minimal runtime metadata
-- `/api/chat/send` loads character/adventure/combat/scene state server-side and builds the final `system` prompt there
-- proxy requests ignore client-supplied `system` messages when server prompt assembly is active
-- the proxy path no longer trusts client-passed runtime prompt context
-- the proxy path now uses a server-owned `memory_summary` plus a compact authoritative `game_log` tail instead of client-supplied history
-- proxy requests no longer send raw chat history to the backend
-- direct frontend OpenRouter calls still keep the local fallback path
-- local branch testing can now also use Ollama via `http://localhost:11434` without OpenRouter allowance
-
-Current follow-up goal:
-- make runtime free text valuable beyond repeating button labels
-- [done] unify button clicks and resolved typed input onto the same app-side execute path
-- [done] allow natural variants and parameterized intents like `use torch on well` or `ask Mara about the key`
-- [done] separate two immediate runtime text outcomes clearly:
-  - authoritative resolved action
-  - flavor-only narration without canonical state mutation
-- [done] block or clarify non-matched structured runtime text app-side instead of silently looping
-- [done] route runtime escalation (`insult` / `threat` / `attack`) into engine-owned dialogue/consequence state instead of free AI canon
-- [done] allow authored NPC escalation to suppress talk actions or start combat through explicit runtime metadata (`canStartCombat`, `combatPreset`, `escalationPolicy`)
-- [done] mark app-resolved escalation in the prompt path so AI only narrates the already-decided consequence
-- [done] move runtime intent resolution onto authored target/tool/topic slots so slot-aware free text is no longer only label/alias matching
-- [done] broaden escalation outcomes beyond dialogue/combat into authored help-calls, flight, guards, and scene-specific fallback consequences
-- [done] sync the active proxy session state to the backend before prompt assembly so server-side prompt loading sees current session/character data
-- [done] load proxy prompt state from server-owned session/character/adventure data instead of client-passed `promptContext`
-- [done] store a server-owned `memory_summary` on sessions and overwrite client-passed `sceneState.memorySummary`
-- [done] build proxy prompts from server summary + compact authoritative chat tail instead of client-passed history
-- next:
-  - stop sending full `gameLog` blobs on every session patch and move toward append-style server-owned session writes
-  - tighten the summary refresh path so proxy memory authority no longer depends on large client-side session syncs
+- Encounter-Start/-Ende engine-gesteuert, nicht KI-initiiert
+- Initiative, Rundenstruktur und Zugreihenfolge systemisch
+- Reward-Vergabe (XP, Loot) nur engine-seitig
+- Exit-Signal: Kampf startet und endet deterministisch, KI kann keinen Kampf erfinden oder beenden
 
 ## Runtime rules to preserve
 

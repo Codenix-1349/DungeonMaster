@@ -96,14 +96,13 @@ Der Runtime-Kern ist bereits weit vorangekommen:
 
 ### Realistischer Status
 - Phase 3: **abgeschlossen**
-- Phase 4: **gestartet, 4.1 erledigt, 4.2 abgeschlossen, 4.3 in Arbeit**
-- Nächster notwendiger Klärungsblock: **serverseitige Session-Writes / Memory-Refresh**
-- Größter Restblock: **vollständig append-/server-owned Session- und Prompt-Autorität**
+- Phase 4: **abgeschlossen** (4.1–4.6 alle erledigt)
+- Nächster Schwerpunkt: **Phase 5 — Kampf zu echter Engine-Mechanik ausbauen**
 
-### Warum Phase 4 jetzt dran ist
-- Der Runtime-Kern ist ausreichend gehärtet und Phase 3 ist dokumentarisch abgeschlossen.
-- Jetzt lohnt es sich, Wahrheits- und Prompt-Autorität schrittweise aus dem Frontend herauszuziehen.
-- Bevor serverseitige Memory-/State-Zentralisierung tiefer wird, muss der Runtime-Freitextvertrag klar sein, damit Text-Eingabe denselben app-seitigen Wahrheitsstandard wie Buttons bekommt.
+### Warum Phase 5 jetzt dran ist
+- Phase 4 ist abgeschlossen: Backend ist Single Source of Truth für Prompt-Logik und State.
+- Kampf ist der größte noch halb-narrative Block — Engine entscheidet, KI beschreibt.
+- Die Backend-Autorität aus Phase 4 ist die Voraussetzung für engine-gesteuerte Encounters.
 
 ---
 
@@ -223,7 +222,7 @@ Phase 3 ist jetzt abgeschlossen:
 
 ---
 
-# Now – Phase 4 Autorität zentralisieren
+# Phase 4 Autorität zentralisieren – abgeschlossen
 
 ## Ziel
 Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Übergänge.
@@ -289,31 +288,41 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 - gleicher Intent fuehrt bei Button und Text zum gleichen Effekt
 - Flavor, autoritativer Intent und Eskalation haben klare, getrennte Regeln
 
-### 4.3 Session-Memory serverseitig verdichten
+### 4.3 Session-Memory serverseitig verdichten ✅
 - raw history reduzieren
 - strukturierte Summary pflegen
 - doppelte Prompt-Infos vermeiden
 
 ### Status
-- erste 4.3-Slices erledigt:
+- erledigt:
   - Proxy-Prompt-State wird jetzt aus serverseitig geladener Session-/Character-/Adventure-Wahrheit aufgebaut
   - der Client flusht vor Proxy-Requests den aktuellen Session-/Character-Stand, damit serverseitiges Prompt-Loading keine stale Runtime-Eskalations- oder Combat-Zustände sieht
   - Built-in-Abenteuer werden auf dem Server beim Prompt-Load ebenfalls aufgelöst
   - Sessions tragen jetzt ein server-owned `memory_summary`, das beim Schreiben serverseitig aus `game_log` + `scene_state` neu berechnet wird
   - Proxy-Prompts nutzen server-summary + kompakten autoritativen Transcript-Tail statt clientgeschickter History
-- nächster Slice:
-  - Session-Writes vom Full-blob-Patch stärker entkoppeln
-  - append-/refresh-artige Server-Endpunkte für `game_log` und Memory einziehen
-  - Fire-and-forget-Write-Flut weiter reduzieren
+  - `POST /sessions/:id/game-log/append` — lean Append-Endpoint, Client sendet nur neue Einträge statt das gesamte gameLog-Array
+  - Server berechnet `memory_summary` automatisch beim Append
 
-### 4.4 Persistenz sauberer machen
+### 4.4 Persistenz sauberer machen ✅
 - Session-Patches bündeln/debouncen
 - Fire-and-forget-Write-Flut reduzieren
 
-### 4.5 Streaming bis zur UX durchziehen
+### Status
+- erledigt:
+  - sceneState- und combat-Writes werden clientseitig 800ms debounced und als ein einzelner PATCH gebündelt
+  - gameLog-Writes laufen über den lean Append-Endpoint statt Full-Blob-Patches
+  - Debounce-Buffer wird vor Proxy-Requests und bei Unmount/Session-Wechsel automatisch geflusht
+
+### 4.5 Streaming bis zur UX durchziehen ✅
 - echte Delta-Ausgabe
 - keine nur technische Streaming-Existenz
-- Hinweis: gehört thematisch eher zur UX, wird aber hier erledigt weil beim Backend-Umbau Streaming ohnehin angefasst werden muss
+
+### Status
+- erledigt:
+  - `onChunk` wird jetzt pro SSE-Delta aufgerufen statt einmal am Ende mit dem vollen Text
+  - beide Pfade (Proxy und Direct) streamen progressiv
+  - Server flusht SSE-Headers sofort (`flushHeaders`, `setNoDelay`) für minimale Latenz
+  - Post-Processing (normalizeAssistantResponse) läuft weiterhin auf dem vollen Text nach Abschluss
 
 ### 4.6 Deployment und Infrastruktur ✅
 - Render-Deployment live: https://dungeonmaster-70ui.onrender.com
@@ -332,6 +341,9 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 - Tokenfluss ist nachvollziehbarer
 - Freitext-/Intent-Autorität ist als eigener notwendiger Architekturblock explizit eingeplant
 - Render-Deployment live mit Email-Verifikation via Resend
+- gameLog-Writes über lean Append-Endpoint statt Full-Blob
+- sceneState/combat debounced (800ms)
+- echtes progressives Streaming Wort für Wort bis zur UX
 
 ---
 
@@ -461,7 +473,7 @@ Effiziente Erstellung maßgeschneiderter Abenteuer für die fertige Engine.
 Die richtige Reihenfolge bleibt:
 
 **Phase 3 abgeschlossen**
-→ **Phase 4 Autorität zentralisieren**
+→ **Phase 4 abgeschlossen**
 → **Phase 5 Kampf engine-seitig** (Encounter → Conditions → Zauber)
 → **Phase 6 Proben + Klassen**
 → **Phase 7 Inventar + Ressourcen vertiefen**
