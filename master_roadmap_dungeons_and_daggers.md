@@ -354,27 +354,34 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 ### Ziel
 Kampf darf nicht halb narrativ, halb mechanisch bleiben. Engine entscheidet, KI beschreibt.
 
-### 5.1 Encounter-Autorität und Kampfablauf
-- Encounter-Start/-Ende engine-gesteuert, nicht KI-initiiert
+### 5.1 SRD-Kampfkern: Encounter-Autorität, Zuglogik und 0-HP-Flow
+- Encounter-Start/-Ende und Überraschung engine-gesteuert, nicht KI-initiiert
 - Initiative, Rundenstruktur und Zugreihenfolge systemisch
+- Pro Zug klare Action Economy: Bewegung, Aktion, Bonusaktion, Reaktion
+- Bewegung und Positionierung systemisch: Splitting, schwieriges Gelände, Reichweite, Fernkampf im Nahkampf, Gelegenheitsangriffe, Rückzug
+- Kernaktionen im Kampf systemisch: Angriff, Ausweichen, Spurt, Vorbereiten, Verstecken, Helfen sowie Grapple/Shove statt Freitext-Fallback
+- Trefferauflösung systemisch: Angriffswurf, Deckung, Vorteil/Nachteil, kritische Treffer, Schaden
+- 0-HP-Flow systemisch: sofortiger Tod, Bewusstlosigkeit, Todesrettungen, Stabilisierung, k. o. schlagen
 - Reward-Vergabe (XP, Loot) nur engine-seitig
-- Exit-Signal: Kampf startet und endet deterministisch, KI kann keinen Kampf erfinden oder beenden
+- Exit-Signal: Der SRD-Kampfkern läuft deterministisch und testbar; KI kann keinen Kampf erfinden, beenden oder Regeln im Ablauf überschreiben
 
 ### 5.2 Condition Engine und Zustandseffekte
-- Condition Engine einführen (poisoned, stunned, prone, etc.)
-- Konzentration und Dauer systemisch tracken
-- Kernzustände modellieren statt narrativ beschreiben
-- Exit-Signal: Zustände wirken sich mechanisch aus und verfallen regelkonform
+- Condition Engine für kampfrelevante Zustände einführen (poisoned, stunned, prone, grappled, restrained, frightened, unconscious, etc.)
+- Konzentration, Dauer und zustandsgebundene Einschränkungen systemisch tracken
+- Resistenzen, Anfälligkeiten, Immunitäten und temporäre Trefferpunkte mechanisch statt narrativ behandeln
+- Kernzustände modellieren statt im Prompt zu verwässern
+- Exit-Signal: Zustände und Schadensmodifikatoren wirken sich mechanisch aus und verfallen regelkonform
 
 ### 5.3 Zauber und Effekt-Resolution
-- Wichtige Zaubereffekte systemisch auflösen (Schaden, Heilung, Buffs, Debuffs)
-- Spell Slots engine-seitig verwalten
-- Exit-Signal: Kernzauber funktionieren mechanisch korrekt, nicht nur narrativ
+- Wichtige Zaubereffekte systemisch auflösen (Schaden, Heilung, Buffs, Debuffs, AoE, Saves, Spell Attacks)
+- Zauberzeit im Kampf an die Action Economy anbinden (Aktion, Bonusaktion, Reaktion)
+- Spell Slots, Concentration Hooks und relevante Combat-Buffs engine-seitig verwalten
+- Exit-Signal: Kernzauber funktionieren mechanisch korrekt innerhalb des SRD-Kampfkerns, nicht nur narrativ
 
 ### Done
-- Kampf ist merklich engine-seitig und testbar
+- Der SRD-Kampfkern ist merklich engine-seitig und testbar
 - KI ist Erzähler, nicht Kampfrichter
-- Conditions, Zauber und Rewards laufen über die Engine
+- Conditions, Zauber, Rewards und der 0-HP-Flow laufen über die Engine
 
 ## Phase 6 – Probensystem und Klassenfeatures vertiefen
 
