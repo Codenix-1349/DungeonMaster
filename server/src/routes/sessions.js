@@ -132,6 +132,42 @@ router.put('/:id', async (req, res, next) => {
   }
 })
 
+// POST /sessions/:id/game-log/append — append entries without sending the full array
+router.post('/:id/game-log/append', async (req, res, next) => {
+  try {
+    const entries = req.body.entries
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({ error: 'entries (nicht-leeres Array) erforderlich.' })
+    }
+
+    const currentResult = await pool.query(
+      `SELECT game_log, scene_state FROM sessions WHERE id = $1 AND user_id = $2 LIMIT 1`,
+      [req.params.id, req.user.id]
+    )
+    if (currentResult.rows.length === 0) return res.status(404).json({ error: 'Session nicht gefunden.' })
+
+    const current = currentResult.rows[0]
+    const existingLog = Array.isArray(current.game_log) ? current.game_log : []
+    const nextGameLog = [...existingLog, ...entries]
+
+    const authoritativeMemory = buildAuthoritativeSessionMemory({
+      gameLog: nextGameLog,
+      sceneState: current.scene_state || null,
+    })
+
+    await pool.query(
+      `UPDATE sessions
+       SET game_log = $1, memory_summary = $2, updated_at = NOW()
+       WHERE id = $3 AND user_id = $4`,
+      [JSON.stringify(nextGameLog), authoritativeMemory.memorySummary, req.params.id, req.user.id]
+    )
+
+    res.json({ count: nextGameLog.length, memorySummary: authoritativeMemory.memorySummary })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // DELETE /sessions/:id
 router.delete('/:id', async (req, res, next) => {
   try {
