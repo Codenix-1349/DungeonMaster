@@ -315,11 +315,23 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 - keine nur technische Streaming-Existenz
 - Hinweis: gehört thematisch eher zur UX, wird aber hier erledigt weil beim Backend-Umbau Streaming ohnehin angefasst werden muss
 
+### 4.6 Deployment und Infrastruktur ✅
+- Render-Deployment live: https://dungeonmaster-70ui.onrender.com
+- Web Service (Free Tier): Express serviert Frontend + API, Auto-Deploy bei Push auf main
+- PostgreSQL 18 (Free Tier, 90 Tage — läuft bis ca. Mitte Juli 2026)
+- Email-Verifikation via Resend.com (SMTP) funktioniert (Absender: `onboarding@resend.dev`)
+- Auto-Migration beim Server-Start, SSL für Render-PostgreSQL
+- Env-Variablen: DATABASE_URL, JWT_SECRET, ENCRYPTION_KEY, SMTP_HOST/PORT/USER/PASS/FROM, NODE_ENV
+- offen:
+  - eigene Domain bei Resend verifizieren, dann SMTP_FROM auf `noreply@dungeons-daggers.app` umstellen
+  - FRONTEND_URL Env-Var auf die finale Render-URL setzen
+
 ### Done
 - erster Prompt-Autoritäts-Slice auf dem Proxy-Pfad
 - Frontend trägt weniger Wahrheitslast
 - Tokenfluss ist nachvollziehbarer
 - Freitext-/Intent-Autorität ist als eigener notwendiger Architekturblock explizit eingeplant
+- Render-Deployment live mit Email-Verifikation via Resend
 
 ---
 
