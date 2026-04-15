@@ -179,6 +179,13 @@ export async function updateSession(id, patch) {
   return data.session
 }
 
+export async function appendGameLog(id, entries) {
+  return apiFetch(`/sessions/${id}/game-log/append`, {
+    method: 'POST',
+    body: JSON.stringify({ entries }),
+  })
+}
+
 export async function deleteSessionApi(id) {
   return apiFetch(`/sessions/${id}`, { method: 'DELETE' })
 }

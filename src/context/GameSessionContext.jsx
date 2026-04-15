@@ -16,6 +16,7 @@ import {
   fetchSessions,
   createSession as apiCreateSession,
   updateSession as apiUpdateSession,
+  appendGameLog as apiAppendGameLog,
   deleteSessionApi,
   activateSession as apiActivateSession,
   unloadSession as apiUnloadSession,
@@ -143,6 +144,7 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
   const combatRef = useRef(combat)
   const sceneStateRef = useRef(sceneState)
   const adventuresRef = useRef(adventures)
+  const gameLogSyncedLengthRef = useRef(gameLog.length)
 
   useEffect(() => { sessionsRef.current = sessions }, [sessions])
   useEffect(() => { activeSessionIdRef.current = activeSessionId }, [activeSessionId])
@@ -177,8 +179,11 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
           const active = sessList.find(s => s.id === activeId)
           if (active) {
             const adv = adventuresRef.current.find(a => a.id === active.adventureId) || null
+            const restoredLog = normalizeGameLog(active.gameLog)
             setAdventureState(adv)
-            setGameLogState(normalizeGameLog(active.gameLog))
+            setGameLogState(restoredLog)
+            gameLogRef.current = restoredLog
+            gameLogSyncedLengthRef.current = restoredLog.length
             setCombatState(active.combat || null)
             setSceneStateState(active.sceneState || (adv ? createInitialSceneState(adv) : null))
           }
@@ -196,7 +201,33 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
     return persisted
   }, [])
 
-  const patchSession = useCallback((sessionId, patch) => {
+  // Debounced backend patch — batches sceneState/combat writes
+  const debouncedPatchRef = useRef({ timer: null, sessionId: null, pending: {} })
+
+  const flushDebouncedPatch = useCallback(() => {
+    const ctx = debouncedPatchRef.current
+    if (ctx.timer) { clearTimeout(ctx.timer); ctx.timer = null }
+    if (!ctx.sessionId || !Object.keys(ctx.pending).length) return
+    const { sessionId, pending } = ctx
+    ctx.pending = {}
+    ctx.sessionId = null
+    apiUpdateSession(sessionId, pending).catch(() => {})
+  }, [])
+
+  const scheduleDebouncedPatch = useCallback((sessionId, patch) => {
+    const ctx = debouncedPatchRef.current
+    // If session changed, flush previous
+    if (ctx.sessionId && ctx.sessionId !== sessionId) flushDebouncedPatch()
+    ctx.sessionId = sessionId
+    Object.assign(ctx.pending, patch)
+    if (ctx.timer) clearTimeout(ctx.timer)
+    ctx.timer = setTimeout(flushDebouncedPatch, 800)
+  }, [flushDebouncedPatch])
+
+  // Flush pending writes on unmount
+  useEffect(() => () => flushDebouncedPatch(), [flushDebouncedPatch])
+
+  const patchSession = useCallback((sessionId, patch, { debounceBackend = false } = {}) => {
     if (!sessionId) return null
 
     const updates = typeof patch === 'function' ? patch(sessionsRef.current.find(e => e.id === sessionId)) : patch
@@ -213,13 +244,17 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
 
     persistSessions(nextSessions, sessionId)
 
-    // Sync to backend (debounced fire-and-forget)
+    // Sync to backend
     if (isLoggedIn && updates) {
-      apiUpdateSession(sessionId, updates).catch(() => {})
+      if (debounceBackend) {
+        scheduleDebouncedPatch(sessionId, updates)
+      } else {
+        apiUpdateSession(sessionId, updates).catch(() => {})
+      }
     }
 
     return nextSessions.find(entry => entry.id === sessionId) || null
-  }, [persistSessions, isLoggedIn])
+  }, [persistSessions, isLoggedIn, scheduleDebouncedPatch])
 
   const applyLiveAdventureState = useCallback((nextAdventure, sessionIdOverride = activeSessionIdRef.current) => {
     const normalized = normalizeAdventureEntry(nextAdventure)
@@ -236,16 +271,29 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
 
   const applyLiveGameLog = useCallback((nextGameLog, sessionIdOverride = activeSessionIdRef.current) => {
     const normalized = normalizeGameLog(nextGameLog)
+    const prevLength = gameLogSyncedLengthRef.current
     gameLogRef.current = normalized
     setGameLogState(normalized)
     saveToStorage('dm_gameLog', normalized)
 
-    if (sessionIdOverride) {
+    if (sessionIdOverride && isLoggedIn) {
+      const isAppend = normalized.length > prevLength
+      if (isAppend) {
+        const newEntries = normalized.slice(prevLength)
+        gameLogSyncedLengthRef.current = normalized.length
+        apiAppendGameLog(sessionIdOverride, newEntries).catch(() => {})
+      } else {
+        // Reset or trim — fall back to full patch (e.g. clearGameLog)
+        gameLogSyncedLengthRef.current = normalized.length
+        patchSession(sessionIdOverride, { gameLog: normalized })
+      }
+    } else if (sessionIdOverride) {
+      // Not logged in — local-only session record update
       patchSession(sessionIdOverride, { gameLog: normalized })
     }
 
     return normalized
-  }, [patchSession])
+  }, [patchSession, isLoggedIn])
 
   const applyLiveCombat = useCallback((nextCombat, sessionIdOverride = activeSessionIdRef.current) => {
     const normalized = nextCombat || null
@@ -254,7 +302,7 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
     saveToStorage('dm_combat', normalized)
 
     if (sessionIdOverride) {
-      patchSession(sessionIdOverride, { combat: normalized })
+      patchSession(sessionIdOverride, { combat: normalized }, { debounceBackend: true })
     }
 
     return normalized
@@ -267,7 +315,7 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
     saveToStorage('dm_sceneState', normalized)
 
     if (sessionIdOverride) {
-      patchSession(sessionIdOverride, { sceneState: normalized })
+      patchSession(sessionIdOverride, { sceneState: normalized }, { debounceBackend: true })
     }
 
     return normalized
@@ -549,6 +597,7 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
       unloadActiveSession,
       patchSession,
       persistSessions,
+      flushDebouncedPatch,
       _refs: _refs.current,
     }}>
       {children}

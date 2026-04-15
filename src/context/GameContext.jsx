@@ -59,6 +59,9 @@ function useGameCombined() {
   const syncProxyAuthorityState = useCallback(async (sessionId = session.activeSessionId) => {
     if (!isLoggedIn || !sessionId) return false
 
+    // Flush any pending debounced writes before full sync
+    session.flushDebouncedPatch()
+
     const liveSession = session._refs.sessionsRef.current.find(entry => entry.id === sessionId) || null
     if (!liveSession) return false
 
