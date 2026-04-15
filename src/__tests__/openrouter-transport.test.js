@@ -34,7 +34,7 @@ describe('openrouterTransport proxy prompt authority', () => {
     fetchMock.mockReset()
   })
 
-  it('sends raw chat history plus session authority metadata to the proxy', async () => {
+  it('sends only session authority metadata to the proxy', async () => {
     streamChatProxy.mockResolvedValue('Erzaehlung')
 
     const messages = [
@@ -64,7 +64,6 @@ describe('openrouterTransport proxy prompt authority', () => {
 
     expect(streamChatProxy).toHaveBeenCalledTimes(1)
     expect(streamChatProxy).toHaveBeenCalledWith({
-      messages,
       model: 'normalized:openrouter/free',
       temperature: 0.6,
       maxTokens: 1800,

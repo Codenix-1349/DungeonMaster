@@ -38,6 +38,21 @@ function normalizeChoiceEnding(text = '') {
   return normalized.join('\n')
 }
 
+const TRAILING_STAT_LINE = /^[+-]?\d{1,4}(?:\s*\/\s*\d{1,4})?$/
+
+function stripTrailingStatLines(text = '') {
+  const lines = String(text || '').split('\n')
+  while (lines.length) {
+    const last = lines[lines.length - 1].trim()
+    if (!last || TRAILING_STAT_LINE.test(last)) {
+      lines.pop()
+      continue
+    }
+    break
+  }
+  return lines.join('\n').trim()
+}
+
 function stripMetaLeak(text = '') {
   const cleanedLines = String(text)
     .split('\n')
@@ -98,6 +113,7 @@ function enforceDecisionBoundary(text = '') {
 
 export function normalizeAssistantResponse(text = '') {
   const noMeta = stripMetaLeak(text)
-  const choiceNormalized = normalizeChoiceEnding(noMeta)
+  const noStats = stripTrailingStatLines(noMeta)
+  const choiceNormalized = normalizeChoiceEnding(noStats)
   return enforceDecisionBoundary(choiceNormalized)
 }

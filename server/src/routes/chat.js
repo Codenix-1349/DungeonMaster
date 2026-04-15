@@ -5,6 +5,7 @@ import { decrypt } from '../services/crypto.js'
 import { buildProxyMessages } from '../services/chatProxyMessages.js'
 import { streamChat, testConnection } from '../services/openrouter.js'
 import { BUILTIN_ADVENTURES } from '../../../src/data/builtinAdventures.js'
+import { applyServerMemoryToSceneState } from '../services/sessionMemory.js'
 
 const router = Router()
 router.use(authenticate)
@@ -58,7 +59,7 @@ async function loadAuthoritativePromptContext(userId, sessionId, {
   runtimeResolution = null,
 } = {}) {
   const { rows } = await pool.query(
-    `SELECT s.id, s.character_id, s.adventure_id, s.combat, s.scene_state,
+    `SELECT s.id, s.character_id, s.adventure_id, s.game_log, s.combat, s.scene_state, s.memory_summary,
             c.data AS character_data,
             a.title AS adventure_title,
             a.filename AS adventure_filename,
@@ -93,8 +94,10 @@ async function loadAuthoritativePromptContext(userId, sessionId, {
   return {
     character: row.character_data ? { ...row.character_data, id: row.character_id } : null,
     adventure,
+    gameLog: row.game_log || [],
     combat: row.combat || null,
-    sceneState: row.scene_state || null,
+    sceneState: applyServerMemoryToSceneState(row.scene_state || null, row.memory_summary || ''),
+    memorySummary: row.memory_summary || '',
     runtimeRequestMode,
     runtimeResolution,
   }
@@ -109,7 +112,6 @@ router.post('/send', async (req, res, next) => {
     }
 
     const {
-      messages,
       model,
       temperature,
       maxTokens,
@@ -117,9 +119,6 @@ router.post('/send', async (req, res, next) => {
       runtimeRequestMode = null,
       runtimeResolution = null,
     } = req.body
-    if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ error: 'messages Array erforderlich.' })
-    }
     if (typeof sessionId !== 'string' || !sessionId.trim()) {
       return res.status(400).json({ error: 'sessionId ist fuer Proxy-Chat erforderlich.' })
     }
@@ -132,7 +131,7 @@ router.post('/send', async (req, res, next) => {
       return res.status(404).json({ error: 'Session fuer Proxy-Chat nicht gefunden.' })
     }
 
-    const preparedMessages = buildProxyMessages({ messages, authoritativeContext })
+    const preparedMessages = buildProxyMessages({ authoritativeContext })
     const hasChatTurns = preparedMessages.some(message => message.role === 'user' || message.role === 'assistant')
     if (!hasChatTurns) {
       return res.status(400).json({ error: 'Mindestens eine user- oder assistant-Nachricht ist erforderlich.' })

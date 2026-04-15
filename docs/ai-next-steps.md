@@ -24,13 +24,15 @@ The active gate is now Phase 4: backend/prompt authority.
 
 ## Current next step
 
-**Phase 4 - current slice: session-memory compaction / summary authority on the proxy path.**
+**Phase 4 - current slice: server-owned session writes / append-style memory refresh.**
 
 Phase 4.1 slice 1 is now done:
 - proxy-backed chat sends raw history + `sessionId` + minimal runtime metadata
 - `/api/chat/send` loads character/adventure/combat/scene state server-side and builds the final `system` prompt there
 - proxy requests ignore client-supplied `system` messages when server prompt assembly is active
 - the proxy path no longer trusts client-passed runtime prompt context
+- the proxy path now uses a server-owned `memory_summary` plus a compact authoritative `game_log` tail instead of client-supplied history
+- proxy requests no longer send raw chat history to the backend
 - direct frontend OpenRouter calls still keep the local fallback path
 - local branch testing can now also use Ollama via `http://localhost:11434` without OpenRouter allowance
 
@@ -49,9 +51,11 @@ Current follow-up goal:
 - [done] broaden escalation outcomes beyond dialogue/combat into authored help-calls, flight, guards, and scene-specific fallback consequences
 - [done] sync the active proxy session state to the backend before prompt assembly so server-side prompt loading sees current session/character data
 - [done] load proxy prompt state from server-owned session/character/adventure data instead of client-passed `promptContext`
+- [done] store a server-owned `memory_summary` on sessions and overwrite client-passed `sceneState.memorySummary`
+- [done] build proxy prompts from server summary + compact authoritative chat tail instead of client-passed history
 - next:
-  - compact proxy-path session memory so raw history can shrink behind a server-owned summary/memory layer
-  - reduce duplicated prompt information once the server-side memory representation is in place
+  - stop sending full `gameLog` blobs on every session patch and move toward append-style server-owned session writes
+  - tighten the summary refresh path so proxy memory authority no longer depends on large client-side session syncs
 
 ## Runtime rules to preserve
 

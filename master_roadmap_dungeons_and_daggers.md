@@ -1,6 +1,6 @@
 # Dungeons & Daggers – Master-Roadmap
 
-Last updated: 2026-04-15 (v7)
+Last updated: 2026-04-15 (v8)
 
 ## Zweck dieser Datei
 
@@ -96,9 +96,9 @@ Der Runtime-Kern ist bereits weit vorangekommen:
 
 ### Realistischer Status
 - Phase 3: **abgeschlossen**
-- Phase 4: **gestartet, 4.1 erledigt, 4.2 abgeschlossen, 4.3 gestartet**
-- Nächster notwendiger Klärungsblock: **serverseitige Session-Memory-Kompaktierung**
-- Größter Restblock: **Prompt-/Memory-Autorität weiter serverseitig verdichten**
+- Phase 4: **gestartet, 4.1 erledigt, 4.2 abgeschlossen, 4.3 in Arbeit**
+- Nächster notwendiger Klärungsblock: **serverseitige Session-Writes / Memory-Refresh**
+- Größter Restblock: **vollständig append-/server-owned Session- und Prompt-Autorität**
 
 ### Warum Phase 4 jetzt dran ist
 - Der Runtime-Kern ist ausreichend gehärtet und Phase 3 ist dokumentarisch abgeschlossen.
@@ -237,6 +237,10 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 - Frontend sendet auf dem Proxy-Pfad rohe Chat-Historie plus `sessionId` und minimale Runtime-Metadaten statt eines fertig gebauten `system` Prompts.
 - Clientseitig eingeschleuste `system` Messages werden auf dem Proxy-Pfad verworfen.
 - Session-, Character-, Adventure-, Combat- und Scene-State-Kontext wird auf dem Proxy-Pfad jetzt serverseitig geladen statt aus clientgegebenen `promptContext`-Daten übernommen zu werden.
+- Der Proxy nutzt jetzt zusätzlich servereigene Session-Memory-Kompaktierung statt clientgeschickter Historie:
+  - server-owned `memory_summary`
+  - kompakter autoritativer `game_log`-Tail
+  - keine raw-history Payload mehr an `/api/chat/send`
 
 ### 4.2 Runtime-Freitext als echten Intent-Layer ausbauen ✅
 - Buttons und aufgelöster Freitext teilen denselben app-seitigen Execute-Pfad.
@@ -291,14 +295,16 @@ Backend wird mittelfristig Single Source of Truth für Prompt-Logik und State-Ü
 - doppelte Prompt-Infos vermeiden
 
 ### Status
-- erster 4.3-Slice erledigt:
+- erste 4.3-Slices erledigt:
   - Proxy-Prompt-State wird jetzt aus serverseitig geladener Session-/Character-/Adventure-Wahrheit aufgebaut
   - der Client flusht vor Proxy-Requests den aktuellen Session-/Character-Stand, damit serverseitiges Prompt-Loading keine stale Runtime-Eskalations- oder Combat-Zustände sieht
   - Built-in-Abenteuer werden auf dem Server beim Prompt-Load ebenfalls aufgelöst
+  - Sessions tragen jetzt ein server-owned `memory_summary`, das beim Schreiben serverseitig aus `game_log` + `scene_state` neu berechnet wird
+  - Proxy-Prompts nutzen server-summary + kompakten autoritativen Transcript-Tail statt clientgeschickter History
 - nächster Slice:
-  - serverseitige Memory-/Summary-Repräsentation einziehen
-  - rohe Chat-Historie weiter verkleinern
-  - doppelte Prompt-Blöcke abbauen
+  - Session-Writes vom Full-blob-Patch stärker entkoppeln
+  - append-/refresh-artige Server-Endpunkte für `game_log` und Memory einziehen
+  - Fire-and-forget-Write-Flut weiter reduzieren
 
 ### 4.4 Persistenz sauberer machen
 - Session-Patches bündeln/debouncen

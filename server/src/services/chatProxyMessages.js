@@ -1,4 +1,5 @@
 import { buildSystemPrompt } from '../../../src/services/promptBuilder.js'
+import { applyServerMemoryToSceneState, buildAuthoritativeChatMessages } from './sessionMemory.js'
 
 function isAllowedRole(role, { allowSystem = false } = {}) {
   return role === 'user' || role === 'assistant' || (allowSystem && role === 'system')
@@ -21,13 +22,20 @@ export function buildProxyMessages({ messages = [], authoritativeContext = null 
     return sanitizeProxyMessages(messages, { allowSystem: true })
   }
 
-  const sanitizedMessages = sanitizeProxyMessages(messages)
+  const sanitizedMessages = buildAuthoritativeChatMessages({
+    gameLog: authoritativeContext.gameLog || [],
+    fallbackMessages: messages,
+  })
+  const authoritativeSceneState = applyServerMemoryToSceneState(
+    authoritativeContext.sceneState || null,
+    authoritativeContext.memorySummary || ''
+  )
   const systemPrompt = buildSystemPrompt(
     authoritativeContext.character || null,
     authoritativeContext.adventure || null,
     sanitizedMessages,
     authoritativeContext.combat || null,
-    authoritativeContext.sceneState || null,
+    authoritativeSceneState,
     authoritativeContext.runtimeRequestMode || null,
     authoritativeContext.runtimeResolution || null
   )
