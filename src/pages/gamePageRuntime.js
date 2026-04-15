@@ -10,6 +10,7 @@ import {
   resolveReveals,
 } from '../data/srd'
 import {
+  getRuntimeNpcDisplayName,
   getVisibleRuntimeNpcs,
   isRuntimeStructure,
   normalizeRuntimeIntent,
@@ -573,6 +574,38 @@ function getRuntimeNpcNameTokens(npc = {}) {
     }
   }
   return tokens
+}
+
+export function buildLocalRuntimeFlavorOnlyNarration({
+  userText = '',
+  adventure = null,
+  sceneState = null,
+  section = null,
+} = {}) {
+  const normalizedAdventure = normalizeAdventureEntry(adventure)
+  const structure = normalizedAdventure?.structure || null
+  const visibleNpcs = getVisibleRuntimeNpcs(structure, section, sceneState)
+  const activeNpcId = sceneState?.dialogueState?.activeNpcId || null
+  const activeVisibleNpc = activeNpcId
+    ? visibleNpcs.find(npc => npc.id === activeNpcId)
+    : null
+  const fallbackNpc = !activeVisibleNpc && visibleNpcs.length === 1 ? visibleNpcs[0] : null
+  const npcName = activeVisibleNpc
+    ? getRuntimeNpcDisplayName(structure, activeVisibleNpc.id)
+    : fallbackNpc
+      ? getRuntimeNpcDisplayName(structure, fallbackNpc.id)
+      : ''
+  const locationLabel = section?.location || sceneState?.currentLocation || section?.title || sceneState?.currentSectionTitle || ''
+
+  if (npcName) {
+    return `${npcName} nimmt die kleine Regung zur Kenntnis, ohne dass sich an der Situation etwas aendert.`
+  }
+
+  if (locationLabel) {
+    return `Die kleine Regung verhallt in ${locationLabel}, ohne dass sich an der Situation etwas aendert.`
+  }
+
+  return 'Die kleine Regung veraendert an der Situation nichts.'
 }
 
 function resolveRuntimeEscalationTarget({ structure = null, sceneState = null, section = null, inputTokens = [] } = {}) {

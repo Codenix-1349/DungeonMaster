@@ -16,20 +16,20 @@ export function sanitizeProxyMessages(messages = [], { allowSystem = false } = {
     .filter(message => message.content)
 }
 
-export function buildProxyMessages({ messages = [], promptContext = null } = {}) {
-  if (!promptContext) {
+export function buildProxyMessages({ messages = [], authoritativeContext = null } = {}) {
+  if (!authoritativeContext) {
     return sanitizeProxyMessages(messages, { allowSystem: true })
   }
 
   const sanitizedMessages = sanitizeProxyMessages(messages)
   const systemPrompt = buildSystemPrompt(
-    promptContext.character || null,
-    promptContext.adventure || null,
+    authoritativeContext.character || null,
+    authoritativeContext.adventure || null,
     sanitizedMessages,
-    promptContext.combat || null,
-    promptContext.sceneState || null,
-    promptContext.runtimeRequestMode || null,
-    promptContext.runtimeResolution || null
+    authoritativeContext.combat || null,
+    authoritativeContext.sceneState || null,
+    authoritativeContext.runtimeRequestMode || null,
+    authoritativeContext.runtimeResolution || null
   )
 
   return [

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyPendingCheckResult,
+  buildLocalRuntimeFlavorOnlyNarration,
   createPendingCheckFromChoice,
   createPendingChoiceMeta,
   formatAssistantTextForDisplay,
@@ -13,6 +14,7 @@ import {
   shouldBuildChoicesAfterResponse,
 } from '../pages/gamePageRuntime.js'
 import { createInitialSceneState, findInteractionDef, findSectionById, normalizeAdventureEntry } from '../data/srd.js'
+import { ARENA_MECHANICS_DEMO_TEXT } from '../data/adventures/arenaMechanicsDemo.js'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
@@ -28,6 +30,10 @@ function loadBirkenhainModule() {
 
 function loadGraufurtModule() {
   return normalizeAdventureEntry({ id: 'gamepage-runtime-graufurt', title: 'Graufurt Referenz', text: GRAUFURT_MODULE_TEXT })
+}
+
+function loadArenaDemoModule() {
+  return normalizeAdventureEntry({ id: 'builtin-arena-mechanics-demo', title: 'Mechanikdemo: Messingarena', text: ARENA_MECHANICS_DEMO_TEXT })
 }
 
 describe('GamePage runtime check flow helpers', () => {
@@ -673,6 +679,21 @@ describe('GamePage runtime check flow helpers', () => {
       type: 'flavor_only',
       runtimeRequestMode: 'runtime_flavor_only',
     })
+  })
+
+  it('builds deterministic local narration for harmless runtime free text instead of relying on AI flavor', () => {
+    const adventure = loadArenaDemoModule()
+    const sceneState = createInitialSceneState(adventure)
+    const section = findSectionById(adventure.structure, 'brass_arena')
+
+    const narration = buildLocalRuntimeFlavorOnlyNarration({
+      userText: 'Ich huepfe kurz in die Luft.',
+      adventure,
+      sceneState,
+      section,
+    })
+
+    expect(narration).toBe('Die kleine Regung verhallt in Messingarena, ohne dass sich an der Situation etwas aendert.')
   })
 
   it('asks for clarification when unmatched runtime free text references known scene entities', () => {

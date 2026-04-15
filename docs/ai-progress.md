@@ -11,6 +11,21 @@ Use the docs in this order instead:
 3. `docs/ai-next-steps.md`
 4. `docs/ai-progress.md`
 
+## 2026-04-15 - Phase 4.3 Slice 1: Server-Side Proxy State Loading
+
+### Done - proxy prompt context now comes from server-owned session state
+
+- Proxy chat no longer accepts client-passed `promptContext`; the browser now sends `sessionId` plus minimal runtime metadata only.
+- `/api/chat/send` now loads the authoritative session row and derives prompt context from server-owned character, adventure, combat, and scene-state data.
+- Proxy prompt loading now falls back to built-in adventures as well, so server-side prompt assembly still works for bundled modules that do not live in the database.
+- The frontend now flushes the active session and bound character state to the backend before proxy requests so server-loaded prompt state is not stale during authoritative runtime escalations or combat transitions.
+- Direct frontend OpenRouter/Ollama paths still keep the existing local fallback prompt-building path.
+- Added regression coverage for:
+  - proxy transport sending `sessionId` plus runtime authority metadata
+  - server prompt assembly using authoritative proxy context input only
+  - hard failure when the proxy path is invoked without an active session id
+- Full test suite green (`212/212`) and build green after the slice.
+
 ## 2026-04-15 - Phase 4.2 Slice 5: Authored Escalation Consequences
 
 ### Done - runtime escalation can now resolve to authored guards, flight, and scene fallback paths
