@@ -1,7 +1,7 @@
 import React from 'react'
 
 // Ensure numbered list items each start on a new line (AI sometimes writes them inline)
-function normalizeNumberedList(text = '') {
+export function normalizeNumberedList(text = '') {
   return text.replace(/([.!?])\s+(\d[.):])/g, '$1\n$2')
 }
 
