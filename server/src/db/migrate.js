@@ -32,6 +32,9 @@ export async function runMigrations() {
 }
 
 // Run when called directly: node src/db/migrate.js
-runMigrations()
-  .then(() => { console.log('All migrations done.'); process.exit(0) })
-  .catch((err) => { console.error('Migration failed:', err); process.exit(1) })
+const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+if (isDirectRun) {
+  runMigrations()
+    .then(() => { console.log('All migrations done.'); process.exit(0) })
+    .catch((err) => { console.error('Migration failed:', err); process.exit(1) })
+}
