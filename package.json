@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "render:build": "npm install && npx vite build && cd server && npm install",
+    "render:build": "npm install --include=dev && npx vite build && cd server && npm install",
     "render:start": "node server/src/index.js",
     "preview": "vite preview",
     "test": "vitest run",
