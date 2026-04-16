@@ -15,6 +15,7 @@ import {
   isRuntimeStructure,
   normalizeRuntimeIntent,
 } from '../data/runtimeModule'
+import { createCombatState } from '../data/combatState.js'
 
 export function createPendingChoiceMeta(choice) {
   if (!choice?.check) return null
@@ -983,7 +984,7 @@ function resolveRuntimeEscalation({
     type: 'authoritative_escalation',
     sceneStateOverride: nextSceneState,
     combatOverride: combatEnemy
-      ? { active: true, round: 1, enemies: [combatEnemy], playerInitiative: 0, phase: 'initiative' }
+      ? createCombatState({ enemies: [combatEnemy] })
       : null,
     runtimeRequestMode: 'runtime_authoritative_resolution',
     runtimeResolution: {

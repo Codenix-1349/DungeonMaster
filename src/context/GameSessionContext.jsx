@@ -4,6 +4,7 @@ import {
   deriveSceneState,
   normalizeAdventureEntry,
 } from '../data/srd'
+import { createCombatState } from '../data/combatState.js'
 import { loadFromStorage, saveToStorage } from '../utils/storage'
 import {
   normalizeGameLog,
@@ -296,7 +297,7 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
   }, [patchSession, isLoggedIn])
 
   const applyLiveCombat = useCallback((nextCombat, sessionIdOverride = activeSessionIdRef.current) => {
-    const normalized = nextCombat || null
+    const normalized = nextCombat ? createCombatState(nextCombat) : null
     combatRef.current = normalized
     setCombatState(normalized)
     saveToStorage('dm_combat', normalized)
@@ -446,21 +447,8 @@ export function GameSessionProvider({ children, initialCharacterStore }) {
       ? combatConfig
       : null
     const nextCombat = Array.isArray(combatConfig)
-      ? {
-        active: true,
-        round: 1,
-        enemies: combatConfig,
-        playerInitiative: 0,
-        phase: 'initiative',
-      }
-      : {
-        ...(normalizedCombatConfig || {}),
-        active: normalizedCombatConfig?.active ?? true,
-        round: normalizedCombatConfig?.round ?? 1,
-        enemies: Array.isArray(normalizedCombatConfig?.enemies) ? normalizedCombatConfig.enemies : [],
-        playerInitiative: normalizedCombatConfig?.playerInitiative ?? 0,
-        phase: normalizedCombatConfig?.phase || 'initiative',
-      }
+      ? createCombatState({ enemies: combatConfig })
+      : createCombatState(normalizedCombatConfig || {})
 
     setCombat(nextCombat)
   }, [setCombat])
