@@ -2,6 +2,15 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useGame } from '../context/GameContext'
 import { getClassWeaponDefaults, SPELL_LIST } from '../data/srd'
 import { resolveSpellInCombat, resolveHealingPotion, rollDice } from '../data/spellEffects'
+import {
+  applySpellcastToTurnState,
+  canCastSpellInCombatTurn,
+  consumeCombatTurnState,
+  createCombatTurnState,
+  getRoundForNextTurn,
+  getSpellActionType,
+  startPlayerCombatTurn,
+} from '../data/combatState.js'
 import { generateGoldReward, generateItemLoot, ITEM_CATALOG } from '../data/items'
 import D20Animation from './D20Animation'
 
@@ -184,7 +193,6 @@ export default function CombatTracker({ onCombatAction }) {
   const [pendingAttack, setPendingAttack] = useState(null)
   const [selectedSpell, setSelectedSpell] = useState(null)
   const [selectedCastLevel, setSelectedCastLevel] = useState(null)
-  const [dodgeActive, setDodgeActive] = useState(false)
   const [freeActionText, setFreeActionText] = useState('')
 
   // Guards and accumulators
@@ -240,6 +248,26 @@ export default function CombatTracker({ onCombatAction }) {
       .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name))
   }, [character])
 
+  const combatSpellOptions = useMemo(() => {
+    return availableSpells
+      .map(spell => ({ ...spell, actionType: getSpellActionType(spell) }))
+      .filter(spell => spell.actionType !== 'reaction')
+  }, [availableSpells])
+
+  const currentTurnState = useMemo(() => {
+    return createCombatTurnState(combat?.turnState)
+  }, [combat?.turnState])
+
+  const castableSpellOptions = useMemo(() => {
+    return combatSpellOptions.filter(spell => (
+      canCastSpellInCombatTurn({
+        turnState: currentTurnState,
+        spellLevel: spell.level,
+        actionType: spell.actionType,
+      })
+    ))
+  }, [combatSpellOptions, currentTurnState])
+
   // ── Available items for combat use ──────────────────────────────────────
 
   const usableItems = useMemo(() => {
@@ -251,6 +279,38 @@ export default function CombatTracker({ onCombatAction }) {
       return /heiltrank|trank|potion/i.test(item)
     })
   }, [character?.inventory])
+
+  const resetTurnSelectionState = useCallback(() => {
+    setPendingAttack(null)
+    setSelectedTargetId(null)
+    setSelectedSpell(null)
+    setSelectedCastLevel(null)
+    setFreeActionText('')
+  }, [])
+
+  const persistTurnState = useCallback((nextTurnState) => {
+    setCombat(prev => {
+      if (!prev?.active) return prev
+      return { ...prev, turnState: createCombatTurnState(nextTurnState) }
+    })
+  }, [setCombat])
+
+  const hasBonusActionSpellOption = useCallback((nextTurnState) => {
+    return combatSpellOptions.some(spell => (
+      spell.actionType === 'bonusAction' &&
+      canCastSpellInCombatTurn({
+        turnState: nextTurnState,
+        spellLevel: spell.level,
+        actionType: spell.actionType,
+      })
+    ))
+  }, [combatSpellOptions])
+
+  const hasRemainingTurnChoices = useCallback((nextTurnState) => {
+    const normalized = createCombatTurnState(nextTurnState)
+    if (normalized.actionAvailable) return true
+    return hasBonusActionSpellOption(normalized)
+  }, [hasBonusActionSpellOption])
 
   // ── Initiative ──────────────────────────────────────────────────────────
 
@@ -264,7 +324,18 @@ export default function CombatTracker({ onCombatAction }) {
     }))
     const enemyMaxInit = enemies.length ? Math.max(...enemies.map(e => e.initiative)) : 0
     const playerFirst = playerInit >= enemyMaxInit
-    setCombat(prev => ({ ...prev, playerInitiative: playerInit, enemies, phase: 'action', isPlayerTurn: playerFirst, round: 1 }))
+    setCombat(prev => {
+      const nextCombat = {
+        ...prev,
+        playerInitiative: playerInit,
+        playerActsFirst: playerFirst,
+        enemies,
+        phase: 'action',
+        isPlayerTurn: playerFirst,
+        round: 1,
+      }
+      return playerFirst ? startPlayerCombatTurn(nextCombat) : nextCombat
+    })
     addLog(`Initiative: Du ${playerInit} | Gegner: ${enemies.map(e => `${e.name} ${e.initiative}`).join(', ')}`, 'info')
     addLog(playerFirst ? 'Du handelst zuerst!' : 'Gegner handeln zuerst!', 'info')
     if (!playerFirst) {
@@ -284,7 +355,6 @@ export default function CombatTracker({ onCombatAction }) {
   useEffect(() => {
     if (!combat?.active) {
       initRolledRef.current = false
-      setDodgeActive(false)
     }
   }, [combat?.active])
 
@@ -296,14 +366,12 @@ export default function CombatTracker({ onCombatAction }) {
       return
     }
     if (combat.isPlayerTurn) {
-      setPendingAttack(null)
-      setSelectedSpell(null)
-      setSelectedCastLevel(null)
+      resetTurnSelectionState()
       setPlayerPhase('selectAction')
     } else {
       setPlayerPhase(null)
     }
-  }, [combat?.isPlayerTurn, combat?.active, combat?.phase])
+  }, [combat?.isPlayerTurn, combat?.active, combat?.phase, resetTurnSelectionState])
 
   // ── Run enemy turn immediately, then send combined round summary to AI ──
 
@@ -313,6 +381,7 @@ export default function CombatTracker({ onCombatAction }) {
       return
     }
 
+    const turnState = createCombatTurnState(combat?.turnState)
     const livingEnemies = (combat?.enemies || []).filter(e => e.currentHP > 0)
     if (!livingEnemies.length) {
       // All dead — just flush player actions (victory was already handled)
@@ -326,7 +395,7 @@ export default function CombatTracker({ onCombatAction }) {
       let attackRoll = rollDie(20)
 
       // Dodge: roll twice, take lower
-      if (dodgeActive) {
+      if (turnState.dodgeActive) {
         const secondRoll = rollDie(20)
         attackRoll = Math.min(attackRoll, secondRoll)
       }
@@ -344,11 +413,10 @@ export default function CombatTracker({ onCombatAction }) {
           ? `${enemy.name} KRITISCH! ${dmg} Schaden`
           : `${enemy.name} trifft (${atkTotal} vs AC ${playerAC}) ${dmg} Schaden`, type: 'enemy' })
       } else {
-        logs.push({ text: `${enemy.name} verfehlt (${atkTotal} vs AC ${playerAC})${dodgeActive ? ' [Ausweichen]' : ''}`, type: 'miss' })
+        logs.push({ text: `${enemy.name} verfehlt (${atkTotal} vs AC ${playerAC})${turnState.dodgeActive ? ' [Ausweichen]' : ''}`, type: 'miss' })
       }
     }
 
-    setDodgeActive(false)
     updateCharacterHP(newHP)
     logs.forEach(l => addLog(l.text, l.type))
 
@@ -368,29 +436,63 @@ export default function CombatTracker({ onCombatAction }) {
 
     // Next round — give turn back to player and show action buttons directly
     // (cannot rely on useEffect for isPlayerTurn since it may already be true)
-    setCombat(prev => ({ ...prev, isPlayerTurn: true, round: (prev.round || 1) + 1 }))
-    setPendingAttack(null)
-    setSelectedSpell(null)
-    setSelectedCastLevel(null)
-    setFreeActionText('')
+    setCombat(prev => {
+      if (!prev?.active) return prev
+      return startPlayerCombatTurn({
+        ...prev,
+        round: getRoundForNextTurn(prev, 'player'),
+      })
+    })
+    resetTurnSelectionState()
     setPlayerPhase('selectAction')
-  }, [character, combat, dodgeActive, updateCharacterHP, addLog, flushTurnSummary, setCombat, endCombat, playerArmorClassBuff])
+  }, [character, combat, updateCharacterHP, addLog, flushTurnSummary, setCombat, endCombat, playerArmorClassBuff, resetTurnSelectionState])
 
   // Ref to always access latest runEnemyTurnAndFlush (avoids stale closures in setTimeout)
   const runEnemyTurnRef = useRef(runEnemyTurnAndFlush)
   useEffect(() => { runEnemyTurnRef.current = runEnemyTurnAndFlush }, [runEnemyTurnAndFlush])
 
-  // Finish player turn: show 'done' briefly, then run enemy turn via ref
-  const finishPlayerTurn = useCallback(() => {
+  const finishPlayerTurn = useCallback((nextTurnState = combat?.turnState) => {
     setPlayerPhase('done')
+    setCombat(prev => {
+      if (!prev?.active) return prev
+      return {
+        ...prev,
+        isPlayerTurn: false,
+        round: getRoundForNextTurn(prev, 'enemy'),
+        turnState: createCombatTurnState(nextTurnState),
+      }
+    })
     setTimeout(() => {
       if (runEnemyTurnRef.current) runEnemyTurnRef.current()
     }, 600)
-  }, [])
+  }, [combat?.turnState, setCombat])
+
+  const endTurnEarly = useCallback(() => {
+    const nextTurnState = createCombatTurnState(combat?.turnState)
+    addLog('Du beendest deinen Zug.', 'info')
+    turnActionsRef.current.push('[Zug beendet] Keine weitere Aktion.')
+    finishPlayerTurn(nextTurnState)
+  }, [combat?.turnState, addLog, finishPlayerTurn])
+
+  const continuePlayerTurn = useCallback((nextTurnState) => {
+    persistTurnState(nextTurnState)
+    resetTurnSelectionState()
+    setPlayerPhase('selectAction')
+  }, [persistTurnState, resetTurnSelectionState])
+
+  const advanceAfterActionResolution = useCallback((nextTurnState) => {
+    if (hasRemainingTurnChoices(nextTurnState)) {
+      continuePlayerTurn(nextTurnState)
+      return
+    }
+
+    finishPlayerTurn(nextTurnState)
+  }, [continuePlayerTurn, finishPlayerTurn, hasRemainingTurnChoices])
 
   // ── Action: Physical Attack ─────────────────────────────────────────────
 
   const startAttack = useCallback(() => {
+    if (!createCombatTurnState(combat?.turnState).actionAvailable) return
     const living = (combat?.enemies || []).filter(e => e.currentHP > 0)
     if (living.length === 1) {
       setSelectedTargetId(living[0].id)
@@ -406,6 +508,7 @@ export default function CombatTracker({ onCombatAction }) {
     const target = (combat?.enemies || []).find(e => e.id === selectedTargetId)
     if (!target || target.currentHP <= 0) return
 
+    const nextTurnState = consumeCombatTurnState(combat?.turnState, { action: true })
     const roll = rollDie(20)
     const attackBonus = Number(character?.attackBonus ?? 0) + playerAttackBonusBuff
     const total = roll + attackBonus
@@ -418,7 +521,7 @@ export default function CombatTracker({ onCombatAction }) {
       showBanner('Patzer!', `Nat. 1 gegen ${target.name}`, 'miss', { d20Roll: roll })
       turnActionsRef.current.push(msg)
       setPendingAttack(null)
-      finishPlayerTurn()
+      advanceAfterActionResolution(nextTurnState)
     } else if (isCrit || total >= target.ac) {
       const msg = isCrit
         ? `KRITISCH! Nat. 20 gegen ${target.name}!`
@@ -426,6 +529,7 @@ export default function CombatTracker({ onCombatAction }) {
       addLog(msg, isCrit ? 'crit' : 'hit')
       showBanner(isCrit ? 'KRITISCH!' : 'Treffer!', `${roll} + ${attackBonus} = ${total} vs AC ${target.ac}`, isCrit ? 'crit' : 'hit', { d20Roll: roll })
       turnActionsRef.current.push(msg)
+      persistTurnState(nextTurnState)
       setPendingAttack({ roll, total, isCrit, targetId: selectedTargetId })
       setPlayerPhase('damage')
     } else {
@@ -434,9 +538,48 @@ export default function CombatTracker({ onCombatAction }) {
       showBanner('Verfehlt!', `${roll} + ${attackBonus} = ${total} vs AC ${target.ac}`, 'miss', { d20Roll: roll })
       turnActionsRef.current.push(msg)
       setPendingAttack(null)
-      finishPlayerTurn()
+      advanceAfterActionResolution(nextTurnState)
     }
-  }, [playerPhase, selectedTargetId, combat, character, addLog, finishPlayerTurn, playerAttackBonusBuff])
+  }, [playerPhase, selectedTargetId, combat, character, addLog, playerAttackBonusBuff, persistTurnState, advanceAfterActionResolution])
+
+  const checkAllDead = useCallback((updatedEnemies, nextTurnState = combat?.turnState) => {
+    const allDead = updatedEnemies.every(e => e.currentHP <= 0)
+    if (allDead) {
+      const totalXP = updatedEnemies.reduce((sum, e) => sum + (e.xp || 0), 0)
+      const playerLevel = character?.level || 1
+      const restoreAfterVictory = updatedEnemies.some(e => e.restorePlayerAfterVictory)
+
+      // Engine is sole authority for combat rewards (XP, gold, loot)
+      if (awardXP) awardXP(totalXP)
+      const goldReward = generateGoldReward(totalXP)
+      if (Object.keys(goldReward).length > 0 && updateCurrency) updateCurrency(goldReward)
+      const itemLoot = generateItemLoot(totalXP, playerLevel)
+      for (const itemKey of itemLoot) {
+        if (addItem) addItem(itemKey)
+      }
+      if (restoreAfterVictory && character?.maxHP) {
+        updateCharacterHP(character.maxHP)
+        if (restoreSpellSlots) restoreSpellSlots()
+        addLog('Das Trainingsfeld stellt dich nach dem Sieg vollstaendig wieder her.', 'heal')
+      }
+
+      // Build reward summary
+      const rewardParts = [`+${totalXP} XP`]
+      if (goldReward.gm) rewardParts.push(`+${goldReward.gm} GM`)
+      if (goldReward.sm) rewardParts.push(`+${goldReward.sm} SM`)
+      if (itemLoot.length) rewardParts.push(itemLoot.map(k => ITEM_CATALOG[k]?.name || k).join(', '))
+      if (restoreAfterVictory) rewardParts.push('volle Heilung')
+
+      const victoryMsg = `Alle Gegner besiegt! ${rewardParts.join(' · ')}`
+      addLog(victoryMsg, 'victory')
+      showBanner('SIEG!', rewardParts.join(' · '), 'victory')
+      turnActionsRef.current.push(victoryMsg)
+      flushTurnSummary()
+      setTimeout(() => endCombat(), 800)
+    } else {
+      advanceAfterActionResolution(nextTurnState)
+    }
+  }, [combat?.turnState, addLog, awardXP, endCombat, flushTurnSummary, advanceAfterActionResolution, character, updateCurrency, addItem, updateCharacterHP, restoreSpellSlots])
 
   const rollDamageAction = useCallback(() => {
     if (playerPhase !== 'damage' || !pendingAttack) return
@@ -444,6 +587,7 @@ export default function CombatTracker({ onCombatAction }) {
     const target = enemies.find(e => e.id === pendingAttack.targetId)
     if (!target || target.currentHP <= 0) return
 
+    const nextTurnState = createCombatTurnState(combat?.turnState)
     const equippedWeapon = character?.inventory?.find(i => typeof i === 'object' && i.type === 'weapon' && i.equipped)
     const weaponInfo = equippedWeapon
       ? { damageDice: equippedWeapon.properties?.damageDice || '1d6', abilityMod: equippedWeapon.properties?.abilityMod || 'str', label: equippedWeapon.name }
@@ -472,22 +616,33 @@ export default function CombatTracker({ onCombatAction }) {
     )
     turnActionsRef.current.push(msg)
 
-    checkAllDead(updatedEnemies)
-  }, [playerPhase, pendingAttack, combat, character, getModifier, setCombat, addLog, playerDamageBuff, showBanner])
+    checkAllDead(updatedEnemies, nextTurnState)
+  }, [playerPhase, pendingAttack, combat, character, getModifier, setCombat, addLog, playerDamageBuff, showBanner, checkAllDead])
 
   // ── Action: Cast Spell ──────────────────────────────────────────────────
 
   const startSpellCast = useCallback(() => {
+    if (!castableSpellOptions.length) return
     setSelectedSpell(null)
     setSelectedCastLevel(null)
     setPlayerPhase('selectSpell')
-  }, [])
+  }, [castableSpellOptions.length])
 
   // Use ref to avoid stale closure in pickSpell/pickSpellSlot
   const resolveSpellRef = useRef(null)
 
   resolveSpellRef.current = (spell, castLevel) => {
     if (!spell || !character) return
+
+    const actionType = spell.actionType || getSpellActionType(spell)
+    if (!canCastSpellInCombatTurn({ turnState: combat?.turnState, spellLevel: castLevel, actionType })) {
+      addLog(`${spell.name} kann in diesem Zug nicht mehr gewirkt werden.`, 'info')
+      return
+    }
+    const nextTurnState = applySpellcastToTurnState(combat?.turnState, {
+      spellLevel: castLevel,
+      actionType,
+    })
 
     const spellcastingAttr =
       character.class === 'Kleriker' || character.class === 'Druide' || character.class === 'Waldläufer' ? 'wis' :
@@ -550,7 +705,7 @@ export default function CombatTracker({ onCombatAction }) {
         killed ? 'kill' : (effect.success ? 'spell' : 'miss')
       )
       turnActionsRef.current.push(`[Zauber] ${fullText}`)
-      checkAllDead(updatedEnemies)
+      checkAllDead(updatedEnemies, nextTurnState)
       return
     }
 
@@ -561,14 +716,14 @@ export default function CombatTracker({ onCombatAction }) {
       addLog(effect.resultText, 'heal')
       showBanner(`+${effect.healing} HP!`, `${spell.name} → ${newHP}/${character.maxHP} HP`, 'heal')
       turnActionsRef.current.push(`[Zauber] ${effect.resultText}`)
-      finishPlayerTurn()
+      advanceAfterActionResolution(nextTurnState)
       return
     }
 
     addLog(effect.resultText, 'spell')
     showBanner(spell.name, effect.resultText, 'spell')
     turnActionsRef.current.push(`[Zauber] ${effect.resultText}`)
-    finishPlayerTurn()
+    advanceAfterActionResolution(nextTurnState)
   }
 
   const pickSpell = useCallback((spell) => {
@@ -590,11 +745,14 @@ export default function CombatTracker({ onCombatAction }) {
   // ── Action: Use Item ────────────────────────────────────────────────────
 
   const startUseItem = useCallback(() => {
+    if (!createCombatTurnState(combat?.turnState).actionAvailable) return
     setPlayerPhase('selectItem')
-  }, [])
+  }, [combat?.turnState])
 
   const pickItem = useCallback((item) => {
     if (!character) return
+    if (!createCombatTurnState(combat?.turnState).actionAvailable) return
+    const nextTurnState = consumeCombatTurnState(combat?.turnState, { action: true })
     const itemName = typeof item === 'object' ? item.name : item
     const itemId = typeof item === 'object' ? item.id : item
     const isPotion = typeof item === 'object'
@@ -616,80 +774,47 @@ export default function CombatTracker({ onCombatAction }) {
       useItem(itemId)
     }
 
-    finishPlayerTurn()
-  }, [character, updateCharacterHP, useItem, addLog, finishPlayerTurn])
+    advanceAfterActionResolution(nextTurnState)
+  }, [character, combat?.turnState, updateCharacterHP, useItem, addLog, advanceAfterActionResolution])
 
   // ── Action: Dodge ───────────────────────────────────────────────────────
 
   const doDodge = useCallback(() => {
-    setDodgeActive(true)
+    if (!createCombatTurnState(combat?.turnState).actionAvailable) return
+    const nextTurnState = consumeCombatTurnState(combat?.turnState, {
+      action: true,
+      dodgeActive: true,
+    })
     addLog('Ausweichen! Gegner haben Nachteil auf Angriffe.', 'dodge')
     showBanner('Ausweichen!', 'Nachteil auf alle Gegnerangriffe', 'dodge')
     turnActionsRef.current.push(`[Ausweichen] Nachteil auf alle Gegnerangriffe`)
-    finishPlayerTurn()
-  }, [addLog, showBanner, finishPlayerTurn])
+    advanceAfterActionResolution(nextTurnState)
+  }, [combat?.turnState, addLog, showBanner, advanceAfterActionResolution])
 
   // ── Action: Free Action (creative input) ───────────────────────────────
 
   const startFreeAction = useCallback(() => {
+    if (!createCombatTurnState(combat?.turnState).actionAvailable) return
     setFreeActionText('')
     setPlayerPhase('freeAction')
-  }, [])
+  }, [combat?.turnState])
 
   const submitFreeAction = useCallback(() => {
     const text = freeActionText.trim()
     if (!text) return
-    addLog(`Freie Aktion: ${text}`, 'free')
-    turnActionsRef.current.push(`[Freie Aktion] ${text}`)
+    if (!createCombatTurnState(combat?.turnState).actionAvailable) return
+    const nextTurnState = consumeCombatTurnState(combat?.turnState, { action: true })
+    addLog(`Improvisierte Aktion: ${text}`, 'free')
+    turnActionsRef.current.push(`[Improvisierte Aktion] ${text}`)
     setFreeActionText('')
-    finishPlayerTurn()
-  }, [freeActionText, addLog, finishPlayerTurn])
+    advanceAfterActionResolution(nextTurnState)
+  }, [freeActionText, combat?.turnState, addLog, advanceAfterActionResolution])
 
   // ── Helpers ─────────────────────────────────────────────────────────────
 
   const getFirstLivingEnemy = useCallback(() => {
     return (combat?.enemies || []).find(e => e.currentHP > 0) || null
   }, [combat])
-
-  const checkAllDead = useCallback((updatedEnemies) => {
-    const allDead = updatedEnemies.every(e => e.currentHP <= 0)
-    if (allDead) {
-      const totalXP = updatedEnemies.reduce((sum, e) => sum + (e.xp || 0), 0)
-      const playerLevel = character?.level || 1
-      const restoreAfterVictory = updatedEnemies.some(e => e.restorePlayerAfterVictory)
-
-      // Engine is sole authority for combat rewards (XP, gold, loot)
-      if (awardXP) awardXP(totalXP)
-      const goldReward = generateGoldReward(totalXP)
-      if (Object.keys(goldReward).length > 0 && updateCurrency) updateCurrency(goldReward)
-      const itemLoot = generateItemLoot(totalXP, playerLevel)
-      for (const itemKey of itemLoot) {
-        if (addItem) addItem(itemKey)
-      }
-      if (restoreAfterVictory && character?.maxHP) {
-        updateCharacterHP(character.maxHP)
-        if (restoreSpellSlots) restoreSpellSlots()
-        addLog('Das Trainingsfeld stellt dich nach dem Sieg vollstaendig wieder her.', 'heal')
-      }
-
-      // Build reward summary
-      const rewardParts = [`+${totalXP} XP`]
-      if (goldReward.gm) rewardParts.push(`+${goldReward.gm} GM`)
-      if (goldReward.sm) rewardParts.push(`+${goldReward.sm} SM`)
-      if (itemLoot.length) rewardParts.push(itemLoot.map(k => ITEM_CATALOG[k]?.name || k).join(', '))
-      if (restoreAfterVictory) rewardParts.push('volle Heilung')
-
-      const victoryMsg = `Alle Gegner besiegt! ${rewardParts.join(' · ')}`
-      addLog(victoryMsg, 'victory')
-      showBanner('SIEG!', rewardParts.join(' · '), 'victory')
-      turnActionsRef.current.push(victoryMsg)
-      flushTurnSummary()
-      setTimeout(() => endCombat(), 800)
-    } else {
-      setPendingAttack(null)
-      finishPlayerTurn()
-    }
-  }, [addLog, awardXP, endCombat, flushTurnSummary, finishPlayerTurn, character, updateCurrency, addItem, updateCharacterHP, restoreSpellSlots])
 
   const handleEndCombat = useCallback(() => {
     addLog('Kampf beendet.')
@@ -699,12 +824,21 @@ export default function CombatTracker({ onCombatAction }) {
 
   // ── Render ──────────────────────────────────────────────────────────────
 
+  const availableSlotLevels = useMemo(() => {
+    if (!selectedSpell || selectedSpell.level === 0) return []
+    const slots = character?.currentSpellSlots || character?.spellSlots || {}
+    const levels = []
+    for (let lvl = selectedSpell.level; lvl <= 9; lvl++) {
+      if ((slots[lvl] || 0) > 0) levels.push(lvl)
+    }
+    return levels
+  }, [selectedSpell, character])
+
   if (!combat?.active) return null
 
   const isInitPhase = !combat.playerInitiative || combat.playerInitiative === 0 || combat.phase === 'initiative'
   const isPlayerTurn = Boolean(combat.isPlayerTurn)
   const enemies = combat.enemies || []
-  const livingEnemies = enemies.filter(e => e.currentHP > 0)
   const playerHP = character?.currentHP ?? character?.maxHP ?? 0
   const playerMaxHP = character?.maxHP ?? 1
   const equippedWeaponRender = character?.inventory?.find(i => typeof i === 'object' && i.type === 'weapon' && i.equipped)
@@ -715,7 +849,8 @@ export default function CombatTracker({ onCombatAction }) {
   const totalWeaponDamageBonus = abilityMod + playerDamageBuff
   const effectiveAttackBonus = Number(character?.attackBonus ?? 0) + playerAttackBonusBuff
   const effectivePlayerAC = Number(character?.armorClass || 12) + playerArmorClassBuff
-  const isSpellcaster = availableSpells.length > 0
+  const isSpellcaster = combatSpellOptions.length > 0
+  const actionOptionsAvailable = currentTurnState.actionAvailable
   const hasUsableItems = usableItems.length > 0
   const selectedTarget = enemies.find(e => e.id === selectedTargetId)
   const buffSummaryParts = [
@@ -726,17 +861,6 @@ export default function CombatTracker({ onCombatAction }) {
     playerSpellAttackBuff ? `ZA ${formatSignedBonus(playerSpellAttackBuff)}` : '',
     playerSpellSaveDcBuff ? `SG ${formatSignedBonus(playerSpellSaveDcBuff)}` : '',
   ].filter(Boolean)
-
-  // Slot levels available for the selected spell
-  const availableSlotLevels = useMemo(() => {
-    if (!selectedSpell || selectedSpell.level === 0) return []
-    const slots = character?.currentSpellSlots || character?.spellSlots || {}
-    const levels = []
-    for (let lvl = selectedSpell.level; lvl <= 9; lvl++) {
-      if ((slots[lvl] || 0) > 0) levels.push(lvl)
-    }
-    return levels
-  }, [selectedSpell, character])
 
   return (
     <div className="panel-gold p-4 animate-slide-in space-y-3">
@@ -749,7 +873,7 @@ export default function CombatTracker({ onCombatAction }) {
         </div>
         <div className="flex items-center gap-2">
           {!isInitPhase && <TurnBadge isPlayerTurn={isPlayerTurn} />}
-          {dodgeActive && <span className="badge-red text-xs bg-blue-900/30 border-blue-700/40 text-blue-400">Ausweichen</span>}
+          {currentTurnState.dodgeActive && <span className="badge-red text-xs bg-blue-900/30 border-blue-700/40 text-blue-400">Ausweichen</span>}
           <button onClick={handleEndCombat} className="btn-ghost text-xs px-2 py-1">✕</button>
         </div>
       </div>
@@ -830,6 +954,20 @@ export default function CombatTracker({ onCombatAction }) {
         <SpellSlotDisplay spellSlots={character.spellSlots} currentSpellSlots={character.currentSpellSlots} />
       )}
 
+      {!isInitPhase && isPlayerTurn && (
+        <div className="flex flex-wrap gap-2 text-[11px]">
+          <span className={`badge-red ${currentTurnState.actionAvailable ? 'text-gold-400' : 'text-stone-500'}`}>
+            Aktion: {currentTurnState.actionAvailable ? 'frei' : 'verbraucht'}
+          </span>
+          <span className={`badge-red ${currentTurnState.bonusActionAvailable ? 'text-blue-400' : 'text-stone-500'}`}>
+            Bonusaktion: {currentTurnState.bonusActionAvailable ? 'frei' : 'verbraucht'}
+          </span>
+          <span className={`badge-red ${currentTurnState.reactionAvailable ? 'text-emerald-400' : 'text-stone-500'}`}>
+            Reaktion: {currentTurnState.reactionAvailable ? 'frei' : 'verbraucht'}
+          </span>
+        </div>
+      )}
+
       <div className="divider-gold" />
 
       {/* ── Combat Actions ─────────────────────────────────────────────── */}
@@ -847,24 +985,53 @@ export default function CombatTracker({ onCombatAction }) {
           {playerPhase === 'selectAction' && (
             <div className="space-y-1.5">
               <p className="section-subtitle mb-1">Aktion waehlen</p>
-              <button onClick={startAttack} className="btn-primary w-full text-sm text-left px-3">
+              <button
+                onClick={startAttack}
+                disabled={!actionOptionsAvailable}
+                className={`btn-primary w-full text-sm text-left px-3 ${!actionOptionsAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
                 ⚔️ Angriff ({weaponInfo.label}, {weaponInfo.damageDice}{totalWeaponDamageBonus >= 0 ? `+${totalWeaponDamageBonus}` : totalWeaponDamageBonus})
               </button>
-              {isSpellcaster && (
+              {castableSpellOptions.length > 0 && (
                 <button onClick={startSpellCast} className="btn-primary w-full text-sm text-left px-3 bg-blue-900/40 border-blue-700/40 hover:bg-blue-800/50">
-                  ✨ Zauber wirken ({availableSpells.length} verfuegbar)
+                  ✨ Zauber wirken ({castableSpellOptions.length} verfuegbar)
                 </button>
               )}
               {hasUsableItems && (
-                <button onClick={startUseItem} className="btn-primary w-full text-sm text-left px-3 bg-emerald-900/40 border-emerald-700/40 hover:bg-emerald-800/50">
+                <button
+                  onClick={startUseItem}
+                  disabled={!actionOptionsAvailable}
+                  className={`btn-primary w-full text-sm text-left px-3 bg-emerald-900/40 border-emerald-700/40 hover:bg-emerald-800/50 ${!actionOptionsAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
                   🧪 Gegenstand ({usableItems.length})
                 </button>
               )}
-              <button onClick={doDodge} className="btn-primary w-full text-sm text-left px-3 bg-stone-800/60 border-stone-600/40 hover:bg-stone-700/50">
+              <button
+                onClick={doDodge}
+                disabled={!actionOptionsAvailable}
+                className={`btn-primary w-full text-sm text-left px-3 bg-stone-800/60 border-stone-600/40 hover:bg-stone-700/50 ${!actionOptionsAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
                 🛡️ Ausweichen (Nachteil auf Gegnerangriffe)
               </button>
-              <button onClick={startFreeAction} className="btn-primary w-full text-sm text-left px-3 bg-purple-900/40 border-purple-700/40 hover:bg-purple-800/50">
-                💬 Freie Aktion (kreativ handeln)
+              <button
+                onClick={startFreeAction}
+                disabled={!actionOptionsAvailable}
+                className={`btn-primary w-full text-sm text-left px-3 bg-purple-900/40 border-purple-700/40 hover:bg-purple-800/50 ${!actionOptionsAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                💬 Improvisierte Aktion
+              </button>
+              {!actionOptionsAvailable && (
+                <div className="rounded border border-stone-700/40 bg-stone-900/25 px-3 py-2 text-xs font-body text-stone-400">
+                  Deine Aktion ist bereits verbraucht. Du kannst noch einen verfuegbaren Bonusaktions-Zauber wirken oder den Zug beenden.
+                </div>
+              )}
+              {isSpellcaster && castableSpellOptions.length === 0 && (
+                <div className="rounded border border-blue-900/30 bg-blue-950/20 px-3 py-2 text-xs font-body text-stone-400">
+                  In diesem Zug ist wegen der Aktionsoekonomie kein weiterer Zauber verfuegbar.
+                </div>
+              )}
+              <button onClick={endTurnEarly} className="btn-ghost w-full text-sm text-left px-3">
+                Zug beenden
               </button>
             </div>
           )}
@@ -877,7 +1044,7 @@ export default function CombatTracker({ onCombatAction }) {
                 <button onClick={() => setPlayerPhase('selectAction')} className="btn-ghost text-xs px-2 py-0.5">Zurueck</button>
               </div>
               <div className="max-h-48 overflow-y-auto space-y-1">
-                {availableSpells.map(spell => (
+                {castableSpellOptions.map(spell => (
                   <button
                     key={spell.key}
                     onClick={() => pickSpell(spell)}
@@ -886,6 +1053,9 @@ export default function CombatTracker({ onCombatAction }) {
                     <span className="font-heading text-blue-400">{spell.name}</span>
                     <span className="text-stone-500 ml-1.5">
                       {spell.level === 0 ? 'Cantrip' : `Grad ${spell.level}`}
+                    </span>
+                    <span className="text-stone-500 ml-1.5">
+                      {spell.actionType === 'bonusAction' ? 'Bonusaktion' : 'Aktion'}
                     </span>
                     <span className="text-stone-600 ml-1.5">{spell.description}</span>
                   </button>
@@ -949,10 +1119,10 @@ export default function CombatTracker({ onCombatAction }) {
           {playerPhase === 'freeAction' && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <p className="section-subtitle">Freie Aktion</p>
+                <p className="section-subtitle">Improvisierte Aktion</p>
                 <button onClick={() => setPlayerPhase('selectAction')} className="btn-ghost text-xs px-2 py-0.5">Zurueck</button>
               </div>
-              <p className="font-body text-xs text-stone-500">Beschreibe, was du versuchst — die KI erzaehlt das Ergebnis.</p>
+              <p className="font-body text-xs text-stone-500">Beschreibe eine Aktion, die du statt eines Standardmanoevers versuchst.</p>
               <textarea
                 value={freeActionText}
                 onChange={e => setFreeActionText(e.target.value)}
@@ -967,7 +1137,7 @@ export default function CombatTracker({ onCombatAction }) {
                 disabled={!freeActionText.trim()}
                 className="btn-primary w-full text-sm bg-purple-900/40 border-purple-700/40 hover:bg-purple-800/50"
               >
-                💬 Aktion ausfuehren
+                💬 Improvisierte Aktion ausfuehren
               </button>
             </div>
           )}

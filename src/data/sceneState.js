@@ -15,6 +15,7 @@ import {
   normalizeRuntimeNpcState,
   resolveRuntimeNpcId,
 } from './runtimeModule.js'
+import { createCombatState } from './combatState.js'
 import { ENEMY_PRESETS } from './characterRules.js'
 
 export const SCENE_STATE_VERSION = 3
@@ -319,15 +320,11 @@ function buildInteractionCombatStart(result = null) {
 
   if (!enemies.length) return null
 
-  return {
-    active: true,
-    round: 1,
+  return createCombatState({
     enemies,
-    playerInitiative: 0,
-    phase: 'initiative',
     playerBuffs,
     consequenceText,
-  }
+  })
 }
 
 export function resolveInteractionOutcome(sceneState, interaction, module, outcome = 'success') {
