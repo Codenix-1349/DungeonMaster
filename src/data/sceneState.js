@@ -296,6 +296,12 @@ function buildStructuredCombatEnemy(definition = {}, index = 0) {
     restorePlayerAfterVictory: Boolean(
       definition.restorePlayerAfterVictory || profile.restorePlayerAfterVictory
     ),
+    revivePlayerOnDefeat: Boolean(
+      definition.revivePlayerOnDefeat || profile.revivePlayerOnDefeat
+    ),
+    defeatRevivalText: String(
+      definition.defeatRevivalText || profile.defeatRevivalText || ''
+    ).trim(),
   }
 }
 
@@ -307,16 +313,26 @@ function buildInteractionCombatStart(result = null) {
     ? startCombat.enemies
     : [startCombat]
   const applyRestore = Boolean(startCombat.restorePlayerAfterVictory)
+  const applyRevive = Boolean(startCombat.revivePlayerOnDefeat)
+  const sharedRevivalText = String(startCombat.defeatRevivalText || '').trim()
   const playerBuffs = normalizeCombatPlayerBuffs(startCombat.playerBuffs)
   const consequenceText = String(startCombat.consequenceText || '').trim()
   const enemies = enemyDefinitions
     .map((definition, index) => buildStructuredCombatEnemy(definition, index))
     .filter(Boolean)
-    .map(enemy => (
-      applyRestore && !enemy.restorePlayerAfterVictory
-        ? { ...enemy, restorePlayerAfterVictory: true }
-        : enemy
-    ))
+    .map(enemy => {
+      let next = enemy
+      if (applyRestore && !next.restorePlayerAfterVictory) {
+        next = { ...next, restorePlayerAfterVictory: true }
+      }
+      if (applyRevive && !next.revivePlayerOnDefeat) {
+        next = { ...next, revivePlayerOnDefeat: true }
+      }
+      if (sharedRevivalText && !next.defeatRevivalText) {
+        next = { ...next, defeatRevivalText: sharedRevivalText }
+      }
+      return next
+    })
 
   if (!enemies.length) return null
 

@@ -324,33 +324,42 @@ export default function CombatTracker({ onCombatAction }) {
     }))
     const enemyMaxInit = enemies.length ? Math.max(...enemies.map(e => e.initiative)) : 0
     const playerFirst = playerInit >= enemyMaxInit
-    setCombat(prev => {
-      const nextCombat = {
-        ...prev,
-        playerInitiative: playerInit,
-        playerActsFirst: playerFirst,
-        enemies,
-        phase: 'action',
-        isPlayerTurn: playerFirst,
-        round: 1,
-      }
-      return playerFirst ? startPlayerCombatTurn(nextCombat) : nextCombat
-    })
+    setCombat(prev => ({
+      ...prev,
+      playerInitiative: playerInit,
+      playerActsFirst: playerFirst,
+      enemies,
+      phase: 'ready',
+      isPlayerTurn: false,
+      round: 1,
+    }))
     addLog(`Initiative: Du ${playerInit} | Gegner: ${enemies.map(e => `${e.name} ${e.initiative}`).join(', ')}`, 'info')
     addLog(playerFirst ? 'Du handelst zuerst!' : 'Gegner handeln zuerst!', 'info')
+    showBanner(
+      'Initiative',
+      `Du: ${playerInit} (d20: ${roll}${dexMod + playerInitiativeBuff ? ` ${formatSignedBonus(dexMod + playerInitiativeBuff)}` : ''})`,
+      playerFirst ? 'hit' : 'enemy',
+      { d20Roll: roll },
+    )
+  }, [character, combat, getModifier, setCombat, addLog, playerInitiativeBuff, showBanner])
+
+  const confirmReadyAndStartRound = useCallback(() => {
+    const playerFirst = Boolean(combat?.playerActsFirst)
+    setCombat(prev => {
+      if (!prev?.active) return prev
+      const next = {
+        ...prev,
+        phase: 'action',
+        isPlayerTurn: playerFirst,
+      }
+      return playerFirst ? startPlayerCombatTurn(next) : next
+    })
     if (!playerFirst) {
       setTimeout(() => {
         if (runEnemyTurnRef.current) runEnemyTurnRef.current()
       }, 600)
     }
-  }, [character, combat, getModifier, setCombat, addLog, playerInitiativeBuff])
-
-  useEffect(() => {
-    if (!combat?.active || combat?.phase !== 'initiative' || !character) return
-    if (combat.playerInitiative > 0 || initRolledRef.current) return
-    initRolledRef.current = true
-    rollInitiative()
-  }, [combat?.active, combat?.phase, character, combat?.playerInitiative, rollInitiative])
+  }, [combat?.playerActsFirst, setCombat])
 
   useEffect(() => {
     if (!combat?.active) {
@@ -358,10 +367,24 @@ export default function CombatTracker({ onCombatAction }) {
     }
   }, [combat?.active])
 
+  // ── Round-change banner ────────────────────────────────────────────────
+  const lastRoundRef = useRef(0)
+  useEffect(() => {
+    if (!combat?.active || combat?.phase !== 'action') {
+      lastRoundRef.current = 0
+      return
+    }
+    const currentRound = combat.round || 1
+    if (currentRound > 1 && currentRound !== lastRoundRef.current) {
+      showBanner(`Runde ${currentRound}`, 'Neue Runde beginnt', 'info')
+    }
+    lastRoundRef.current = currentRound
+  }, [combat?.round, combat?.active, combat?.phase, showBanner])
+
   // ── Turn management ─────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!combat?.active || combat?.phase === 'initiative') {
+    if (!combat?.active || combat?.phase === 'initiative' || combat?.phase === 'ready') {
       setPlayerPhase(null)
       return
     }
@@ -424,6 +447,17 @@ export default function CombatTracker({ onCombatAction }) {
     turnActionsRef.current.push(`[Gegner-Angriff] ${logs.map(l => l.text).join(' | ')} → Du: ${newHP}/${character.maxHP} HP`)
 
     if (newHP <= 0) {
+      const reviver = (combat?.enemies || []).find(e => e.revivePlayerOnDefeat)
+      if (reviver) {
+        const revivalText = String(reviver.defeatRevivalText || '').trim()
+          || 'Der Arenameister hebt die Hand und warmes Licht fuellt dich — du stehst wieder voll aufrecht.\n\nArenameister:\n„Noch einmal, wenn du willst."'
+        addLog('Du bist gefallen – die Arena belebt dich wieder!', 'defeat')
+        updateCharacterHP(character.maxHP)
+        turnActionsRef.current.push(`[SPIELER WIEDERBELEBT] ${revivalText}`)
+        flushTurnSummary()
+        setTimeout(() => endCombat(), 800)
+        return
+      }
       addLog('Du bist gefallen! (0 HP)', 'defeat')
       turnActionsRef.current.push('[SPIELER BESIEGT] Der Held ist gefallen.')
       flushTurnSummary()
@@ -836,7 +870,9 @@ export default function CombatTracker({ onCombatAction }) {
 
   if (!combat?.active) return null
 
-  const isInitPhase = !combat.playerInitiative || combat.playerInitiative === 0 || combat.phase === 'initiative'
+  const isPrepPhase = combat.phase === 'initiative' || (!combat.playerInitiative && combat.phase !== 'ready' && combat.phase !== 'action')
+  const isReadyPhase = combat.phase === 'ready'
+  const isInitPhase = isPrepPhase || isReadyPhase
   const isPlayerTurn = Boolean(combat.isPlayerTurn)
   const enemies = combat.enemies || []
   const playerHP = character?.currentHP ?? character?.maxHP ?? 0
@@ -883,10 +919,72 @@ export default function CombatTracker({ onCombatAction }) {
 
       <div className="divider-gold" />
 
-      {/* Initiative auto-rolling */}
-      {isInitPhase && (
-        <div className="text-center py-2">
-          <p className="font-body text-xs text-stone-400 animate-pulse">Initiative wird gewuerfelt...</p>
+      {/* Prep: Kampf beginnt — Initiative würfeln */}
+      {isPrepPhase && (
+        <div className="rounded-lg border-2 border-red-600/50 bg-red-900/20 p-4 text-center space-y-2 animate-slide-in">
+          <div className="text-3xl">⚔️</div>
+          <p className="font-heading text-lg text-red-300 tracking-wider">KAMPF BEGINNT</p>
+          {enemies.length > 0 && (
+            <p className="font-body text-sm text-stone-300">
+              Gegner: {enemies.map(e => e.name).join(', ')}
+            </p>
+          )}
+          <p className="font-body text-xs text-stone-400">
+            Würfle Initiative, um die Zugreihenfolge zu bestimmen.
+          </p>
+          <button
+            onClick={rollInitiative}
+            className="btn-danger px-4 py-2 font-heading text-sm"
+          >
+            🎲 Initiative würfeln
+          </button>
+        </div>
+      )}
+
+      {/* Ready: Initiative ausgerollt, warte auf Bestätigung */}
+      {isReadyPhase && (
+        <div className="rounded-lg border-2 border-gold-600/50 bg-gold-600/10 p-4 text-center space-y-2 animate-slide-in">
+          <div className="text-3xl">🎲</div>
+          <p className="font-heading text-lg text-gold-300 tracking-wider">INITIATIVE</p>
+          <div className="font-body text-sm text-stone-200 space-y-1">
+            <p>Du: <span className="font-heading text-gold-400">{combat.playerInitiative}</span></p>
+            {enemies.length > 0 && (
+              <p>
+                {enemies.map((e, i) => (
+                  <span key={e.id || i}>
+                    {i > 0 && ' · '}
+                    {e.name}: <span className="font-heading text-red-400">{e.initiative}</span>
+                  </span>
+                ))}
+              </p>
+            )}
+          </div>
+          <p className={`font-heading text-sm ${combat.playerActsFirst ? 'text-gold-400' : 'text-red-400'}`}>
+            {combat.playerActsFirst ? '▶ Du handelst zuerst!' : '💀 Gegner handeln zuerst!'}
+          </p>
+          <button
+            onClick={confirmReadyAndStartRound}
+            className={combat.playerActsFirst ? 'btn-gold px-4 py-2 font-heading text-sm' : 'btn-danger px-4 py-2 font-heading text-sm'}
+          >
+            ⚔️ Runde 1 starten
+          </button>
+        </div>
+      )}
+
+      {/* Prominent Turn Banner — shows whose turn it is during action phase */}
+      {!isInitPhase && (
+        <div className={`rounded-lg border-2 px-3 py-2 flex items-center justify-center gap-2 font-heading text-sm tracking-wider ${
+          isPlayerTurn
+            ? 'border-gold-600/50 bg-gold-600/10 text-gold-300'
+            : 'border-red-700/50 bg-red-900/20 text-red-300'
+        }`}>
+          <span className={isPlayerTurn ? 'animate-pulse' : ''}>
+            {isPlayerTurn ? '▶' : '⏳'}
+          </span>
+          <span>Runde {combat.round || 1} —</span>
+          <span className="font-body">
+            {isPlayerTurn ? 'DEINE AKTION' : 'Gegner handelt…'}
+          </span>
         </div>
       )}
 

@@ -88,7 +88,7 @@ export default function MessageBubble({ msg }) {
   const displayText = isUser ? msg.content : normalizeNumberedList(msg.content || '')
 
   return (
-    <div className={`animate-fade-in ${isUser ? 'text-right' : ''}`}>
+    <div className={`${isUser ? 'animate-fade-in text-right' : ''}`}>
       <div className="flex items-center gap-2 mb-1 justify-between">
         <span className={`font-heading text-xs tracking-wider ${isUser ? 'text-stone-500 ml-auto' : 'text-gold-600'}`}>
           {isUser ? '🧑‍🎲 DU' : '🗡️ DUNGEONS & DAGGERS'}
