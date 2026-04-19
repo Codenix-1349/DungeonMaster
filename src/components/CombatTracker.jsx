@@ -13,6 +13,7 @@ import {
 } from '../data/combatState.js'
 import { generateGoldReward, generateItemLoot, ITEM_CATALOG } from '../data/items'
 import D20Animation, { preloadAllD20SpriteSheets } from './D20Animation'
+const DAMAGE_RESULT_BANNER_MS = 4200
 
 // ─── Dice Helpers ─────────────────────────────────────────────────────────────
 
@@ -682,7 +683,8 @@ export default function CombatTracker({ onCombatAction }) {
     showBanner(
       killed ? `${target.name} besiegt!` : `${dmg} Schaden!`,
       `${weaponInfo.label}: ${fullDice}${critLabel}${killed ? '' : ` → ${newHP}/${target.maxHP} HP`}`,
-      killed ? 'kill' : (pendingAttack.isCrit ? 'crit' : 'hit')
+      killed ? 'kill' : (pendingAttack.isCrit ? 'crit' : 'hit'),
+      { autoHideMs: DAMAGE_RESULT_BANNER_MS }
     )
     turnActionsRef.current.push(msg)
 
