@@ -5,7 +5,76 @@ export function normalizeNumberedList(text = '') {
   return text.replace(/([.!?])\s+(\d[.):])/g, '$1\n$2')
 }
 
-function CombatRoundBubble({ content }) {
+function isArenaMechanicsAdventure(adventure = null) {
+  const moduleId = String(adventure?.structure?.module?.moduleId || '').trim().toLowerCase()
+  const adventureId = String(adventure?.id || '').trim().toLowerCase()
+  const title = String(adventure?.title || '').trim().toLowerCase()
+
+  return (
+    moduleId === 'mechanics_demo_arena' ||
+    adventureId === 'builtin-arena-mechanics-demo' ||
+    title.includes('messingarena')
+  )
+}
+
+function escapeRegex(text = '') {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+export function getMessageTextHighlightTerms({ adventure = null, heroName = '' } = {}) {
+  if (!isArenaMechanicsAdventure(adventure)) return []
+
+  return [
+    'Arenameister Rennald',
+    'Bronzener Trainingswächter',
+    'Trainingswächter',
+    'Bronzener Trainingswaechter',
+    'Trainingswaechter',
+    'Rennald',
+    String(heroName || '').trim(),
+  ]
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+}
+
+export function renderMessageTextContent(text = '', {
+  adventure = null,
+  heroName = '',
+  normalizeLists = true,
+} = {}) {
+  const displayText = normalizeLists ? normalizeNumberedList(text || '') : String(text || '')
+  const highlightTerms = getMessageTextHighlightTerms({ adventure, heroName })
+
+  if (!highlightTerms.length || !displayText) return displayText
+
+  const regex = new RegExp(
+    `(?<![\\p{L}\\p{N}])(${highlightTerms.map(escapeRegex).join('|')})(?![\\p{L}\\p{N}])`,
+    'giu'
+  )
+  const nodes = []
+  let lastIndex = 0
+  let key = 0
+  let match = regex.exec(displayText)
+
+  while (match) {
+    const start = match.index
+    const end = start + match[0].length
+    if (start > lastIndex) nodes.push(displayText.slice(lastIndex, start))
+    nodes.push(
+      <strong key={`name-hl-${key++}`} className="font-heading font-semibold">
+        {displayText.slice(start, end)}
+      </strong>
+    )
+    lastIndex = end
+    match = regex.exec(displayText)
+  }
+
+  if (lastIndex < displayText.length) nodes.push(displayText.slice(lastIndex))
+
+  return nodes.length ? nodes : displayText
+}
+
+function CombatRoundBubble({ content, adventure, heroName }) {
   // Parse "[Kampfrunde] action1 | action2 | ..." into styled segments
   const raw = content.replace(/^\[Kampfrunde\]\s*/i, '')
   const segments = raw.split(/\s*\|\s*/).filter(Boolean)
@@ -43,7 +112,13 @@ function CombatRoundBubble({ content }) {
           return (
             <div key={i} className={`flex items-start gap-2 rounded px-2.5 py-1.5 border text-sm ${style.bg}`}>
               <span className="flex-shrink-0 mt-0.5">{style.icon}</span>
-              <span className={`font-body ${style.color}`}>{cleanText(seg)}</span>
+              <span className={`font-body ${style.color}`}>
+                {renderMessageTextContent(cleanText(seg), {
+                  adventure,
+                  heroName,
+                  normalizeLists: false,
+                })}
+              </span>
             </div>
           )
         })}
@@ -52,7 +127,7 @@ function CombatRoundBubble({ content }) {
   )
 }
 
-function SkillCheckBubble({ content }) {
+function SkillCheckBubble({ content, adventure, heroName }) {
   const raw = content.replace(/^\[Probe\]\s*/i, '')
   const successMatch = /→\s*(Erfolg|Fehlschlag)/i.exec(raw)
   const isSuccess = successMatch?.[1]?.toLowerCase() === 'erfolg'
@@ -67,25 +142,33 @@ function SkillCheckBubble({ content }) {
       </div>
       <div className={`flex items-start gap-2 rounded px-3 py-2 border text-sm ${style.bg}`}>
         <span className="flex-shrink-0 mt-0.5">{style.icon}</span>
-        <span className={`font-body ${style.color}`}>{raw}</span>
+        <span className={`font-body ${style.color}`}>
+          {renderMessageTextContent(raw, {
+            adventure,
+            heroName,
+            normalizeLists: false,
+          })}
+        </span>
       </div>
     </div>
   )
 }
 
-export default function MessageBubble({ msg }) {
+export default function MessageBubble({ msg, adventure = null, heroName = '' }) {
   const isUser = msg.role === 'user'
   const isCombatRound = isUser && msg.content?.startsWith('[Kampfrunde]')
   const isCheckResult = isUser && msg.content?.startsWith('[Probe]')
 
   if (isCombatRound) {
-    return <CombatRoundBubble content={msg.content} />
+    return <CombatRoundBubble content={msg.content} adventure={adventure} heroName={heroName} />
   }
   if (isCheckResult) {
-    return <SkillCheckBubble content={msg.content} />
+    return <SkillCheckBubble content={msg.content} adventure={adventure} heroName={heroName} />
   }
 
-  const displayText = isUser ? msg.content : normalizeNumberedList(msg.content || '')
+  const displayContent = isUser
+    ? msg.content
+    : renderMessageTextContent(msg.content || '', { adventure, heroName })
 
   return (
     <div className={`${isUser ? 'animate-fade-in text-right' : ''}`}>
@@ -95,7 +178,7 @@ export default function MessageBubble({ msg }) {
         </span>
       </div>
       <div className={isUser ? 'chat-player ml-auto' : 'chat-dm'}>
-        <p className="font-body text-base leading-relaxed whitespace-pre-wrap">{displayText}</p>
+        <p className="font-body text-base leading-relaxed whitespace-pre-wrap">{displayContent}</p>
       </div>
     </div>
   )

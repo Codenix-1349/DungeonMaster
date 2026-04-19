@@ -12,7 +12,7 @@ import {
   startPlayerCombatTurn,
 } from '../data/combatState.js'
 import { generateGoldReward, generateItemLoot, ITEM_CATALOG } from '../data/items'
-import D20Animation from './D20Animation'
+import D20Animation, { preloadAllD20SpriteSheets } from './D20Animation'
 
 // ─── Dice Helpers ─────────────────────────────────────────────────────────────
 
@@ -97,7 +97,8 @@ function ResultBanner({ result }) {
             result={result.d20Roll}
             runId={result.animationRunId || 0}
             size={220}
-            holdTime={2000}
+            holdTime={result.holdTime ?? 2000}
+            onComplete={result.onComplete}
           />
         </div>
       ) : (
@@ -194,11 +195,11 @@ export default function CombatTracker({ onCombatAction }) {
   const [selectedSpell, setSelectedSpell] = useState(null)
   const [selectedCastLevel, setSelectedCastLevel] = useState(null)
   const [freeActionText, setFreeActionText] = useState('')
+  const [initiativeRolling, setInitiativeRolling] = useState(false)
 
   // Guards and accumulators
   const enemyTurnRunningRef = useRef(false)
   const turnActionsRef = useRef([])
-  const initRolledRef = useRef(false)
 
   const addLog = useCallback((text, type = 'info') => {
     setActionLog(prev => [...prev.slice(-40), { id: Date.now() + Math.random(), text, type }])
@@ -213,7 +214,10 @@ export default function CombatTracker({ onCombatAction }) {
       ...opts,
       animationRunId: ++bannerAnimationRunIdRef.current,
     })
-    bannerTimerRef.current = setTimeout(() => setResultBanner(null), opts.d20Roll ? 4500 : 2500)
+    bannerTimerRef.current = setTimeout(
+      () => setResultBanner(null),
+      opts.autoHideMs ?? (opts.d20Roll ? 4500 : 2500)
+    )
   }, [])
 
   const flushTurnSummary = useCallback(() => {
@@ -314,7 +318,27 @@ export default function CombatTracker({ onCombatAction }) {
 
   // ── Initiative ──────────────────────────────────────────────────────────
 
+  const finalizeInitiativeRoll = useCallback(({ playerInit, playerFirst, enemies }) => {
+    setCombat(prev => {
+      if (!prev?.active) return prev
+      return {
+        ...prev,
+        playerInitiative: playerInit,
+        playerActsFirst: playerFirst,
+        enemies,
+        phase: 'ready',
+        isPlayerTurn: false,
+        round: 1,
+      }
+    })
+    addLog(`Initiative: Du ${playerInit} | Gegner: ${enemies.map(e => `${e.name} ${e.initiative}`).join(', ')}`, 'info')
+    addLog(playerFirst ? 'Du handelst zuerst!' : 'Gegner handeln zuerst!', 'info')
+    setInitiativeRolling(false)
+  }, [setCombat, addLog])
+
   const rollInitiative = useCallback(() => {
+    if (!combat?.active || initiativeRolling) return
+    setInitiativeRolling(true)
     const roll = rollDie(20)
     const dexMod = character ? getModifier(character.attributes?.dex || 10) : 0
     const playerInit = roll + dexMod + playerInitiativeBuff
@@ -324,24 +348,22 @@ export default function CombatTracker({ onCombatAction }) {
     }))
     const enemyMaxInit = enemies.length ? Math.max(...enemies.map(e => e.initiative)) : 0
     const playerFirst = playerInit >= enemyMaxInit
-    setCombat(prev => ({
-      ...prev,
-      playerInitiative: playerInit,
-      playerActsFirst: playerFirst,
-      enemies,
-      phase: 'ready',
-      isPlayerTurn: false,
-      round: 1,
-    }))
-    addLog(`Initiative: Du ${playerInit} | Gegner: ${enemies.map(e => `${e.name} ${e.initiative}`).join(', ')}`, 'info')
-    addLog(playerFirst ? 'Du handelst zuerst!' : 'Gegner handeln zuerst!', 'info')
+    const resolution = { playerInit, playerFirst, enemies }
     showBanner(
-      'Initiative',
-      `Du: ${playerInit} (d20: ${roll}${dexMod + playerInitiativeBuff ? ` ${formatSignedBonus(dexMod + playerInitiativeBuff)}` : ''})`,
+      'Initiativewurf',
+      'Die Zugreihenfolge wird ermittelt ...',
       playerFirst ? 'hit' : 'enemy',
-      { d20Roll: roll },
+      {
+        d20Roll: roll,
+        holdTime: 200,
+        autoHideMs: 1600,
+        onComplete: () => {
+          finalizeInitiativeRoll(resolution)
+          setResultBanner(null)
+        },
+      },
     )
-  }, [character, combat, getModifier, setCombat, addLog, playerInitiativeBuff, showBanner])
+  }, [character, combat, getModifier, initiativeRolling, playerInitiativeBuff, showBanner, finalizeInitiativeRoll])
 
   const confirmReadyAndStartRound = useCallback(() => {
     const playerFirst = Boolean(combat?.playerActsFirst)
@@ -362,10 +384,15 @@ export default function CombatTracker({ onCombatAction }) {
   }, [combat?.playerActsFirst, setCombat])
 
   useEffect(() => {
-    if (!combat?.active) {
-      initRolledRef.current = false
+    if (!combat?.active || combat.phase !== 'initiative') {
+      setInitiativeRolling(false)
     }
-  }, [combat?.active])
+  }, [combat?.active, combat?.phase])
+
+  useEffect(() => {
+    if (!combat?.active || combat.phase !== 'initiative') return
+    preloadAllD20SpriteSheets().catch(() => {})
+  }, [combat?.active, combat?.phase])
 
   // ── Round-change banner ────────────────────────────────────────────────
   const lastRoundRef = useRef(0)
@@ -431,6 +458,9 @@ export default function CombatTracker({ onCombatAction }) {
         const dmgDice = enemy.damageDice || '1d6'
         let dmg = rollDamageStr(dmgDice)
         if (attackRoll === 20) dmg += rollDamageStr(dmgDice)
+        if (enemy.maxDamagePerHit > 0) {
+          dmg = Math.min(dmg, enemy.maxDamagePerHit)
+        }
         newHP = Math.max(0, newHP - dmg)
         logs.push({ text: attackRoll === 20
           ? `${enemy.name} KRITISCH! ${dmg} Schaden`
@@ -450,7 +480,7 @@ export default function CombatTracker({ onCombatAction }) {
       const reviver = (combat?.enemies || []).find(e => e.revivePlayerOnDefeat)
       if (reviver) {
         const revivalText = String(reviver.defeatRevivalText || '').trim()
-          || 'Der Arenameister hebt die Hand und warmes Licht fuellt dich — du stehst wieder voll aufrecht.\n\nArenameister:\n„Noch einmal, wenn du willst."'
+          || 'Der Arenameister hebt die Hand und warmes Licht füllt dich — du stehst wieder voll aufrecht.\n\nArenameister:\n„Noch einmal, wenn du willst."'
         addLog('Du bist gefallen – die Arena belebt dich wieder!', 'defeat')
         updateCharacterHP(character.maxHP)
         turnActionsRef.current.push(`[SPIELER WIEDERBELEBT] ${revivalText}`)
@@ -594,7 +624,7 @@ export default function CombatTracker({ onCombatAction }) {
       if (restoreAfterVictory && character?.maxHP) {
         updateCharacterHP(character.maxHP)
         if (restoreSpellSlots) restoreSpellSlots()
-        addLog('Das Trainingsfeld stellt dich nach dem Sieg vollstaendig wieder her.', 'heal')
+        addLog('Rennald richtet dich nach dem Sieg wieder her.', 'heal')
       }
 
       // Build reward summary
@@ -605,9 +635,15 @@ export default function CombatTracker({ onCombatAction }) {
       if (restoreAfterVictory) rewardParts.push('volle Heilung')
 
       const victoryMsg = `Alle Gegner besiegt! ${rewardParts.join(' · ')}`
+      const victoryRecoveryText = String(
+        updatedEnemies.find(enemy => enemy.victoryRecoveryText)?.victoryRecoveryText || ''
+      ).trim()
       addLog(victoryMsg, 'victory')
       showBanner('SIEG!', rewardParts.join(' · '), 'victory')
       turnActionsRef.current.push(victoryMsg)
+      if (victoryRecoveryText) {
+        turnActionsRef.current.push(`[SPIELER NACH KAMPF GEHEILT] ${victoryRecoveryText}`)
+      }
       flushTurnSummary()
       setTimeout(() => endCombat(), 800)
     } else {
@@ -930,13 +966,16 @@ export default function CombatTracker({ onCombatAction }) {
             </p>
           )}
           <p className="font-body text-xs text-stone-400">
-            Würfle Initiative, um die Zugreihenfolge zu bestimmen.
+            {initiativeRolling
+              ? 'Der Würfel rollt bereits. Das Ergebnis erscheint direkt nach der Animation.'
+              : 'Würfle Initiative, um die Zugreihenfolge zu bestimmen.'}
           </p>
           <button
             onClick={rollInitiative}
-            className="btn-danger px-4 py-2 font-heading text-sm"
+            disabled={initiativeRolling}
+            className={`btn-danger px-4 py-2 font-heading text-sm ${initiativeRolling ? 'opacity-60 cursor-not-allowed' : ''}`}
           >
-            🎲 Initiative würfeln
+            {initiativeRolling ? '🎲 Initiative läuft ...' : '🎲 Initiative würfeln'}
           </button>
         </div>
       )}
@@ -994,7 +1033,7 @@ export default function CombatTracker({ onCombatAction }) {
           <p className="section-subtitle mb-2">Gegner</p>
           {playerPhase === 'selectTarget' && (
             <div className="bg-gold-600/10 border border-gold-600/30 rounded p-2 text-xs font-body text-gold-400 text-center mb-2">
-              Waehle ein Ziel fuer deinen Angriff
+              Wähle ein Ziel für deinen Angriff
             </div>
           )}
           <div className="space-y-2">
@@ -1082,7 +1121,7 @@ export default function CombatTracker({ onCombatAction }) {
           {/* ── ACTION SELECTION ── */}
           {playerPhase === 'selectAction' && (
             <div className="space-y-1.5">
-              <p className="section-subtitle mb-1">Aktion waehlen</p>
+              <p className="section-subtitle mb-1">Aktion wählen</p>
               <button
                 onClick={startAttack}
                 disabled={!actionOptionsAvailable}
@@ -1138,7 +1177,7 @@ export default function CombatTracker({ onCombatAction }) {
           {playerPhase === 'selectSpell' && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <p className="section-subtitle">Zauber waehlen</p>
+                <p className="section-subtitle">Zauber wählen</p>
                 <button onClick={() => setPlayerPhase('selectAction')} className="btn-ghost text-xs px-2 py-0.5">Zurueck</button>
               </div>
               <div className="max-h-48 overflow-y-auto space-y-1">
@@ -1166,7 +1205,7 @@ export default function CombatTracker({ onCombatAction }) {
           {playerPhase === 'selectSpellSlot' && selectedSpell && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <p className="section-subtitle">{selectedSpell.name} — Slot waehlen</p>
+                <p className="section-subtitle">{selectedSpell.name} — Slot wählen</p>
                 <button onClick={() => setPlayerPhase('selectSpell')} className="btn-ghost text-xs px-2 py-0.5">Zurueck</button>
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -1192,7 +1231,7 @@ export default function CombatTracker({ onCombatAction }) {
           {playerPhase === 'selectItem' && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <p className="section-subtitle">Gegenstand waehlen</p>
+                <p className="section-subtitle">Gegenstand wählen</p>
                 <button onClick={() => setPlayerPhase('selectAction')} className="btn-ghost text-xs px-2 py-0.5">Zurueck</button>
               </div>
               <div className="space-y-1">

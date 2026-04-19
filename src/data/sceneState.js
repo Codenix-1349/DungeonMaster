@@ -292,6 +292,11 @@ function buildStructuredCombatEnemy(definition = {}, index = 0) {
     attackBonus: toRuntimeCombatNumber(profile.attackBonus ?? definition.attackBonus ?? preset?.attackBonus, 0),
     damageDice: String(profile.damageDice || definition.damageDice || preset?.damageDice || '1d4').trim(),
     damageBonus: toRuntimeCombatNumber(profile.damageBonus ?? definition.damageBonus ?? preset?.damageBonus, 0),
+    maxDamagePerHit: toRuntimeCombatNumber(
+      profile.maxDamagePerHit ?? definition.maxDamagePerHit ?? preset?.maxDamagePerHit,
+      0,
+      { min: 0 }
+    ),
     xp: toRuntimeCombatNumber(profile.xp ?? definition.xp ?? preset?.xp, 0, { min: 0 }),
     restorePlayerAfterVictory: Boolean(
       definition.restorePlayerAfterVictory || profile.restorePlayerAfterVictory
@@ -299,6 +304,9 @@ function buildStructuredCombatEnemy(definition = {}, index = 0) {
     revivePlayerOnDefeat: Boolean(
       definition.revivePlayerOnDefeat || profile.revivePlayerOnDefeat
     ),
+    victoryRecoveryText: String(
+      definition.victoryRecoveryText || profile.victoryRecoveryText || ''
+    ).trim(),
     defeatRevivalText: String(
       definition.defeatRevivalText || profile.defeatRevivalText || ''
     ).trim(),
@@ -314,6 +322,7 @@ function buildInteractionCombatStart(result = null) {
     : [startCombat]
   const applyRestore = Boolean(startCombat.restorePlayerAfterVictory)
   const applyRevive = Boolean(startCombat.revivePlayerOnDefeat)
+  const sharedVictoryRecoveryText = String(startCombat.victoryRecoveryText || '').trim()
   const sharedRevivalText = String(startCombat.defeatRevivalText || '').trim()
   const playerBuffs = normalizeCombatPlayerBuffs(startCombat.playerBuffs)
   const consequenceText = String(startCombat.consequenceText || '').trim()
@@ -327,6 +336,9 @@ function buildInteractionCombatStart(result = null) {
       }
       if (applyRevive && !next.revivePlayerOnDefeat) {
         next = { ...next, revivePlayerOnDefeat: true }
+      }
+      if (sharedVictoryRecoveryText && !next.victoryRecoveryText) {
+        next = { ...next, victoryRecoveryText: sharedVictoryRecoveryText }
       }
       if (sharedRevivalText && !next.defeatRevivalText) {
         next = { ...next, defeatRevivalText: sharedRevivalText }

@@ -3,6 +3,36 @@ import React, { useEffect, useRef, useState } from 'react'
 const FRAME_COUNT = 12
 const FRAME_SIZE = 512
 const FRAME_INTERVAL = 75  // ~13 FPS
+const d20SpriteLoadCache = new Map()
+
+function normalizeD20Result(result) {
+  return String(Math.min(20, Math.max(1, result || 1))).padStart(2, '0')
+}
+
+function getD20SpriteUrl(result) {
+  return `/d20/r${normalizeD20Result(result)}.png`
+}
+
+export function preloadD20SpriteSheet(result) {
+  const normalized = normalizeD20Result(result)
+  if (!d20SpriteLoadCache.has(normalized)) {
+    d20SpriteLoadCache.set(normalized, new Promise(resolve => {
+      const img = new Image()
+      const finish = () => resolve(img)
+      img.onload = finish
+      img.onerror = finish
+      img.src = getD20SpriteUrl(normalized)
+      if (img.complete) finish()
+    }))
+  }
+  return d20SpriteLoadCache.get(normalized)
+}
+
+export function preloadAllD20SpriteSheets() {
+  return Promise.all(
+    Array.from({ length: 20 }, (_, index) => preloadD20SpriteSheet(index + 1))
+  )
+}
 
 /**
  * Animated D20 dice roll using sprite sheets (public/d20/r01.png–r20.png).
@@ -21,7 +51,7 @@ export default function D20Animation({ result, runId = 0, size = 220, holdTime =
   const onCompleteRef = useRef(onComplete)
   onCompleteRef.current = onComplete
 
-  const resultNum = String(Math.min(20, Math.max(1, result || 1))).padStart(2, '0')
+  const resultNum = normalizeD20Result(result)
   const scale = size / FRAME_SIZE
   const sheetWidth = FRAME_COUNT * FRAME_SIZE * scale
 
@@ -48,13 +78,9 @@ export default function D20Animation({ result, runId = 0, size = 220, holdTime =
       }, FRAME_INTERVAL)
     }
 
-    const img = new Image()
-    img.src = `/d20/r${resultNum}.png`
-    if (img.complete) {
+    preloadD20SpriteSheet(resultNum).then(() => {
       startAnimation()
-    } else {
-      img.onload = startAnimation
-    }
+    })
 
     return () => {
       cancelled = true
@@ -98,7 +124,7 @@ export default function D20Animation({ result, runId = 0, size = 220, holdTime =
       style={{
         width: size,
         height: size,
-        backgroundImage: `url(/d20/r${resultNum}.png)`,
+        backgroundImage: `url(${getD20SpriteUrl(resultNum)})`,
         backgroundSize: `${sheetWidth}px ${size}px`,
         backgroundPosition: `${posX}px 0`,
         backgroundRepeat: 'no-repeat',

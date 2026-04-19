@@ -26,10 +26,11 @@ describe('builtin mechanics demo adventure', () => {
     const resolved = resolveInteractionOutcome(sceneState, interaction, adventure.structure.module, 'success')
 
     expect(resolved.sceneState.gmState.plotFlags.ALTAR_BLESSED).toBe(true)
+    expect(resolved.sceneState.gmState.plotFlags.BLESSING_SOURCE_CHOSEN).toBe(true)
     expect(resolved.combatStart).toBeNull()
   })
 
-  it('does not set the blessing flag when the altar check fails', () => {
+  it('locks the second blessing source even when the altar check fails', () => {
     const adventure = getDemoAdventure()
     const sceneState = createInitialSceneState(adventure)
     const interaction = findInteractionDef(adventure.structure, 'attune_blessing_altar')
@@ -37,6 +38,7 @@ describe('builtin mechanics demo adventure', () => {
     const resolved = resolveInteractionOutcome(sceneState, interaction, adventure.structure.module, 'failure')
 
     expect(resolved.sceneState.gmState.plotFlags.ALTAR_BLESSED).not.toBe(true)
+    expect(resolved.sceneState.gmState.plotFlags.BLESSING_SOURCE_CHOSEN).toBe(true)
     expect(resolved.combatStart).toBeNull()
   })
 
@@ -54,19 +56,24 @@ describe('builtin mechanics demo adventure', () => {
       round: 1,
       phase: 'initiative',
     })
-    expect(resolved.combatStart.consequenceText).toContain('bronzene Trainingswaechter')
+    expect(resolved.combatStart.consequenceText).toContain('bronzene Trainingswächter')
     expect(resolved.combatStart.playerBuffs).toMatchObject({
       label: 'Segen des Messingaltars',
       attackBonus: 1,
       initiativeBonus: 2,
     })
     expect(resolved.combatStart.enemies[0]).toMatchObject({
-      name: 'Bronzener Trainingswaechter',
-      maxHP: 8,
+      name: 'Bronzener Trainingswächter',
+      maxHP: 6,
+      ac: 10,
+      attackBonus: 1,
+      damageDice: '1d3',
+      maxDamagePerHit: 2,
       restorePlayerAfterVictory: true,
       revivePlayerOnDefeat: true,
     })
     expect(resolved.combatStart.enemies[0].defeatRevivalText).toContain('Rennald')
+    expect(resolved.combatStart.enemies[0].victoryRecoveryText).toContain('Rennald')
   })
 
   it('starts the unblessed training combat with revive when the player asks Rennald without a blessing', () => {
@@ -83,17 +90,25 @@ describe('builtin mechanics demo adventure', () => {
       playerBuffs: null,
     })
     expect(resolved.combatStart.enemies[0]).toMatchObject({
+      maxHP: 6,
+      ac: 10,
+      attackBonus: 1,
+      damageDice: '1d3',
+      maxDamagePerHit: 2,
       revivePlayerOnDefeat: true,
       restorePlayerAfterVictory: true,
     })
   })
 
-  it('shows the blessed begin-trial button only after the altar was blessed', () => {
+  it('shows only one blessing source attempt per arena run', () => {
     const adventure = getDemoAdventure()
     const section = adventure.structure.sections.find(entry => entry.id === 'brass_arena')
 
     const initialScene = createInitialSceneState(adventure)
     const initialChoices = rebuildVisibleChoices({ section, sceneState: initialScene, runtimeModule: true })
+    expect(initialChoices.some(c => c.interactionId === 'read_trial_rules')).toBe(false)
+    expect(initialChoices.some(c => c.interactionId === 'attune_blessing_altar')).toBe(true)
+    expect(initialChoices.some(c => c.interactionId === 'study_ancient_tome')).toBe(true)
     expect(initialChoices.some(c => c.interactionId === 'begin_trial_blessed')).toBe(false)
     expect(initialChoices.some(c => c.interactionId === 'begin_trial_plain')).toBe(true)
 
@@ -101,7 +116,38 @@ describe('builtin mechanics demo adventure', () => {
     const afterBlessing = resolveInteractionOutcome(initialScene, altar, adventure.structure.module, 'success').sceneState
     const blessedChoices = rebuildVisibleChoices({ section, sceneState: afterBlessing, runtimeModule: true })
 
+    expect(blessedChoices.some(c => c.interactionId === 'attune_blessing_altar')).toBe(false)
+    expect(blessedChoices.some(c => c.interactionId === 'study_ancient_tome')).toBe(false)
     expect(blessedChoices.some(c => c.interactionId === 'begin_trial_blessed')).toBe(true)
     expect(blessedChoices.some(c => c.interactionId === 'begin_trial_plain')).toBe(false)
+
+    const afterFailedAttempt = resolveInteractionOutcome(initialScene, altar, adventure.structure.module, 'failure').sceneState
+    const failedChoices = rebuildVisibleChoices({ section, sceneState: afterFailedAttempt, runtimeModule: true })
+
+    expect(failedChoices.some(c => c.interactionId === 'attune_blessing_altar')).toBe(false)
+    expect(failedChoices.some(c => c.interactionId === 'study_ancient_tome')).toBe(false)
+    expect(failedChoices.some(c => c.interactionId === 'begin_trial_blessed')).toBe(false)
+    expect(failedChoices.some(c => c.interactionId === 'begin_trial_plain')).toBe(true)
+  })
+
+  it('keeps arena restart and blessing interactions visible even after they were used recently', () => {
+    const adventure = getDemoAdventure()
+    const section = adventure.structure.sections.find(entry => entry.id === 'brass_arena')
+    const sceneState = {
+      ...createInitialSceneState(adventure),
+      recentActions: [
+        'Rennald bitten, den Trainingskampf zu starten',
+        'Den Messingaltar berühren (Arkane Kunde)',
+      ],
+      recentActionKeys: [
+        'intr:begin_trial_plain',
+        'intr:attune_blessing_altar',
+      ],
+    }
+
+    const choices = rebuildVisibleChoices({ section, sceneState, runtimeModule: true })
+
+    expect(choices.some(c => c.interactionId === 'begin_trial_plain')).toBe(true)
+    expect(choices.some(c => c.interactionId === 'attune_blessing_altar')).toBe(true)
   })
 })

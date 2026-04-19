@@ -5,8 +5,9 @@ import { useAuth } from '../context/AuthContext'
 import { useSound } from '../context/SoundContext'
 import { sendMessage, parseLootTags, parseCurrencyTags, parseLostItemTags, parseCheckTags, parseHPTags, parseXPTags, parseEnemyTags } from '../services/openrouter'
 import CombatTracker from '../components/CombatTracker'
+import { preloadAllD20SpriteSheets } from '../components/D20Animation'
 import SkillCheckPanel from '../components/SkillCheckPanel'
-import MessageBubble, { TypingIndicator, normalizeNumberedList } from '../components/game/MessageBubble'
+import MessageBubble, { TypingIndicator, renderMessageTextContent } from '../components/game/MessageBubble'
 import SessionCard from '../components/game/SessionCard'
 import { PROJECT_NAME, SRD_QUICK_RULES, SKILLS, ATTR_LABELS, normalizeAdventureEntry, findInteractionDef, findSectionById } from '../data/srd'
 import { isRuntimeStructure } from '../data/runtimeModule'
@@ -40,6 +41,60 @@ function getCurrentSection(adventureData, currentSceneState) {
 function isRuntimeModule(adventureData) {
   const normalized = normalizeAdventureEntry(adventureData)
   return isRuntimeStructure(normalized?.structure)
+}
+
+function isArenaMechanicsAdventure(adventureData) {
+  const normalized = normalizeAdventureEntry(adventureData)
+  return String(normalized?.structure?.module?.moduleId || '').trim().toLowerCase() === 'mechanics_demo_arena'
+}
+
+function isArenaTrainingCombatState(combatState = null) {
+  if (!combatState?.active) return false
+  return Array.isArray(combatState.enemies) && combatState.enemies.some(enemy => (
+    /trainingsw(ä|ae)chter/i.test(String(enemy?.name || '')) ||
+    enemy?.restorePlayerAfterVictory ||
+    enemy?.revivePlayerOnDefeat
+  ))
+}
+
+function formatSignedBonus(value = 0) {
+  return `${value >= 0 ? '+' : ''}${value}`
+}
+
+function buildBuffSummaryParts(buff = null) {
+  if (!buff || typeof buff !== 'object') return []
+
+  const parts = []
+  if (buff.attackBonus) parts.push(`Angriff ${formatSignedBonus(buff.attackBonus)}`)
+  if (buff.armorClassBonus) parts.push(`AC ${formatSignedBonus(buff.armorClassBonus)}`)
+  if (buff.initiativeBonus) parts.push(`Initiative ${formatSignedBonus(buff.initiativeBonus)}`)
+  if (buff.damageBonus) parts.push(`Schaden ${formatSignedBonus(buff.damageBonus)}`)
+  if (buff.spellAttackBonus) parts.push(`Zauberangriff ${formatSignedBonus(buff.spellAttackBonus)}`)
+  if (buff.spellSaveDcBonus) parts.push(`Zauber-SG ${formatSignedBonus(buff.spellSaveDcBonus)}`)
+  return parts
+}
+
+function getArenaBlessingPreview(adventureData, currentSceneState) {
+  if (!isArenaMechanicsAdventure(adventureData)) return null
+  if (!currentSceneState?.gmState?.plotFlags?.ALTAR_BLESSED) return null
+
+  const structure = normalizeAdventureEntry(adventureData)?.structure
+  const interaction = structure ? findInteractionDef(structure, 'begin_trial_blessed') : null
+  const rawBuffs = interaction?.results?.success?.startCombat?.playerBuffs
+  if (!rawBuffs || typeof rawBuffs !== 'object') return null
+
+  const preview = {
+    label: String(rawBuffs.label || 'Arena-Segen').trim() || 'Arena-Segen',
+    attackBonus: Number(rawBuffs.attackBonus || 0) || 0,
+    armorClassBonus: Number(rawBuffs.armorClassBonus || 0) || 0,
+    initiativeBonus: Number(rawBuffs.initiativeBonus || 0) || 0,
+    damageBonus: Number(rawBuffs.damageBonus || 0) || 0,
+    spellAttackBonus: Number(rawBuffs.spellAttackBonus || 0) || 0,
+    spellSaveDcBonus: Number(rawBuffs.spellSaveDcBonus || 0) || 0,
+  }
+  const summaryParts = buildBuffSummaryParts(preview)
+
+  return summaryParts.length ? { ...preview, summaryParts } : null
 }
 
 function getPlayerFacingRuntimeFrame(adventureData, currentSceneState, section = null) {
@@ -133,6 +188,7 @@ export default function GamePage() {
   const pendingChoiceMetaRef = useRef(null)
   const pendingStreamCharsRef = useRef([])
   const typewriterIntervalRef = useRef(null)
+  const previousCombatRef = useRef(combat)
 
   const stopTypewriter = useCallback(() => {
     if (typewriterIntervalRef.current) {
@@ -170,7 +226,17 @@ export default function GamePage() {
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [gameLog, streamingText])
+  }, [gameLog.length])
+
+  useEffect(() => {
+    if (!streamingText) return
+    logEndRef.current?.scrollIntoView({ behavior: 'auto' })
+  }, [streamingText])
+
+  useEffect(() => {
+    if (!pendingCheck || combat?.active) return
+    preloadAllD20SpriteSheets().catch(() => {})
+  }, [pendingCheck, combat?.active])
 
   useEffect(() => {
     if (mode !== 'continue') {
@@ -178,6 +244,36 @@ export default function GamePage() {
       setSelectedAdventureId(adventure?.id || '')
     }
   }, [character?.id, adventure?.id, mode])
+
+  useEffect(() => {
+    const previousCombat = previousCombatRef.current
+    const justEndedArenaTrainingCombat = (
+      previousCombat?.active &&
+      !combat?.active &&
+      isArenaMechanicsAdventure(adventure) &&
+      isArenaTrainingCombatState(previousCombat)
+    )
+
+    if (justEndedArenaTrainingCombat) {
+      setSceneState(prev => {
+        const plotFlags = prev?.gmState?.plotFlags || {}
+        if (!plotFlags.ALTAR_BLESSED && !plotFlags.BLESSING_SOURCE_CHOSEN) return prev
+        return {
+          ...prev,
+          gmState: {
+            ...(prev.gmState || {}),
+            plotFlags: {
+              ...plotFlags,
+              ALTAR_BLESSED: false,
+              BLESSING_SOURCE_CHOSEN: false,
+            },
+          },
+        }
+      })
+    }
+
+    previousCombatRef.current = combat
+  }, [combat, adventure, setSceneState])
 
   const selectedCharacter = useMemo(
     () => characters.find(entry => entry.id === selectedCharacterId) || null,
@@ -190,6 +286,7 @@ export default function GamePage() {
   )
   const runtimeModule = useMemo(() => isRuntimeModule(adventure), [adventure])
   const currentSection = useMemo(() => getCurrentSection(adventure, sceneState), [adventure, sceneState])
+  const arenaBlessingPreview = useMemo(() => getArenaBlessingPreview(adventure, sceneState), [adventure, sceneState])
   const playerFacingRuntimeFrame = useMemo(
     () => getPlayerFacingRuntimeFrame(adventure, sceneState, currentSection),
     [adventure, sceneState, currentSection]
@@ -198,6 +295,11 @@ export default function GamePage() {
     const latestAssistant = [...gameLog].reverse().find(message => message.role === 'assistant')
     return latestAssistant?.content || ''
   }, [gameLog])
+  const streamingDisplayText = useMemo(() => {
+    if (!streamingText) return ''
+    if (runtimeModule) return streamingText
+    return formatAssistantTextForDisplay(streamingText, getCheckLabel, { runtimeModule: false })
+  }, [streamingText, runtimeModule])
 
   const enrichedSessions = useMemo(() => {
     return sessions.map(session => ({
@@ -650,10 +752,20 @@ export default function GamePage() {
   const handleCombatAction = useCallback(text => {
     // Intercept engine-authored player revival so the Arena Master narration
     // plays locally (streamed, visible HP restore) instead of going to the AI.
+    const healedAfterFightMatch = /\[SPIELER NACH KAMPF GEHEILT\]\s*([\s\S]*)$/i.exec(String(text || ''))
+    if (healedAfterFightMatch) {
+      const recoveryText = healedAfterFightMatch[1].trim()
+        || 'Rennald hebt die Hand und warmes Licht schließt deine Wunden, bis du wieder fest auf den Beinen stehst.\n\nRennald:\n„Wenn du noch einen Durchgang willst, sag Bescheid."'
+      appendLocalRuntimeNarration({
+        assistantText: recoveryText,
+        userText: '',
+      })
+      return
+    }
     const revivedMatch = /\[SPIELER WIEDERBELEBT\]\s*([\s\S]*)$/i.exec(String(text || ''))
     if (revivedMatch) {
       const revivalText = revivedMatch[1].trim()
-        || 'Der Arenameister hebt die Hand und warmes Licht fuellt dich — du stehst wieder voll aufrecht.\n\nArenameister:\n„Noch einmal, wenn du willst."'
+        || 'Der Arenameister hebt die Hand und warmes Licht füllt dich — du stehst wieder voll aufrecht.\n\nArenameister:\n„Noch einmal, wenn du willst."'
       appendLocalRuntimeNarration({
         assistantText: revivalText,
         userText: '',
@@ -1101,7 +1213,14 @@ export default function GamePage() {
               </div>
             )}
 
-            {showTranscript && gameLog.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
+            {showTranscript && gameLog.map(msg => (
+              <MessageBubble
+                key={msg.id}
+                msg={msg}
+                adventure={adventure}
+                heroName={character?.name}
+              />
+            ))}
 
             {showTranscript && (streaming || streamingText) && (
               <div className="animate-fade-in">
@@ -1109,7 +1228,17 @@ export default function GamePage() {
                   <span className="font-heading text-xs text-gold-600 tracking-wider">🗡️ DUNGEONS & DAGGERS</span>
                 </div>
                 {streamingText
-                  ? <div className="chat-dm"><p className="font-body text-base leading-relaxed whitespace-pre-wrap">{normalizeNumberedList(formatAssistantTextForDisplay(streamingText, getCheckLabel, { runtimeModule: isRuntimeModule(adventure) }))}<span className="inline-block w-0.5 h-4 bg-gold-500 ml-0.5 animate-pulse" /></p></div>
+                  ? (
+                    <div className="chat-dm">
+                      <p className="font-body text-base leading-relaxed whitespace-pre-wrap">
+                        {renderMessageTextContent(streamingDisplayText, {
+                          adventure,
+                          heroName: character?.name,
+                        })}
+                        <span className="inline-block w-0.5 h-4 bg-gold-500 ml-0.5 animate-pulse" />
+                      </p>
+                    </div>
+                  )
                   : <TypingIndicator />}
               </div>
             )}
@@ -1270,6 +1399,15 @@ export default function GamePage() {
                   </div>
                 ))}
               </div>
+              {arenaBlessingPreview && (
+                <div className="rounded border border-emerald-700/40 bg-emerald-900/15 px-3 py-2 mb-2">
+                  <p className="font-heading text-xs text-emerald-300">{arenaBlessingPreview.label}</p>
+                  <p className="font-body text-[11px] text-stone-400 mt-1">Bereit fuer den naechsten Arenakampf.</p>
+                  <p className="font-body text-[11px] text-stone-400 mt-1">
+                    {arenaBlessingPreview.summaryParts.join(' · ')}
+                  </p>
+                </div>
+              )}
               <div className="font-body text-xs text-stone-500 space-y-1">
                 <p>AC {character.armorClass}</p>
                 <p>Angriff {character.attackBonus >= 0 ? '+' : ''}{character.attackBonus}</p>

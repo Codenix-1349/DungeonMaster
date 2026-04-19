@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { SKILLS, ATTR_LABELS, ATTR_SHORT_LABELS, resolveSkillCheck } from '../data/srd'
-import D20Animation from './D20Animation'
-import { preloadAllD20Sheets } from './d20Preload'
+import D20Animation, { preloadAllD20SpriteSheets } from './D20Animation'
 
 export default function SkillCheckPanel({ check, character, onResult, choiceLabel }) {
   const [result, setResult] = useState(null)
@@ -9,7 +8,7 @@ export default function SkillCheckPanel({ check, character, onResult, choiceLabe
   const animationRunIdRef = useRef(0)
 
   // Preload all 20 sprite sheets while the user sees the pending state
-  useEffect(() => { preloadAllD20Sheets() }, [])
+  useEffect(() => { preloadAllD20SpriteSheets().catch(() => {}) }, [])
 
   const skillDef = SKILLS.find(s => s.key === check.skillOrAbility)
   const isSkill = Boolean(skillDef)

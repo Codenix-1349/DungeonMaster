@@ -1189,6 +1189,7 @@ function parseRuntimeModule(text, title = 'Abenteuer') {
       intent: normalizeRuntimeIntent(intr.intent, { fallbackTarget: intr.target || null }),
       requiresFlags: Array.isArray(intr.requiresFlags) ? intr.requiresFlags : [],
       blocksIfFlags: Array.isArray(intr.blocksIfFlags) ? intr.blocksIfFlags : [],
+      repeatable: intr.repeatable === true,
       availability: intr.availability || {},
       checkPolicy: typeof intr.checkPolicy === 'string' ? intr.checkPolicy.trim() : null,
       check: intr.check || null,
