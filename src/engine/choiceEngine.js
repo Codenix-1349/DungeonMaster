@@ -223,7 +223,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
       for (let i = 0; i < allowedInteractions.length; i++) {
         const intr = allowedInteractions[i]
         const actionKey = `intr:${normalizeActionKeyPart(intr.id)}`
-        const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions, actionKey, recentActionKeys)
+        const recent = !intr.repeatable && wasRecentlyActedOn(intr.label, intr.target, recentActions, actionKey, recentActionKeys)
         if (recent) continue
         usedInteractionIds.add(intr.id)
         choices.push({
@@ -255,7 +255,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
           if (!objId || !runtimeObjects[objId]?.visible) continue
         }
         const actionKey = `intr:${normalizeActionKeyPart(intr.id)}`
-        const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions, actionKey, recentActionKeys)
+        const recent = !intr.repeatable && wasRecentlyActedOn(intr.label, intr.target, recentActions, actionKey, recentActionKeys)
         if (recent) continue
         usedInteractionIds.add(intr.id)
         choices.push({
@@ -283,7 +283,7 @@ function buildStructuredChoices(section, sceneState, isRuntimeModule = false) {
         if (intr.requiresFlags?.length && !intr.requiresFlags.every(f => plotFlags[f])) continue
         if (intr.blocksIfFlags?.length && intr.blocksIfFlags.some(f => plotFlags[f])) continue
         const actionKey = `intr:${normalizeActionKeyPart(intrId)}`
-        const recent = wasRecentlyActedOn(intr.label, intr.target, recentActions, actionKey, recentActionKeys)
+        const recent = !intr.repeatable && wasRecentlyActedOn(intr.label, intr.target, recentActions, actionKey, recentActionKeys)
         if (recent) continue
         choices.push({
           id: `intr-${intrId}`,
