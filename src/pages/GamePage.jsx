@@ -97,6 +97,42 @@ function getArenaBlessingPreview(adventureData, currentSceneState) {
   return summaryParts.length ? { ...preview, summaryParts } : null
 }
 
+export function isCombatRoundLogMessage(message = null) {
+  return message?.role === 'user' && String(message?.content || '').startsWith('[Kampfrunde]')
+}
+
+export function buildDisplayGameLog(gameLog = []) {
+  if (!Array.isArray(gameLog) || gameLog.length === 0) return []
+
+  const ordered = []
+  for (let index = 0; index < gameLog.length; index++) {
+    const current = gameLog[index]
+    const next = gameLog[index + 1]
+
+    if (isCombatRoundLogMessage(current) && next?.role === 'assistant') {
+      ordered.push(next, current)
+      index += 1
+      continue
+    }
+
+    ordered.push(current)
+  }
+
+  return ordered
+}
+
+export function getDeferredCombatRoundMessage({
+  gameLog = [],
+  streaming = false,
+  streamingText = '',
+} = {}) {
+  if (!(streaming || streamingText)) return null
+  if (!Array.isArray(gameLog) || gameLog.length === 0) return null
+
+  const lastMessage = gameLog[gameLog.length - 1]
+  return isCombatRoundLogMessage(lastMessage) ? lastMessage : null
+}
+
 function getPlayerFacingRuntimeFrame(adventureData, currentSceneState, section = null) {
   const normalized = normalizeAdventureEntry(adventureData)
   const structure = normalized?.structure
@@ -295,6 +331,19 @@ export default function GamePage() {
     const latestAssistant = [...gameLog].reverse().find(message => message.role === 'assistant')
     return latestAssistant?.content || ''
   }, [gameLog])
+  const displayGameLog = useMemo(() => buildDisplayGameLog(gameLog), [gameLog])
+  const deferredCombatRoundMessage = useMemo(
+    () => getDeferredCombatRoundMessage({ gameLog, streaming, streamingText }),
+    [gameLog, streaming, streamingText]
+  )
+  const visibleDisplayGameLog = useMemo(
+    () => (
+      deferredCombatRoundMessage
+        ? displayGameLog.filter(message => message.id !== deferredCombatRoundMessage.id)
+        : displayGameLog
+    ),
+    [displayGameLog, deferredCombatRoundMessage]
+  )
   const streamingDisplayText = useMemo(() => {
     if (!streamingText) return ''
     if (runtimeModule) return streamingText
@@ -1213,7 +1262,7 @@ export default function GamePage() {
               </div>
             )}
 
-            {showTranscript && gameLog.map(msg => (
+            {showTranscript && visibleDisplayGameLog.map(msg => (
               <MessageBubble
                 key={msg.id}
                 msg={msg}
@@ -1241,6 +1290,15 @@ export default function GamePage() {
                   )
                   : <TypingIndicator />}
               </div>
+            )}
+
+            {showTranscript && deferredCombatRoundMessage && (
+              <MessageBubble
+                key={`${deferredCombatRoundMessage.id}-deferred`}
+                msg={deferredCombatRoundMessage}
+                adventure={adventure}
+                heroName={character?.name}
+              />
             )}
 
             {error && (
