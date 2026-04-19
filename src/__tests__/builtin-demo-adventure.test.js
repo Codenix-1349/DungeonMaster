@@ -18,7 +18,7 @@ describe('builtin mechanics demo adventure', () => {
     expect(merged.some(entry => entry.id === 'custom-adventure')).toBe(true)
   })
 
-  it('starts a structured combat with altar blessing on success', () => {
+  it('grants the altar blessing flag on a successful arcana check without starting combat', () => {
     const adventure = getDemoAdventure()
     const sceneState = createInitialSceneState(adventure)
     const interaction = findInteractionDef(adventure.structure, 'attune_blessing_altar')
@@ -26,6 +26,29 @@ describe('builtin mechanics demo adventure', () => {
     const resolved = resolveInteractionOutcome(sceneState, interaction, adventure.structure.module, 'success')
 
     expect(resolved.sceneState.gmState.plotFlags.ALTAR_BLESSED).toBe(true)
+    expect(resolved.combatStart).toBeNull()
+  })
+
+  it('does not set the blessing flag when the altar check fails', () => {
+    const adventure = getDemoAdventure()
+    const sceneState = createInitialSceneState(adventure)
+    const interaction = findInteractionDef(adventure.structure, 'attune_blessing_altar')
+
+    const resolved = resolveInteractionOutcome(sceneState, interaction, adventure.structure.module, 'failure')
+
+    expect(resolved.sceneState.gmState.plotFlags.ALTAR_BLESSED).not.toBe(true)
+    expect(resolved.combatStart).toBeNull()
+  })
+
+  it('starts the blessed training combat with buffs + revive when the player asks Rennald', () => {
+    const adventure = getDemoAdventure()
+    const baseScene = createInitialSceneState(adventure)
+    const altar = findInteractionDef(adventure.structure, 'attune_blessing_altar')
+    const afterBlessing = resolveInteractionOutcome(baseScene, altar, adventure.structure.module, 'success').sceneState
+
+    const beginTrial = findInteractionDef(adventure.structure, 'begin_trial_blessed')
+    const resolved = resolveInteractionOutcome(afterBlessing, beginTrial, adventure.structure.module, 'success')
+
     expect(resolved.combatStart).toMatchObject({
       active: true,
       round: 1,
@@ -35,60 +58,50 @@ describe('builtin mechanics demo adventure', () => {
     expect(resolved.combatStart.playerBuffs).toMatchObject({
       label: 'Segen des Messingaltars',
       attackBonus: 1,
-      armorClassBonus: 1,
       initiativeBonus: 2,
-      damageBonus: 1,
-      spellAttackBonus: 1,
-      spellSaveDcBonus: 1,
     })
-    expect(resolved.combatStart.enemies).toHaveLength(1)
     expect(resolved.combatStart.enemies[0]).toMatchObject({
       name: 'Bronzener Trainingswaechter',
       maxHP: 8,
-      ac: 11,
-      attackBonus: 2,
-      damageDice: '1d4',
-      damageBonus: 0,
-      xp: 25,
       restorePlayerAfterVictory: true,
+      revivePlayerOnDefeat: true,
     })
+    expect(resolved.combatStart.enemies[0].defeatRevivalText).toContain('Rennald')
   })
 
-  it('still starts the training fight on failure without a blessing', () => {
+  it('starts the unblessed training combat with revive when the player asks Rennald without a blessing', () => {
     const adventure = getDemoAdventure()
     const sceneState = createInitialSceneState(adventure)
-    const interaction = findInteractionDef(adventure.structure, 'attune_blessing_altar')
+    const beginTrial = findInteractionDef(adventure.structure, 'begin_trial_plain')
 
-    const resolved = resolveInteractionOutcome(sceneState, interaction, adventure.structure.module, 'failure')
+    const resolved = resolveInteractionOutcome(sceneState, beginTrial, adventure.structure.module, 'success')
 
-    expect(resolved.sceneState.gmState.plotFlags.ALTAR_BLESSED).not.toBe(true)
     expect(resolved.combatStart).toMatchObject({
       active: true,
       phase: 'initiative',
       consequenceText: expect.stringContaining('ohne Segen'),
       playerBuffs: null,
     })
-    expect(resolved.combatStart.enemies).toHaveLength(1)
+    expect(resolved.combatStart.enemies[0]).toMatchObject({
+      revivePlayerOnDefeat: true,
+      restorePlayerAfterVictory: true,
+    })
   })
 
-  it('still offers the altar button after the rules were read', () => {
+  it('shows the blessed begin-trial button only after the altar was blessed', () => {
     const adventure = getDemoAdventure()
-    const initialSceneState = createInitialSceneState(adventure)
-    const readRules = findInteractionDef(adventure.structure, 'read_trial_rules')
-    const afterRules = resolveInteractionOutcome(
-      initialSceneState,
-      readRules,
-      adventure.structure.module,
-      'success'
-    ).sceneState
     const section = adventure.structure.sections.find(entry => entry.id === 'brass_arena')
 
-    const choices = rebuildVisibleChoices({
-      section,
-      sceneState: afterRules,
-      runtimeModule: true,
-    })
+    const initialScene = createInitialSceneState(adventure)
+    const initialChoices = rebuildVisibleChoices({ section, sceneState: initialScene, runtimeModule: true })
+    expect(initialChoices.some(c => c.interactionId === 'begin_trial_blessed')).toBe(false)
+    expect(initialChoices.some(c => c.interactionId === 'begin_trial_plain')).toBe(true)
 
-    expect(choices.some(choice => choice.label === 'Den Messingaltar beruehren')).toBe(true)
+    const altar = findInteractionDef(adventure.structure, 'attune_blessing_altar')
+    const afterBlessing = resolveInteractionOutcome(initialScene, altar, adventure.structure.module, 'success').sceneState
+    const blessedChoices = rebuildVisibleChoices({ section, sceneState: afterBlessing, runtimeModule: true })
+
+    expect(blessedChoices.some(c => c.interactionId === 'begin_trial_blessed')).toBe(true)
+    expect(blessedChoices.some(c => c.interactionId === 'begin_trial_plain')).toBe(false)
   })
 })

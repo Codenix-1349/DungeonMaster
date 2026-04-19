@@ -131,6 +131,42 @@ export default function GamePage() {
   const logEndRef = useRef(null)
   const inputRef = useRef(null)
   const pendingChoiceMetaRef = useRef(null)
+  const pendingStreamCharsRef = useRef([])
+  const typewriterIntervalRef = useRef(null)
+
+  const stopTypewriter = useCallback(() => {
+    if (typewriterIntervalRef.current) {
+      clearInterval(typewriterIntervalRef.current)
+      typewriterIntervalRef.current = null
+    }
+    pendingStreamCharsRef.current = []
+  }, [])
+
+  const startTypewriter = useCallback(() => {
+    if (typewriterIntervalRef.current) return
+    typewriterIntervalRef.current = setInterval(() => {
+      const queue = pendingStreamCharsRef.current
+      if (queue.length === 0) return
+      const burst = Math.min(4, queue.length)
+      const text = queue.splice(0, burst).join('')
+      setStreamingText(prev => prev + text)
+    }, 25)
+  }, [])
+
+  const drainTypewriter = useCallback(() => new Promise(resolve => {
+    const poll = () => {
+      if (pendingStreamCharsRef.current.length === 0) {
+        if (typewriterIntervalRef.current) {
+          clearInterval(typewriterIntervalRef.current)
+          typewriterIntervalRef.current = null
+        }
+        resolve()
+      } else {
+        setTimeout(poll, 30)
+      }
+    }
+    poll()
+  }), [])
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -207,13 +243,18 @@ export default function GamePage() {
     return dynamicChoices
   }, [adventure, sceneState, combat?.active, dynamicChoices])
 
+  const substituteRuntimePlaceholders = useCallback((text = '') => {
+    const heroName = character?.name || 'Held'
+    return String(text || '').replace(/\{heroName\}/g, heroName)
+  }, [character?.name])
+
   const buildLocalRuntimeOpeningText = useCallback((activeAdventure, activeSceneState) => {
     const section = getCurrentSection(activeAdventure, activeSceneState)
     const frame = getPlayerFacingRuntimeFrame(activeAdventure, activeSceneState, section)
-    return String(frame?.summary || section?.introText || '').trim()
-  }, [])
+    return substituteRuntimePlaceholders(String(frame?.summary || section?.introText || '').trim())
+  }, [substituteRuntimePlaceholders])
 
-  const appendLocalRuntimeNarration = useCallback(({
+  const appendLocalRuntimeNarration = useCallback(async ({
     assistantText = '',
     userText = '',
     adventureOverride = adventure,
@@ -221,7 +262,7 @@ export default function GamePage() {
     combatOverride = combat,
     recentActionKey = null,
   } = {}) => {
-    const narration = String(assistantText || '').trim()
+    const narration = substituteRuntimePlaceholders(String(assistantText || '').trim())
     const spokenUserText = String(userText || '').trim()
     if (!narration) return null
 
@@ -231,8 +272,20 @@ export default function GamePage() {
       transcript.push(userMsg)
     }
 
+    // Stream the narration through the typewriter so local runtime texts
+    // (intro scene, altar interactions, flavor-only responses) visually match
+    // AI-streamed responses instead of popping in as a block.
+    setStreamingText('')
+    pendingStreamCharsRef.current.push(...narration)
+    startTypewriter()
+    await drainTypewriter()
+    setStreamingText(narration)
+
     const assistantMsg = addMessage('assistant', narration)
     transcript.push(assistantMsg)
+
+    // Clear the streaming bubble now that the committed message is in place.
+    setStreamingText('')
 
     syncSceneState({
       messages: transcript,
@@ -244,7 +297,7 @@ export default function GamePage() {
     })
 
     return assistantMsg
-  }, [adventure, sceneState, combat, gameLog, addMessage, syncSceneState])
+  }, [adventure, sceneState, combat, gameLog, addMessage, syncSceneState, startTypewriter, drainTypewriter, substituteRuntimePlaceholders])
 
   async function submitResolvedChoice(choice, options = {}) {
     const activeAdventure = options.adventureOverride ?? adventure
@@ -427,12 +480,19 @@ export default function GamePage() {
         useProxy,
         onChunk: chunk => {
           full += chunk
-          setStreamingText(prev => prev + chunk)
+          pendingStreamCharsRef.current.push(...chunk)
+          startTypewriter()
         },
       })
 
+      // Wait for typewriter to reveal the full streamed text before the swap
+      await drainTypewriter()
+
       // Strip [PROBE:] tags from displayed text (hide DC from player)
       const displayText = formatAssistantTextForDisplay(full, getCheckLabel, { runtimeModule: activeRuntimeModule })
+      // Align streaming bubble's text with the final formatted text so the
+      // transition to MessageBubble is visually seamless (no "block swap").
+      setStreamingText(displayText)
       const assistantMsg = addMessage('assistant', displayText)
 
       const responsePendingCheck = resolveResponsePendingCheck({
@@ -551,6 +611,7 @@ export default function GamePage() {
     } catch (e) {
       setError(`Fehler: ${e.message}`)
     } finally {
+      stopTypewriter()
       setStreaming(false)
       setStreamingText('')
       inputRef.current?.focus()
@@ -581,9 +642,26 @@ export default function GamePage() {
     dynamicChoices,
     submitResolvedChoice,
     syncProxyAuthorityState,
+    startTypewriter,
+    stopTypewriter,
+    drainTypewriter,
   ])
 
-  const handleCombatAction = useCallback(text => handleSend(`[Kampfrunde] ${text}`), [handleSend])
+  const handleCombatAction = useCallback(text => {
+    // Intercept engine-authored player revival so the Arena Master narration
+    // plays locally (streamed, visible HP restore) instead of going to the AI.
+    const revivedMatch = /\[SPIELER WIEDERBELEBT\]\s*([\s\S]*)$/i.exec(String(text || ''))
+    if (revivedMatch) {
+      const revivalText = revivedMatch[1].trim()
+        || 'Der Arenameister hebt die Hand und warmes Licht fuellt dich — du stehst wieder voll aufrecht.\n\nArenameister:\n„Noch einmal, wenn du willst."'
+      appendLocalRuntimeNarration({
+        assistantText: revivalText,
+        userText: '',
+      })
+      return
+    }
+    return handleSend(`[Kampfrunde] ${text}`)
+  }, [handleSend, appendLocalRuntimeNarration])
 
   const handleCheckResult = useCallback((result, choiceLabel) => {
     const choiceMeta = pendingChoiceMetaRef.current
@@ -706,7 +784,15 @@ export default function GamePage() {
     if (isRuntimeModule(selectedAdventure)) {
       const openingText = buildLocalRuntimeOpeningText(selectedAdventure, initialSceneState)
       if (openingText) {
+        // Stream the opening scene through the typewriter so the intro appears
+        // character-by-character instead of popping in as a block.
+        setStreamingText('')
+        pendingStreamCharsRef.current.push(...openingText)
+        startTypewriter()
+        await drainTypewriter()
+        setStreamingText(openingText)
         addMessage('assistant', openingText)
+        setStreamingText('')
         return
       }
     }
@@ -718,7 +804,7 @@ export default function GamePage() {
       historyOverride: [],
       rawHistoryOverride: [],
     })
-  }, [apiReady, selectedAdventure, selectedCharacter, createSession, navigate, handleSend, startAdventurePrompt, resetSceneState, buildLocalRuntimeOpeningText, addMessage])
+  }, [apiReady, selectedAdventure, selectedCharacter, createSession, navigate, handleSend, startAdventurePrompt, resetSceneState, buildLocalRuntimeOpeningText, addMessage, startTypewriter, drainTypewriter])
 
   const handleContinueSession = useCallback((sessionId) => {
     const session = loadSession(sessionId)
@@ -1017,7 +1103,7 @@ export default function GamePage() {
 
             {showTranscript && gameLog.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
 
-            {showTranscript && streaming && (
+            {showTranscript && (streaming || streamingText) && (
               <div className="animate-fade-in">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-heading text-xs text-gold-600 tracking-wider">🗡️ DUNGEONS & DAGGERS</span>

@@ -397,22 +397,52 @@ function _yParseInline(str) {
   return str
 }
 
+// Consume a `|` block literal: lines indented strictly more than `keyIndent`
+// (including blank lines inside the block) are joined with `\n`. The common
+// leading indent of non-blank lines is stripped so the stored string begins
+// at column 0.
+function _yParseBlockLiteral(lines, pos, keyIndent) {
+  const blockLines = []
+  let contentIndent = null
+  while (pos < lines.length) {
+    const l = lines[pos]
+    if (l.isBlank) { blockLines.push(''); pos++; continue }
+    if (l.indent <= keyIndent) break
+    if (contentIndent === null) contentIndent = l.indent
+    const strip = Math.min(l.indent, contentIndent)
+    blockLines.push(`${' '.repeat(Math.max(0, l.indent - strip))}${l.content}`)
+    pos++
+  }
+  while (blockLines.length && blockLines[blockLines.length - 1] === '') blockLines.pop()
+  return { value: blockLines.join('\n'), pos }
+}
+
 function _yParseMap(lines, pos, minIndent) {
   const map = {}
   while (pos < lines.length) {
     const l = lines[pos]
+    if (l.isBlank) { pos++; continue }
     if (l.indent < minIndent) break
     const kv = l.content.match(/^(\w+)\s*:\s*(.*)/)
     if (!kv) { pos++; continue }
     const key = kv[1], val = kv[2].trim()
-    if (val) { map[key] = _yParseInline(val); pos++ }
-    else if (pos + 1 < lines.length && lines[pos + 1].indent > l.indent) {
-      const ci = lines[pos + 1].indent
-      const r = lines[pos + 1].content.startsWith('- ')
-        ? _yParseList(lines, pos + 1, ci)
-        : _yParseMap(lines, pos + 1, ci)
+    if (val === '|' || val === '|-') {
+      const r = _yParseBlockLiteral(lines, pos + 1, l.indent)
       map[key] = r.value; pos = r.pos
-    } else { map[key] = null; pos++ }
+      continue
+    }
+    if (val) { map[key] = _yParseInline(val); pos++ }
+    else {
+      let next = pos + 1
+      while (next < lines.length && lines[next].isBlank) next++
+      if (next < lines.length && lines[next].indent > l.indent) {
+        const ci = lines[next].indent
+        const r = lines[next].content.startsWith('- ')
+          ? _yParseList(lines, next, ci)
+          : _yParseMap(lines, next, ci)
+        map[key] = r.value; pos = r.pos
+      } else { map[key] = null; pos++ }
+    }
   }
   return { value: map, pos }
 }
@@ -421,6 +451,7 @@ function _yParseList(lines, pos, minIndent) {
   const list = []
   while (pos < lines.length) {
     const l = lines[pos]
+    if (l.isBlank) { pos++; continue }
     if (l.indent < minIndent || !l.content.startsWith('- ')) break
     const itemText = l.content.slice(2).trim()
     const kv = itemText.match(/^(\w+)\s*:\s*(.*)/)
@@ -430,31 +461,49 @@ function _yParseList(lines, pos, minIndent) {
     const item = {}
     const key = kv[1], val = kv[2].trim()
     pos++
-    if (val) { item[key] = _yParseInline(val) }
-    else if (pos < lines.length && lines[pos].indent > l.indent) {
-      const ci = lines[pos].indent
-      const r = lines[pos].content.startsWith('- ')
-        ? _yParseList(lines, pos, ci)
-        : _yParseMap(lines, pos, ci)
+    if (val === '|' || val === '|-') {
+      const r = _yParseBlockLiteral(lines, pos, l.indent)
       item[key] = r.value; pos = r.pos
-    } else { item[key] = null }
+    } else if (val) { item[key] = _yParseInline(val) }
+    else {
+      let next = pos
+      while (next < lines.length && lines[next].isBlank) next++
+      if (next < lines.length && lines[next].indent > l.indent) {
+        const ci = lines[next].indent
+        const r = lines[next].content.startsWith('- ')
+          ? _yParseList(lines, next, ci)
+          : _yParseMap(lines, next, ci)
+        item[key] = r.value; pos = r.pos
+      } else { item[key] = null }
+    }
 
     // Collect remaining properties of this list item
     const propIndent = l.indent + 2
-    while (pos < lines.length && lines[pos].indent >= propIndent) {
+    while (pos < lines.length) {
       const pl = lines[pos]
+      if (pl.isBlank) { pos++; continue }
+      if (pl.indent < propIndent) break
       if (pl.indent === l.indent && pl.content.startsWith('- ')) break
       const pkv = pl.content.match(/^(\w+)\s*:\s*(.*)/)
       if (!pkv) { pos++; continue }
       const pKey = pkv[1], pVal = pkv[2].trim()
-      if (pVal) { item[pKey] = _yParseInline(pVal); pos++ }
-      else if (pos + 1 < lines.length && lines[pos + 1].indent > pl.indent) {
-        const ci = lines[pos + 1].indent
-        const r = lines[pos + 1].content.startsWith('- ')
-          ? _yParseList(lines, pos + 1, ci)
-          : _yParseMap(lines, pos + 1, ci)
+      if (pVal === '|' || pVal === '|-') {
+        const r = _yParseBlockLiteral(lines, pos + 1, pl.indent)
         item[pKey] = r.value; pos = r.pos
-      } else { item[pKey] = null; pos++ }
+        continue
+      }
+      if (pVal) { item[pKey] = _yParseInline(pVal); pos++ }
+      else {
+        let next = pos + 1
+        while (next < lines.length && lines[next].isBlank) next++
+        if (next < lines.length && lines[next].indent > pl.indent) {
+          const ci = lines[next].indent
+          const r = lines[next].content.startsWith('- ')
+            ? _yParseList(lines, next, ci)
+            : _yParseMap(lines, next, ci)
+          item[pKey] = r.value; pos = r.pos
+        } else { item[pKey] = null; pos++ }
+      }
     }
     list.push(item)
   }
@@ -462,9 +511,15 @@ function _yParseList(lines, pos, minIndent) {
 }
 
 function parseYamlLike(text) {
-  const lines = text.split('\n')
-    .map((raw, i) => ({ indent: Math.max(0, raw.search(/\S/)), content: raw.trim(), lineNum: i }))
-    .filter(l => l.content && !l.content.startsWith('#'))
+  // Preserve blank lines (needed for `|` block literals to keep paragraphs)
+  // but strip standalone comment lines. Non-comment lines keep their raw
+  // indent so block literals can compute a common strip level.
+  const lines = text.split('\n').map((raw, i) => {
+    const trimmed = raw.trim()
+    if (!trimmed) return { indent: 0, content: '', lineNum: i, isBlank: true }
+    if (trimmed.startsWith('#')) return { indent: 0, content: '', lineNum: i, isBlank: true }
+    return { indent: Math.max(0, raw.search(/\S/)), content: trimmed, lineNum: i, isBlank: false }
+  })
   return _yParseMap(lines, 0, 0).value
 }
 
