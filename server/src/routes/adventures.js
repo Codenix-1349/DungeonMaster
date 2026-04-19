@@ -58,16 +58,33 @@ router.post('/', async (req, res, next) => {
 
 // DELETE /adventures/:id
 router.delete('/:id', async (req, res, next) => {
+  const client = await pool.connect()
   try {
-    const { rowCount } = await pool.query(
+    await client.query('BEGIN')
+    await client.query(
+      `UPDATE sessions
+       SET adventure_id = NULL, updated_at = NOW()
+       WHERE user_id = $1 AND adventure_id = $2`,
+      [req.user.id, req.params.id]
+    )
+
+    const { rowCount } = await client.query(
       'DELETE FROM adventures WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     )
 
-    if (rowCount === 0) return res.status(404).json({ error: 'Abenteuer nicht gefunden.' })
+    if (rowCount === 0) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'Abenteuer nicht gefunden.' })
+    }
+
+    await client.query('COMMIT')
     res.json({ success: true })
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
     next(err)
+  } finally {
+    client.release()
   }
 })
 
