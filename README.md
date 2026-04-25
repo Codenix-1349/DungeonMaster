@@ -1,153 +1,213 @@
-# 🐉 Dungeons & Daggers - AI Solo Adventure
+# 🐉 Dungeons & Daggers - AI Solo RPG Engine
 
-AI-powered solo tabletop RPG web app inspired by D&D-style fantasy adventures — explore authored modules, create characters, roll dice, fight encounters, and let an AI Dungeon Master narrate within strict runtime rules.
+AI-powered solo tabletop RPG web app focused on prompt engineering, controlled AI narration, and deterministic game-state management — combining React, Node.js, PostgreSQL, OpenRouter, and a structured runtime engine for D&D-style fantasy adventures.
 
 ---
 
 ## 🛠️ Technologies
 
-<p align="center">
-  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/react/react-original.svg" width="48" height="48" alt="React" />
-  &nbsp;&nbsp;
-  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/vitejs/vitejs-original.svg" width="48" height="48" alt="Vite" />
-  &nbsp;&nbsp;
-  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/javascript/javascript-original.svg" width="48" height="48" alt="JavaScript" />
-  &nbsp;&nbsp;
-  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/tailwindcss/tailwindcss-original.svg" width="48" height="48" alt="Tailwind CSS" />
-  &nbsp;&nbsp;
-  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/nodejs/nodejs-original.svg" width="48" height="48" alt="Node.js" />
-  &nbsp;&nbsp;
-  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/express/express-original.svg" width="48" height="48" alt="Express" />
-  &nbsp;&nbsp;
-  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/postgresql/postgresql-original.svg" width="48" height="48" alt="PostgreSQL" />
-  &nbsp;&nbsp;
-  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/vitest/vitest-original.svg" width="48" height="48" alt="Vitest" />
-</p>
+<table align="center">
+  <tr>
+    <td align="center" width="120">
+      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/react/react-original.svg" width="48" height="48" alt="React" />
+      <br />
+      <strong>React</strong>
+    </td>
+    <td align="center" width="120">
+      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/vitejs/vitejs-original.svg" width="48" height="48" alt="Vite" />
+      <br />
+      <strong>Vite</strong>
+    </td>
+    <td align="center" width="120">
+      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/javascript/javascript-original.svg" width="48" height="48" alt="JavaScript" />
+      <br />
+      <strong>JavaScript</strong>
+    </td>
+    <td align="center" width="120">
+      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/tailwindcss/tailwindcss-original.svg" width="48" height="48" alt="Tailwind CSS" />
+      <br />
+      <strong>Tailwind CSS</strong>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="120">
+      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/nodejs/nodejs-original.svg" width="48" height="48" alt="Node.js" />
+      <br />
+      <strong>Node.js</strong>
+    </td>
+    <td align="center" width="120">
+      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/express/express-original.svg" width="48" height="48" alt="Express" />
+      <br />
+      <strong>Express</strong>
+    </td>
+    <td align="center" width="120">
+      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/postgresql/postgresql-original.svg" width="48" height="48" alt="PostgreSQL" />
+      <br />
+      <strong>PostgreSQL</strong>
+    </td>
+    <td align="center" width="120">
+      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/vitest/vitest-original.svg" width="48" height="48" alt="Vitest" />
+      <br />
+      <strong>Vitest</strong>
+    </td>
+  </tr>
+</table>
 
 <p align="center">
-  React · Vite · JavaScript · Tailwind CSS · Node.js · Express · PostgreSQL · Vitest · OpenRouter · SMTP
+  <strong>React · Vite · JavaScript · Tailwind CSS · Node.js · Express · PostgreSQL · Vitest · OpenRouter · SMTP</strong>
 </p>
 
 ---
 
 ## 📜 Overview
 
-**Dungeons & Daggers** is an AI-supported solo adventure platform for browser-based fantasy roleplaying.
+**Dungeons & Daggers** is a full-stack AI solo RPG prototype that explores how large language models can be used safely inside an interactive game system.
 
-The player creates a character, starts an adventure, explores scenes, resolves checks, manages inventory, fights enemies, and receives narrated responses from an AI Dungeon Master.
+Instead of treating the AI as an uncontrolled chatbot, the project uses a structured prompt-engineering and runtime-authority approach: the application controls game truth, state transitions, available choices, combat logic, checks, and player knowledge, while the AI is used for narration, atmosphere, dialogue style, and scene presentation.
 
-The core idea is not to let the AI freely invent game truth. Instead, the application owns the rules, runtime state, visible choices, checks, combat flow, and player knowledge. The AI narrates around that controlled state.
+This makes the project especially relevant from an engineering perspective: it combines frontend development, backend architecture, AI prompt orchestration, state management, testing, and database-backed user flows in one coherent product.
 
-This makes the project less like a simple chatbot and more like a structured solo RPG engine with AI narration.
+---
+
+## 🧠 AI & Prompt Engineering Focus
+
+The core technical challenge of this project is not simply “calling an AI API”.
+
+The system is designed around a **Truth Firewall** concept:
+
+> The engine controls truth.  
+> The AI controls narration.
+
+This means the application decides:
+
+- which choices are currently valid
+- which NPCs, objects, exits, and clues are known to the player
+- which checks are allowed
+- which combat actions are possible
+- which state changes are accepted
+- what information must remain hidden
+- what context is safe to send to the model
+
+The AI receives structured runtime context and is prompted to narrate only within those boundaries.
+
+This architecture reduces common AI-game problems such as:
+
+- hallucinated exits or items
+- premature story reveals
+- inconsistent NPC knowledge
+- invalid rule outcomes
+- AI-generated game truth
+- uncontrolled state changes
 
 ---
 
 ## ✨ Core Features
 
 - 🧙‍♂️ **AI Dungeon Master**  
-  The AI narrates scenes, dialogue, consequences, and atmosphere based on controlled runtime context.
+  Uses AI narration for atmosphere, dialogue, scene descriptions, and consequences.
 
 - 🛡️ **Truth Firewall Architecture**  
-  Game truth is owned by the app. The AI may narrate, but it should not create hidden canon, reveal unavailable information, or change state outside the engine rules.
+  Separates deterministic game authority from AI-generated prose.
 
 - 🎲 **Dice & Skill Checks**  
-  D20-style checks, modifiers, skill interactions, and authored check outcomes.
+  Runtime-controlled D20-style checks with authored outcomes and modifiers.
 
 - ⚔️ **Combat System**  
-  Initiative, turn state, attacks, enemy behavior, damage resolution, combat tracker, and encounter handling.
+  Initiative, turns, attacks, enemy behavior, damage handling, and encounter state.
 
 - 🧾 **Character Creation**  
-  Create and manage fantasy characters with attributes, class/race choices, inventory, spells, and combat values.
+  Character setup with attributes, class/race choices, spells, inventory, and combat values.
 
-- 🗺️ **Authored Runtime Modules**  
-  Adventures are parsed into structured runtime interactions, locations, NPCs, objects, exits, flags, and state transitions.
+- 🗺️ **Runtime Module System**  
+  Adventures are structured into locations, interactions, NPCs, objects, exits, flags, and state transitions.
 
 - 🧠 **Knowledge Gating**  
-  The player only sees what the character has actually discovered. Hidden information remains separated from visible UI choices.
+  Player-facing choices only show information the character has actually discovered.
 
-- 💬 **Choice-Based + Free Text Interaction**  
-  Players can use visible runtime choices or type free text. Free text is resolved through authored runtime intent logic where possible.
+- 💬 **Choice + Free Text Interaction**  
+  Players can interact through structured choices or typed input, while the engine validates what can actually happen.
 
-- 🔊 **Atmospheric Audio**  
-  Background sounds and ambience support different adventure scenes and moods.
+- 🔐 **Backend Account Mode**  
+  Registration, login, email verification, password reset, encrypted API key storage, and server-side AI proxying.
 
-- 🔐 **Optional Account Mode**  
-  Backend-supported registration, login, encrypted API key storage, verification mails, password reset, and proxy-based AI requests.
+- 🧪 **Regression Tests**  
+  Vitest coverage for runtime authority, prompt construction, combat, knowledge gating, and AI-safety contracts.
+
+---
+
+## 🏗️ Technical Architecture
+
+### Frontend
+
+- **React** for component-based UI development
+- **Vite** for fast local development and production builds
+- **Tailwind CSS** for responsive styling and layout
+- Client-side adventure UI, combat tracker, character views, settings, and interaction controls
+
+### Backend
+
+- **Node.js + Express** API server
+- User registration and authentication
+- Email verification and password reset
+- OpenRouter proxy requests
+- Server-owned session state
+- Encrypted API key storage
+- SMTP mail delivery
+
+### Database
+
+- **PostgreSQL** for persistent user, session, token, and configuration data
+- Migration-based schema management
+- Separation between runtime state, user state, and authentication data
+
+### AI Integration
+
+- **OpenRouter** as AI model provider layer
+- Supports free and paid model usage
+- Prompt assembly based on current runtime state
+- Token-conscious context construction
+- Backend proxy mode for safer key handling and server-owned prompts
+
+### Testing
+
+- **Vitest** for regression and unit tests
+- Tests focus on architecture-critical behavior:
+  - valid runtime choices
+  - hidden knowledge protection
+  - combat state transitions
+  - authored check outcomes
+  - prompt-building boundaries
+  - server-owned session context
+  - AI narration constraints
 
 ---
 
 ## 🧩 What makes it special?
 
-**Dungeons & Daggers** explores a structured way to combine AI narration with deterministic game logic.
+**Dungeons & Daggers** is not just a fantasy chatbot.
 
-The project is built around one central rule:
+It is an experiment in building an AI-assisted application where the model is powerful, but not authoritative.
 
-> The engine controls truth.  
-> The AI controls narration.
+The project combines:
 
-This means the app decides:
+- full-stack web development
+- AI prompt engineering
+- state-driven gameplay architecture
+- backend-controlled AI requests
+- deterministic rule handling
+- structured adventure runtime design
+- automated regression testing
+- secure account and email flows
 
-- which choices are available
-- which NPCs or objects are known
-- which checks are allowed
-- which state changes are valid
-- what combat events happen
-- what the player has already learned
+From a software engineering perspective, the interesting part is the boundary between deterministic application logic and generative AI output.
 
-The AI then turns that controlled state into immersive prose.
-
-This avoids the common problem of AI game systems where the model invents unavailable exits, reveals hidden secrets, grants unearned items, or changes the world without game authority.
-
----
-
-## 🏗️ Architecture Highlights
-
-- **Runtime authority layer**  
-  Structured modules define interactions, flags, NPC states, objects, exits, and checks.
-
-- **Visible choice layer**  
-  The UI only exposes choices that are currently valid and player-known.
-
-- **Server-side prompt assembly**  
-  In account/proxy mode, the backend owns final prompt construction and loads authoritative session state.
-
-- **Session memory summary**  
-  Long-running sessions can use compact server-owned memory summaries instead of sending raw full history.
-
-- **OpenRouter integration**  
-  Supports multiple AI models through OpenRouter, including free and paid model routing.
-
-- **Local provider support**  
-  The project includes support paths for local model testing, useful for development and reducing API-limit friction.
-
-- **Regression-heavy development**  
-  The project contains a broad Vitest suite covering runtime authority, knowledge gating, combat, prompt building, session persistence, and choice logic.
-
----
-
-## 🧪 Test Coverage Focus
-
-The test suite focuses on the most important architectural risks:
-
-- truth firewall behavior
-- knowledge gating
-- runtime choice validity
-- free-text intent resolution
-- combat state transitions
-- authored check outcomes
-- session persistence
-- prompt-building contracts
-- OpenRouter transport behavior
-- server-owned session memory
-- prevention of client-owned truth injection
+The project explores how to use AI productively without letting it take over core business logic.
 
 ---
 
 ## 📸 Screenshots
 
 Add screenshots here after deployment or presentation capture.
-
-Suggested sections:
 
 | Landing / Dashboard | Character Creation | Adventure Runtime |
 |---|---|---|
@@ -290,9 +350,9 @@ The application is designed to keep AI usage focused by sending only relevant ru
 
 ## 📚 SRD Notice
 
-This project is built around an SRD-based fantasy roleplaying rules subset.
+This project uses SRD-based fantasy roleplaying concepts as a rules foundation.
 
-It is not a full reproduction of any complete commercial tabletop RPG product. The included SRD material is used as a rules reference foundation for compatible gameplay concepts.
+It is not a full reproduction of any complete commercial tabletop RPG product. The included rules material is used as a compatible reference subset for gameplay mechanics and testing.
 
 ---
 
@@ -302,17 +362,19 @@ Current state: **advanced prototype / showcase-ready development build**
 
 Implemented areas include:
 
-- runtime-authoritative adventure engine
+- React/Vite frontend
+- Node/Express backend
+- PostgreSQL-backed account mode
+- AI narration through OpenRouter
+- server-owned prompt construction
 - character creation
 - structured adventure modules
-- combat flow
+- runtime-authoritative interaction logic
 - dice and check resolution
-- AI narration integration
-- OpenRouter model support
-- account/backend mode
+- combat flow
+- session persistence
+- memory summary handling
 - email verification and password reset
-- server-owned prompt context in proxy mode
-- session persistence and memory summary
 - extensive regression tests
 
 Still in active development:
@@ -366,4 +428,4 @@ This repository, including source code, presentation materials, images, audio as
 
 Developed by **Patrick Neumann**
 
-An original AI-assisted solo RPG project focused on structured runtime authority, controlled AI narration, and browser-based fantasy adventure gameplay.
+An original full-stack AI application exploring prompt engineering, controlled AI narration, deterministic runtime logic, and browser-based fantasy adventure gameplay.
