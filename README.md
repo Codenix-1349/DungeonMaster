@@ -207,15 +207,48 @@ The project explores how to use AI productively without letting it take over cor
 
 ## 📸 Screenshots
 
-Add screenshots here after deployment or presentation capture.
-
-| Landing / Dashboard | Character Creation | Adventure Runtime |
-|---|---|---|
-| `screenshot-dashboard.png` | `screenshot-character.png` | `screenshot-game.png` |
-
-| Combat Tracker | Skill Check | Settings / AI Provider |
-|---|---|---|
-| `screenshot-combat.png` | `screenshot-check.png` | `screenshot-settings.png` |
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <a href="https://github.com/user-attachments/assets/1e82dbf6-bb74-4a4f-ab6c-1047c2827b2e">
+        <img src="https://github.com/user-attachments/assets/1e82dbf6-bb74-4a4f-ab6c-1047c2827b2e" alt="Landing page" width="100%" />
+      </a>
+      <br />
+      <strong>Landing Page</strong>
+      <br />
+      <sub>Entry point and product presentation for the AI solo RPG experience.</sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="https://github.com/user-attachments/assets/e0ba0078-f90a-4b42-9604-fa01f4b04121">
+        <img src="https://github.com/user-attachments/assets/e0ba0078-f90a-4b42-9604-fa01f4b04121" alt="Character creation" width="100%" />
+      </a>
+      <br />
+      <strong>Character Creation</strong>
+      <br />
+      <sub>Create and configure a playable fantasy character.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <a href="https://github.com/user-attachments/assets/f18d0cfa-d9c2-4d56-9064-b1a196b64a01">
+        <img src="https://github.com/user-attachments/assets/f18d0cfa-d9c2-4d56-9064-b1a196b64a01" alt="Adventure session" width="100%" />
+      </a>
+      <br />
+      <strong>Adventure Runtime</strong>
+      <br />
+      <sub>Structured choices, scene state, narration, and player interaction.</sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="https://github.com/user-attachments/assets/0e92b00b-41dd-4973-9a9e-50b63129915a">
+        <img src="https://github.com/user-attachments/assets/0e92b00b-41dd-4973-9a9e-50b63129915a" alt="AI provider settings" width="100%" />
+      </a>
+      <br />
+      <strong>AI Provider Settings</strong>
+      <br />
+      <sub>OpenRouter model configuration and AI integration controls.</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
